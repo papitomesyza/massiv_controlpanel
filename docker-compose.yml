@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  massiv-tv:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - massiv_data:/app/data
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+
+volumes:
+  massiv_data:
+    driver: local
