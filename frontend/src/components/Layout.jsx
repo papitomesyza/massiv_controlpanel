@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useAgency } from '../context/AgencyContext';
 import { api } from '../api';
+import SetupWizard from './SetupWizard';
 
 const OPS_LINKS = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
@@ -48,9 +49,17 @@ export default function Layout() {
   const [upcoming, setUpcoming] = useState([]);
   const [fabOpen, setFabOpen] = useState(false);
   const fabRef = useRef(null);
+  const [showSetupWizard, setShowSetupWizard] = useState(false);
 
   useEffect(() => {
     api.get('/calendar/upcoming?limit=3').then(setUpcoming).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (sessionStorage.getItem('massiv_setup_skipped')) return;
+    api.get('/settings/profile').then(p => {
+      if (!p.profile_completed) setShowSetupWizard(true);
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -183,6 +192,17 @@ export default function Layout() {
           ))}
         </div>
       </nav>
+
+      {showSetupWizard && (
+        <SetupWizard
+          onComplete={() => setShowSetupWizard(false)}
+          onSkip={() => {
+            sessionStorage.setItem('massiv_setup_skipped', '1');
+            setShowSetupWizard(false);
+          }}
+          onDismissPermanently={() => setShowSetupWizard(false)}
+        />
+      )}
     </div>
   );
 }

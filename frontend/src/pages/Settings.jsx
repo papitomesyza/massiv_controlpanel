@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Plus, Trash2, Palette, Image as ImageIcon, Receipt } from 'lucide-react';
+import { Plus, Trash2, Palette, Image as ImageIcon, Receipt, Sliders } from 'lucide-react';
 import { api } from '../api';
 import { useNavigate } from 'react-router-dom';
+import SetupWizard from '../components/SetupWizard';
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -14,6 +15,7 @@ export default function Settings() {
   const [password, setPassword] = useState({ currentPass: '', newPass: '', confirm: '' });
   const [pwMsg, setPwMsg] = useState('');
   const [loading, setLoading] = useState(true);
+  const [showSetupWizard, setShowSetupWizard] = useState(false);
 
   const [taxRate, setTaxRate] = useState('18');
   const [taxLabel, setTaxLabel] = useState('Tax');
@@ -458,7 +460,29 @@ export default function Settings() {
           </button>
         </div>
 
+        {/* Workspace Profile */}
+        <div className="card card-pad">
+          <div className="section-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+            <Sliders size={15} />
+            Workspace Profile
+          </div>
+          <div style={{ fontSize: '12px', color: '#888', marginBottom: '14px' }}>
+            Update your identity and focus areas to personalize category suggestions and project phase defaults.
+          </div>
+          <button className="btn btn-ghost" onClick={() => setShowSetupWizard(true)}>
+            Re-do Setup
+          </button>
+        </div>
+
       </div>
+
+      {showSetupWizard && (
+        <SetupWizard
+          onComplete={() => setShowSetupWizard(false)}
+          onSkip={() => setShowSetupWizard(false)}
+          onDismissPermanently={() => setShowSetupWizard(false)}
+        />
+      )}
     </div>
   );
 }

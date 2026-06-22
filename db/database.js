@@ -243,8 +243,11 @@ function initDb() {
     ['Fashion Photography','Photography'],
     ['Video Editing','Post Production'],['Color Grading','Post Production'],
     ['VFX / Motion Graphics','Post Production'],['Podcast / Audio Production','Post Production'],
+    ['Audio Mixing & Mastering','Post Production'],['Subtitling & Localization','Post Production'],
     ['Branding & Identity','Branding & Digital'],['Social Media Content Management','Branding & Digital'],
     ['Graphic Design','Branding & Digital'],['Web Design','Branding & Digital'],
+    ['Photo Retouching','Photography'],['Photo Editing & Culling','Photography'],
+    ['2D / 3D Animation','Animation & Motion'],
   ].forEach(([name, group]) => insertCat.run(name, group));
 
   const insertExpCat = db.prepare('INSERT OR IGNORE INTO expense_categories (name, is_default) VALUES (?, 1)');
@@ -314,6 +317,18 @@ function initDb() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL
     );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS custom_task_suggestions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      category_name TEXT NOT NULL,
+      phase_name TEXT NOT NULL,
+      task_title TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(category_name, phase_name, task_title)
+    );
+    CREATE INDEX IF NOT EXISTS idx_custom_tasks_category ON custom_task_suggestions(category_name);
   `);
 
   db.exec(`
@@ -398,6 +413,9 @@ function initDb() {
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_rate', '18')").run();
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_label', 'Tax')").run();
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_enabled', '1')").run();
+
+  // Profile setup — seed as incomplete for new installs; existing users get the wizard once
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('profile_completed', '0')").run();
 
   // Invoice defaults — seed counter at 34 (last issued was 33/25)
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('invoice_next_num', '34')").run();

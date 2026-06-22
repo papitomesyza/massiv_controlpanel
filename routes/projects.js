@@ -122,6 +122,7 @@ router.get('/', (req, res) => {
     SELECT p.*, c.name as client_name, pc.name as category_name, pc.group_name,
       (SELECT ph.phase_name FROM project_phases ph WHERE ph.project_id=p.id AND ph.status='active' LIMIT 1) as current_phase,
       (SELECT COUNT(*) FROM project_phases ph WHERE ph.project_id=p.id AND ph.status='completed') as completed_phases,
+      (SELECT COUNT(*) FROM project_phases ph WHERE ph.project_id=p.id) as total_phases,
       COALESCE(SUM(CASE WHEN cp.status='received' THEN cp.amount ELSE 0 END),0) as total_received,
       COALESCE((SELECT SUM(ca.days*ca.rate_per_day) FROM crew_assignments ca WHERE ca.project_id=p.id),0) as total_crew_cost,
       COALESCE((SELECT SUM(e.amount) FROM expenses e WHERE e.project_id=p.id AND e.status='confirmed'),0) as total_expenses
@@ -165,7 +166,7 @@ function syncProjectCalendarEvent(projectId, title, shootDate, shootLocation) {
     db.prepare("DELETE FROM calendar_events WHERE project_id = ? AND event_type = 'shoot'").run(projectId);
     return;
   }
-  const existing = db.prepare("SELECT id FROM calendar_events WHERE project_id = ? AND event_type = 'shoot'").get(projectId, 'shoot');
+  const existing = db.prepare("SELECT id FROM calendar_events WHERE project_id = ? AND event_type = 'shoot'").get(projectId);
   if (existing) {
     db.prepare('UPDATE calendar_events SET title=?, start_date=?, location=? WHERE id=?')
       .run(title, shootDate, shootLocation || null, existing.id);
@@ -177,7 +178,7 @@ function syncProjectCalendarEvent(projectId, title, shootDate, shootLocation) {
 
 // Create project
 router.post('/', (req, res) => {
-  const { client_id, title, category_id, client_budget, agreed_budget, notes, shoot_date, shoot_days, shoot_location, location_name, location_lat, location_lng } = req.body;
+  const { client_id, title, category_id, client_budget, agreed_budget, notes, shoot_date, shoot_days, shoot_location, location_name, location_lat, location_lng, phases: requestedPhases } = req.body;
   if (!title) return res.status(400).json({ error: 'Title required' });
 
   const errCB = validateMoney(client_budget || 0, 'client_budget');
@@ -185,26 +186,55 @@ router.post('/', (req, res) => {
   const errAB = validateMoney(agreed_budget || 0, 'agreed_budget');
   if (errAB) return res.status(400).json({ error: errAB });
 
-  const effectiveLocation = location_name || shoot_location || null;
-  const result = db.prepare(
-    'INSERT INTO projects (client_id, title, category_id, client_budget, agreed_budget, notes, shoot_date, shoot_days, shoot_location, location_name, location_lat, location_lng, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).run(client_id || null, title, category_id || null, client_budget || 0, agreed_budget || 0, notes || null, shoot_date || null, shoot_days || 1, effectiveLocation, location_name || null, location_lat || null, location_lng || null, 'development');
+  const phasesToCreate = Array.isArray(requestedPhases) && requestedPhases.length > 0
+    ? PHASES.filter(p => requestedPhases.includes(p))
+    : PHASES;
+  if (phasesToCreate.length === 0) return res.status(400).json({ error: 'At least one phase required' });
 
-  const projectId = result.lastInsertRowid;
-  const insertPhase = db.prepare('INSERT INTO project_phases (project_id, phase_name, order_index, status) VALUES (?, ?, ?, ?)');
-  PHASES.forEach((name, i) => insertPhase.run(projectId, name, i, i === 0 ? 'active' : 'pending'));
+  const initialStatus = phasesToCreate[0].toLowerCase().replace(/ /g, '-');
 
-  const devPhase = db.prepare("SELECT id FROM project_phases WHERE project_id=? AND phase_name='Development'").get(projectId);
-  if (devPhase) {
-    const insertLocked = db.prepare('INSERT INTO tasks (phase_id, project_id, title, is_locked) VALUES (?, ?, ?, 1)');
-    insertLocked.run(devPhase.id, projectId, 'Treatment Approved');
-    insertLocked.run(devPhase.id, projectId, 'Budget Approved');
+  try {
+    const effectiveLocation = location_name || shoot_location || null;
+    const result = db.prepare(
+      'INSERT INTO projects (client_id, title, category_id, client_budget, agreed_budget, notes, shoot_date, shoot_days, shoot_location, location_name, location_lat, location_lng, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(client_id || null, title, category_id || null, client_budget || 0, agreed_budget || 0, notes || null, shoot_date || null, shoot_days || 1, effectiveLocation, location_name || null, location_lat || null, location_lng || null, initialStatus);
+
+    const projectId = result.lastInsertRowid;
+    const insertPhase = db.prepare('INSERT INTO project_phases (project_id, phase_name, order_index, status) VALUES (?, ?, ?, ?)');
+    phasesToCreate.forEach((name, i) => insertPhase.run(projectId, name, i, i === 0 ? 'active' : 'pending'));
+
+    syncProjectCalendarEvent(projectId, title, shoot_date, effectiveLocation);
+
+    const phases = db.prepare('SELECT * FROM project_phases WHERE project_id = ? ORDER BY order_index').all(projectId);
+    res.json({ id: projectId, phases });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
+});
 
-  syncProjectCalendarEvent(projectId, title, shoot_date, effectiveLocation);
+// Custom task suggestions — must come before /:id
+router.get('/custom-task-suggestions', (req, res) => {
+  const { category } = req.query;
+  if (!category) return res.json([]);
+  const rows = db.prepare(
+    'SELECT phase_name, task_title FROM custom_task_suggestions WHERE category_name = ? ORDER BY phase_name, created_at DESC'
+  ).all(category);
+  res.json(rows);
+});
 
-  const phases = db.prepare('SELECT * FROM project_phases WHERE project_id = ? ORDER BY order_index').all(projectId);
-  res.json({ id: projectId, phases });
+router.post('/custom-task-suggestions', (req, res) => {
+  const { items } = req.body;
+  if (!Array.isArray(items) || items.length === 0) return res.json({ ok: true });
+  const insert = db.prepare(
+    'INSERT OR IGNORE INTO custom_task_suggestions (category_name, phase_name, task_title) VALUES (?, ?, ?)'
+  );
+  const insertMany = db.transaction(list => list.forEach(item => {
+    if (item.category_name && item.phase_name && item.task_title) {
+      insert.run(item.category_name, item.phase_name, item.task_title);
+    }
+  }));
+  insertMany(items);
+  res.json({ ok: true });
 });
 
 // Get project full detail
@@ -295,32 +325,29 @@ router.post('/:id/duplicate', (req, res) => {
   const existing = db.prepare('SELECT id FROM projects WHERE title = ?').get(title.trim());
   if (existing) return res.status(400).json({ error: 'A project with this title already exists' });
 
+  const originalPhases = db.prepare('SELECT * FROM project_phases WHERE project_id = ? ORDER BY order_index').all(req.params.id);
+  const initialStatus = originalPhases.length > 0
+    ? originalPhases[0].phase_name.toLowerCase().replace(/ /g, '-')
+    : 'development';
+
   const result = db.prepare(
     'INSERT INTO projects (client_id, title, category_id, client_budget, agreed_budget, notes, shoot_date, shoot_days, shoot_location, location_name, location_lat, location_lng, status, duplicated_from) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(
     original.client_id, title.trim(), original.category_id, original.client_budget,
     original.agreed_budget, original.notes, original.shoot_date, original.shoot_days,
     original.shoot_location, original.location_name, original.location_lat, original.location_lng,
-    'development', original.id
+    initialStatus, original.id
   );
 
   const newProjectId = result.lastInsertRowid;
 
   const insertPhase = db.prepare('INSERT INTO project_phases (project_id, phase_name, order_index, status) VALUES (?, ?, ?, ?)');
   const newPhaseIds = {};
-  PHASES.forEach((name, i) => {
-    const r = insertPhase.run(newProjectId, name, i, i === 0 ? 'active' : 'pending');
-    newPhaseIds[name] = r.lastInsertRowid;
+  originalPhases.forEach((origPhase, i) => {
+    const r = insertPhase.run(newProjectId, origPhase.phase_name, i, i === 0 ? 'active' : 'pending');
+    newPhaseIds[origPhase.phase_name] = r.lastInsertRowid;
   });
 
-  const devPhase = db.prepare("SELECT id FROM project_phases WHERE project_id=? AND phase_name='Development'").get(newProjectId);
-  if (devPhase) {
-    const insertLocked = db.prepare('INSERT INTO tasks (phase_id, project_id, title, is_locked) VALUES (?, ?, ?, 1)');
-    insertLocked.run(devPhase.id, newProjectId, 'Treatment Approved');
-    insertLocked.run(devPhase.id, newProjectId, 'Budget Approved');
-  }
-
-  const originalPhases = db.prepare('SELECT * FROM project_phases WHERE project_id = ? ORDER BY order_index').all(req.params.id);
   const insertTask = db.prepare('INSERT INTO tasks (phase_id, project_id, title, assigned_crew_id, due_date, notes, status) VALUES (?, ?, ?, ?, ?, ?, ?)');
   originalPhases.forEach(origPhase => {
     const newPhaseId = newPhaseIds[origPhase.phase_name];

@@ -151,6 +151,28 @@ router.post('/tax', (req, res) => {
   res.json({ ok: true });
 });
 
+router.get('/profile', (req, res) => {
+  const rows = db.prepare(
+    "SELECT key, value FROM settings WHERE key IN ('profile_completed', 'profile_identity', 'profile_focus')"
+  ).all();
+  const map = {};
+  rows.forEach(r => { map[r.key] = r.value; });
+  res.json({
+    profile_completed: map.profile_completed === '1',
+    identity: map.profile_identity || null,
+    focus: map.profile_focus ? JSON.parse(map.profile_focus) : [],
+  });
+});
+
+router.post('/profile', (req, res) => {
+  const { profile_completed, identity, focus } = req.body;
+  const upsert = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
+  if (profile_completed !== undefined) upsert.run('profile_completed', profile_completed ? '1' : '0');
+  if (identity !== undefined) upsert.run('profile_identity', identity);
+  if (focus !== undefined) upsert.run('profile_focus', JSON.stringify(focus));
+  res.json({ ok: true });
+});
+
 router.get('/:key', (req, res) => {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(req.params.key);
   res.json({ value: row ? row.value : null });

@@ -273,7 +273,8 @@ export default function Projects() {
 /* ─── Project row card ─── */
 function ProjectRowCard({ p }) {
   const shootChip    = getShootChip(p.shoot_date);
-  const phaseProgress = Math.round((p.completed_phases / 4) * 100);
+  const totalPhases  = p.total_phases || 4;
+  const phaseProgress = totalPhases > 0 ? Math.round((p.completed_phases / totalPhases) * 100) : 0;
   const receivedPct  = p.agreed_budget > 0
     ? Math.min(100, Math.round((p.total_received / p.agreed_budget) * 100)) : 0;
 
@@ -305,7 +306,7 @@ function ProjectRowCard({ p }) {
           <div>
             <div className="project-bar-label">
               <span>{p.current_phase || 'No active phase'}</span>
-              <span>{p.completed_phases}/4 phases</span>
+              <span>{p.completed_phases}/{totalPhases} phases</span>
             </div>
             <div className="progress-bar">
               <div className="progress-fill" style={{ width: `${phaseProgress}%` }} />

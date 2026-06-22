@@ -53,14 +53,27 @@ router.get('/stats', (req, res) => {
     WHERE ca.paid_status IN ('paid', 'partial') AND strftime('%Y-%m', ca.payment_date) = ?${crewFilter}
   `).get(...crewParams).total;
 
-  // Outstanding = sum of (agreed_budget - received) for each non-completed project with a positive balance
+  // Pending = owed balance > 0 AND (no shoot date OR shoot passed OR completed)
   const outstanding = db.prepare(`
-    SELECT COALESCE(SUM(CASE WHEN (p.agreed_budget - COALESCE(r.total, 0)) > 0 THEN (p.agreed_budget - COALESCE(r.total, 0)) ELSE 0 END), 0) as total
+    SELECT COALESCE(SUM(p.agreed_budget - COALESCE(r.total, 0)), 0) as total
     FROM projects p
     LEFT JOIN (
       SELECT project_id, SUM(amount) as total FROM client_payments WHERE status='received' GROUP BY project_id
     ) r ON r.project_id = p.id
-    WHERE p.status != 'completed'
+    WHERE (p.agreed_budget - COALESCE(r.total, 0)) > 0
+      AND (p.shoot_date IS NULL OR p.shoot_date <= date('now') OR p.status = 'completed')
+  `).get().total;
+
+  // Upcoming = owed balance > 0 AND shoot date is in the future AND not completed
+  const upcoming = db.prepare(`
+    SELECT COALESCE(SUM(p.agreed_budget - COALESCE(r.total, 0)), 0) as total
+    FROM projects p
+    LEFT JOIN (
+      SELECT project_id, SUM(amount) as total FROM client_payments WHERE status='received' GROUP BY project_id
+    ) r ON r.project_id = p.id
+    WHERE (p.agreed_budget - COALESCE(r.total, 0)) > 0
+      AND p.shoot_date > date('now')
+      AND p.status != 'completed'
   `).get().total;
 
   // Unpaid crew: sum of remaining-owed (days*rate - payment_amount, never below 0) for unpaid/partial
@@ -89,7 +102,7 @@ router.get('/stats', (req, res) => {
   res.json({
     revenue, expenses, crewCosts,
     netProfit: revenue - expenses - crewCosts,
-    outstanding, unpaidCrew, completedThisMonth, avgProjectValue, overdueAmount,
+    outstanding, upcoming, unpaidCrew, completedThisMonth, avgProjectValue, overdueAmount,
   });
 });
 
@@ -145,9 +158,29 @@ router.get('/details/outstanding', (req, res) => {
     LEFT JOIN (
       SELECT project_id, SUM(amount) as total FROM client_payments WHERE status='received' GROUP BY project_id
     ) r ON r.project_id = p.id
-    WHERE p.status != 'completed'
-      AND (p.agreed_budget - COALESCE(r.total, 0)) > 0
+    WHERE (p.agreed_budget - COALESCE(r.total, 0)) > 0
+      AND (p.shoot_date IS NULL OR p.shoot_date <= date('now') OR p.status = 'completed')
     ORDER BY outstanding DESC
+  `).all();
+  res.json(rows);
+});
+
+router.get('/details/upcoming', (req, res) => {
+  const rows = db.prepare(`
+    SELECT p.id, p.title as project_title, c.name as client_name,
+      p.agreed_budget,
+      COALESCE(r.total, 0) as total_received,
+      (p.agreed_budget - COALESCE(r.total, 0)) as outstanding,
+      p.shoot_date
+    FROM projects p
+    LEFT JOIN clients c ON c.id = p.client_id
+    LEFT JOIN (
+      SELECT project_id, SUM(amount) as total FROM client_payments WHERE status='received' GROUP BY project_id
+    ) r ON r.project_id = p.id
+    WHERE (p.agreed_budget - COALESCE(r.total, 0)) > 0
+      AND p.shoot_date > date('now')
+      AND p.status != 'completed'
+    ORDER BY p.shoot_date ASC
   `).all();
   res.json(rows);
 });

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { X, Plus, Lock, Check, Search } from 'lucide-react';
+import { X, Plus, Check, Search, SkipForward } from 'lucide-react';
 import { api } from '../api';
 import { getTasksForCategory } from '../data/projectTasks';
 
@@ -118,6 +118,25 @@ export function LocationPicker({ value, lat, lng, onChange }) {
 const PHASES = ['Development', 'Pre-Production', 'Production', 'Post-Production'];
 const STEP_LABELS = ['Project Info', 'Development', 'Pre-Production', 'Production', 'Post-Production', 'Review'];
 
+const FOCUS_TO_GROUP = {
+  video: 'Video Production',
+  photography: 'Photography',
+  post: 'Post Production',
+  design: 'Branding & Digital',
+  animation: 'Animation & Motion',
+};
+
+function getDefaultSkippedPhases(profile) {
+  if (!profile || !profile.identity) return new Set();
+  if (profile.identity === 'agency') return new Set();
+  const focus = Array.isArray(profile.focus) ? profile.focus : [];
+  if (focus.length === 0) return new Set();
+  const hasShootFocus = focus.includes('video') || focus.includes('photography');
+  const hasPostFocus = focus.includes('post') || focus.includes('animation');
+  if (hasPostFocus && !hasShootFocus) return new Set(['Development', 'Production']);
+  return new Set();
+}
+
 function initTasksFromOptions(options) {
   return options.map(t => ({ title: t, included: true, crew_id: '' }));
 }
@@ -144,17 +163,31 @@ export default function ProjectWizard({ onClose, onCreated, prefill }) {
     'Development': [], 'Pre-Production': [], 'Production': [], 'Post-Production': [],
   });
 
+  // Set of phase names the user has chosen to skip
+  const [skippedPhases, setSkippedPhases] = useState(new Set());
+  const [profile, setProfile] = useState(null);
+
+  // Custom task suggestions from memory, grouped by phase name
+  const [customSuggestions, setCustomSuggestions] = useState({});
+
   const [err, setErr] = useState('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     Promise.all([api.get('/clients'), api.get('/settings/project-categories'), api.get('/crew')])
       .then(([cl, ca, cr]) => { setClients(cl); setCategories(ca); setCrewList(cr.filter(c => !c.archived)); });
+    api.get('/settings/profile').then(p => {
+      setProfile(p);
+      setSkippedPhases(getDefaultSkippedPhases(p));
+    }).catch(() => {});
   }, []);
 
   // Rebuild task options whenever category or shoot_days changes
   useEffect(() => {
-    if (!basicInfo.category_id) return;
+    if (!basicInfo.category_id) {
+      setCustomSuggestions({});
+      return;
+    }
     const cat = categories.find(c => c.id === parseInt(basicInfo.category_id));
     if (!cat) return;
     const tasksByPhase = getTasksForCategory(cat.name, parseInt(basicInfo.shoot_days) || 1);
@@ -164,9 +197,30 @@ export default function ProjectWizard({ onClose, onCreated, prefill }) {
       'Production': initTasksFromOptions(tasksByPhase['Production']),
       'Post-Production': initTasksFromOptions(tasksByPhase['Post-Production']),
     });
+
+    // Fetch remembered custom tasks for this category
+    api.get(`/projects/custom-task-suggestions?category=${encodeURIComponent(cat.name)}`)
+      .then(rows => {
+        const grouped = {};
+        rows.forEach(r => {
+          grouped[r.phase_name] = grouped[r.phase_name] || [];
+          grouped[r.phase_name].push(r.task_title);
+        });
+        setCustomSuggestions(grouped);
+      })
+      .catch(() => {});
   }, [basicInfo.category_id, basicInfo.shoot_days, categories]);
 
   function bInfo(k, v) { setBasicInfo(p => ({ ...p, [k]: v })); }
+
+  function toggleSkip(phase) {
+    setSkippedPhases(prev => {
+      const next = new Set(prev);
+      if (next.has(phase)) next.delete(phase);
+      else next.add(phase);
+      return next;
+    });
+  }
 
   function toggleTask(phase, idx) {
     setPhaseTasks(prev => ({
@@ -203,7 +257,13 @@ export default function ProjectWizard({ onClose, onCreated, prefill }) {
     setStep(s => s + 1);
   }
 
+  const activePhases = PHASES.filter(p => !skippedPhases.has(p));
+
   async function handleSubmit() {
+    if (activePhases.length === 0) {
+      setErr('At least one phase must be included');
+      return;
+    }
     setSaving(true);
     setErr('');
     try {
@@ -219,10 +279,11 @@ export default function ProjectWizard({ onClose, onCreated, prefill }) {
         location_name: basicInfo.location_name || null,
         location_lat: basicInfo.location_lat || null,
         location_lng: basicInfo.location_lng || null,
+        phases: activePhases,
       });
 
       const tasks = [];
-      PHASES.forEach(phaseName => {
+      activePhases.forEach(phaseName => {
         const phase = phases.find(p => p.phase_name === phaseName);
         if (!phase) return;
         (phaseTasks[phaseName] || []).filter(t => t.included).forEach(t => {
@@ -232,6 +293,22 @@ export default function ProjectWizard({ onClose, onCreated, prefill }) {
 
       if (tasks.length > 0) {
         await api.post(`/projects/${id}/tasks/batch`, { tasks });
+      }
+
+      // Save custom tasks to memory
+      const cat = categories.find(c => c.id === parseInt(basicInfo.category_id));
+      if (cat) {
+        const customItems = [];
+        activePhases.forEach(phaseName => {
+          (phaseTasks[phaseName] || [])
+            .filter(t => t.isCustom && t.included)
+            .forEach(t => {
+              customItems.push({ category_name: cat.name, phase_name: phaseName, task_title: t.title });
+            });
+        });
+        if (customItems.length > 0) {
+          await api.post('/projects/custom-task-suggestions', { items: customItems }).catch(() => {});
+        }
       }
 
       onCreated(id);
@@ -276,17 +353,21 @@ export default function ProjectWizard({ onClose, onCreated, prefill }) {
 
         {/* Step indicator */}
         <div className="wizard-steps">
-          {STEP_LABELS.map((label, i) => (
-            <React.Fragment key={i}>
-              <div className={`wizard-step-item ${i === step ? 'current' : i < step ? 'done' : ''}`}>
-                <div className="wizard-step-dot">
-                  {i < step ? <Check size={10} /> : <span>{i + 1}</span>}
+          {STEP_LABELS.map((label, i) => {
+            const phaseForStep = PHASES[i - 1];
+            const isSkipped = phaseForStep && skippedPhases.has(phaseForStep);
+            return (
+              <React.Fragment key={i}>
+                <div className={`wizard-step-item ${i === step ? 'current' : i < step ? 'done' : ''} ${isSkipped ? 'skipped' : ''}`}>
+                  <div className="wizard-step-dot" style={isSkipped ? { background: '#333', borderColor: '#444' } : {}}>
+                    {isSkipped ? <X size={10} style={{ color: '#666' }} /> : i < step ? <Check size={10} /> : <span>{i + 1}</span>}
+                  </div>
+                  <span className="wizard-step-label" style={isSkipped ? { color: '#555' } : {}}>{label}</span>
                 </div>
-                <span className="wizard-step-label">{label}</span>
-              </div>
-              {i < STEP_LABELS.length - 1 && <div className="wizard-step-connector" />}
-            </React.Fragment>
-          ))}
+                {i < STEP_LABELS.length - 1 && <div className="wizard-step-connector" />}
+              </React.Fragment>
+            );
+          })}
         </div>
 
         {/* Content */}
@@ -296,6 +377,7 @@ export default function ProjectWizard({ onClose, onCreated, prefill }) {
               form={basicInfo} setForm={bInfo}
               clients={clients} grouped={grouped}
               onAddClient={() => setShowNewClient(true)}
+              profile={profile}
             />
           )}
           {step >= 1 && step <= 4 && (
@@ -308,10 +390,17 @@ export default function ProjectWizard({ onClose, onCreated, prefill }) {
               onRemoveCustom={(idx) => removeCustomTask(currentPhase, idx)}
               crewList={crewList}
               onAddCrew={() => setShowNewCrew(true)}
+              skipped={skippedPhases.has(currentPhase)}
+              onSkip={() => toggleSkip(currentPhase)}
+              memorySuggestions={customSuggestions[currentPhase] || []}
             />
           )}
           {step === 5 && (
-            <StepReview basicInfo={basicInfo} phaseTasks={phaseTasks} clients={clients} categories={categories} />
+            <StepReview
+              basicInfo={basicInfo} phaseTasks={phaseTasks}
+              clients={clients} categories={categories}
+              skippedPhases={skippedPhases}
+            />
           )}
         </div>
 
@@ -326,7 +415,7 @@ export default function ProjectWizard({ onClose, onCreated, prefill }) {
           {step < 5 ? (
             <button className="btn btn-primary" onClick={goNext}>Next →</button>
           ) : (
-            <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
+            <button className="btn btn-primary" onClick={handleSubmit} disabled={saving || activePhases.length === 0}>
               {saving ? 'Creating...' : 'Create Project'}
             </button>
           )}
@@ -340,7 +429,12 @@ export default function ProjectWizard({ onClose, onCreated, prefill }) {
 }
 
 /* ---- Step 1: Basic Info ---- */
-function StepBasicInfo({ form, setForm, clients, grouped, onAddClient }) {
+function StepBasicInfo({ form, setForm, clients, grouped, onAddClient, profile }) {
+  const focusGroups = (profile?.focus?.length > 0)
+    ? [...new Set(profile.focus.map(f => FOCUS_TO_GROUP[f]).filter(Boolean))]
+    : [];
+  const otherGroups = Object.keys(grouped).filter(g => !focusGroups.includes(g));
+
   return (
     <div>
       <div className="form-row">
@@ -367,9 +461,26 @@ function StepBasicInfo({ form, setForm, clients, grouped, onAddClient }) {
           <label className="form-label">Category</label>
           <select className="select" value={form.category_id} onChange={e => setForm('category_id', e.target.value)}>
             <option value="">No category</option>
-            {Object.entries(grouped).map(([g, cats]) => (
-              <optgroup key={g} label={g}>{cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</optgroup>
-            ))}
+            {focusGroups.length > 0 ? (
+              <>
+                {focusGroups.map(g => (grouped[g] || []).length > 0 && (
+                  <optgroup key={g} label={g}>
+                    {(grouped[g] || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </optgroup>
+                ))}
+                {otherGroups.length > 0 && (
+                  <optgroup label="Other">
+                    {otherGroups.flatMap(g => (grouped[g] || []).map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    )))}
+                  </optgroup>
+                )}
+              </>
+            ) : (
+              Object.entries(grouped).map(([g, cats]) => (
+                <optgroup key={g} label={g}>{cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</optgroup>
+              ))
+            )}
           </select>
         </div>
       </div>
@@ -415,7 +526,7 @@ function StepBasicInfo({ form, setForm, clients, grouped, onAddClient }) {
 }
 
 /* ---- Phase task selection step ---- */
-export function PhaseTaskStep({ phaseName, tasks, onToggle, onCrewChange, onAddCustom, onRemoveCustom, crewList, onAddCrew }) {
+export function PhaseTaskStep({ phaseName, tasks, onToggle, onCrewChange, onAddCustom, onRemoveCustom, crewList, onAddCrew, skipped, onSkip, memorySuggestions }) {
   const [customInput, setCustomInput] = useState('');
 
   function addCustom() {
@@ -424,13 +535,56 @@ export function PhaseTaskStep({ phaseName, tasks, onToggle, onCrewChange, onAddC
     setCustomInput('');
   }
 
+  // Memory suggestions not already in the task list
+  const availableMemorySuggestions = (memorySuggestions || []).filter(
+    title => !tasks.some(t => t.title === title)
+  );
+
+  if (skipped) {
+    return (
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+          <span className="section-title" style={{ color: '#555' }}>{phaseName} Phase</span>
+          {onSkip && (
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={onSkip}
+              style={{ fontSize: '11px', color: '#888' }}
+            >
+              Restore phase
+            </button>
+          )}
+        </div>
+        <div style={{
+          padding: '24px', textAlign: 'center', borderRadius: '12px',
+          background: 'rgba(255,255,255,0.03)', border: '1px dashed rgba(255,255,255,0.1)',
+        }}>
+          <SkipForward size={20} style={{ color: '#444', marginBottom: '8px' }} />
+          <div className="text-2 text-sm">This phase will be skipped</div>
+          <div className="text-xs text-2" style={{ marginTop: '4px' }}>No phase or tasks will be created for {phaseName}</div>
+        </div>
+      </div>
+    );
+  }
+
   const hasOptions = tasks.length > 0;
 
   return (
     <div>
       <div className="wizard-phase-header">
-        <span className="section-title">{phaseName} Phase</span>
-        <span className="text-xs text-2">{tasks.filter(t => t.included).length} / {tasks.length} selected</span>
+        <div>
+          <span className="section-title">{phaseName} Phase</span>
+          <span className="text-xs text-2" style={{ marginLeft: '10px' }}>{tasks.filter(t => t.included).length} / {tasks.length} selected</span>
+        </div>
+        {onSkip && (
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={onSkip}
+            style={{ fontSize: '11px', color: '#666' }}
+          >
+            <SkipForward size={12} /> Skip phase
+          </button>
+        )}
       </div>
 
       {!hasOptions && (
@@ -472,6 +626,28 @@ export function PhaseTaskStep({ phaseName, tasks, onToggle, onCrewChange, onAddC
         ))}
       </div>
 
+      {/* Memory suggestions */}
+      {availableMemorySuggestions.length > 0 && (
+        <div style={{ marginTop: '16px' }}>
+          <div className="text-xs text-2" style={{ marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Your tasks</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+            {availableMemorySuggestions.map((title, i) => (
+              <button
+                key={i}
+                onClick={() => onAddCustom(title)}
+                style={{
+                  background: 'rgba(255,144,47,0.08)', border: '1px solid rgba(255,144,47,0.25)',
+                  borderRadius: '50px', padding: '4px 12px', fontSize: '11px', color: '#c97b30',
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px',
+                }}
+              >
+                <Plus size={10} /> {title}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="task-custom-add">
         <input
           className="input"
@@ -488,10 +664,11 @@ export function PhaseTaskStep({ phaseName, tasks, onToggle, onCrewChange, onAddC
 }
 
 /* ---- Review step ---- */
-function StepReview({ basicInfo, phaseTasks, clients, categories }) {
+function StepReview({ basicInfo, phaseTasks, clients, categories, skippedPhases }) {
   const client = clients.find(c => c.id === parseInt(basicInfo.client_id));
   const cat = categories.find(c => c.id === parseInt(basicInfo.category_id));
-  const totalTasks = Object.values(phaseTasks).reduce((s, arr) => s + arr.filter(t => t.included).length, 0);
+  const activePhases = PHASES.filter(p => !skippedPhases.has(p));
+  const totalTasks = activePhases.reduce((s, phase) => s + (phaseTasks[phase] || []).filter(t => t.included).length, 0);
 
   return (
     <div>
@@ -503,12 +680,18 @@ function StepReview({ basicInfo, phaseTasks, clients, categories }) {
         {basicInfo.agreed_budget && <div className="fin-row"><span className="text-2">Agreed Budget</span><span>€{parseFloat(basicInfo.agreed_budget).toFixed(2)}</span></div>}
         {basicInfo.shoot_date && <div className="fin-row"><span className="text-2">Shoot Date</span><span>{basicInfo.shoot_date}</span></div>}
         {basicInfo.location_name && <div className="fin-row"><span className="text-2">Location</span><span style={{ maxWidth: '200px', textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{basicInfo.location_name}</span></div>}
-        <div className="fin-row"><span className="text-2">Total Tasks</span><span>{totalTasks} tasks across {Object.values(phaseTasks).filter(a => a.some(t => t.included)).length} phases</span></div>
+        <div className="fin-row"><span className="text-2">Phases</span><span>{activePhases.length} of 4{skippedPhases.size > 0 ? ` (${[...skippedPhases].join(', ')} skipped)` : ''}</span></div>
+        <div className="fin-row"><span className="text-2">Total Tasks</span><span>{totalTasks} tasks across {activePhases.filter(p => (phaseTasks[p] || []).some(t => t.included)).length} phases</span></div>
       </div>
 
-      {PHASES.map(phase => {
+      {activePhases.map(phase => {
         const selected = (phaseTasks[phase] || []).filter(t => t.included);
-        if (selected.length === 0) return null;
+        if (selected.length === 0) return (
+          <div key={phase} style={{ marginBottom: '10px' }}>
+            <div className="text-xs text-2" style={{ textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>{phase}</div>
+            <div className="text-xs text-2" style={{ fontStyle: 'italic' }}>No tasks selected</div>
+          </div>
+        );
         return (
           <div key={phase} style={{ marginBottom: '12px' }}>
             <div className="text-xs text-2" style={{ textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>{phase}</div>
@@ -521,9 +704,15 @@ function StepReview({ basicInfo, phaseTasks, clients, categories }) {
         );
       })}
 
-      <div className="text-xs text-2" style={{ marginTop: '16px', fontStyle: 'italic' }}>
-        Note: "Treatment Approved" and "Budget Approved" are automatically added as locked tasks in Development.
-      </div>
+      {skippedPhases.size > 0 && [...skippedPhases].map(phase => (
+        <div key={phase} style={{ marginBottom: '10px', opacity: 0.4 }}>
+          <div className="text-xs" style={{ textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px', color: '#555' }}>{phase} — skipped</div>
+        </div>
+      ))}
+
+      {activePhases.length === 0 && (
+        <div className="error-msg">No phases selected — at least one phase is required.</div>
+      )}
     </div>
   );
 }

@@ -4,7 +4,7 @@ import {
   Activity, TrendingUp, DollarSign, AlertCircle, UserX,
   FolderCheck, BarChart2, Users as UsersIcon,
   X, CheckCircle, ArrowRight, Lightbulb, LayoutGrid, GripHorizontal, Eye, EyeOff,
-  CalendarDays,
+  CalendarDays, Clock,
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { api, fmt, fmtDate } from '../api';
@@ -317,6 +317,14 @@ function WidgetContent({ id, stats, projects, expenses, chartData, leads, setAct
             onClick={() => setActiveModal('outstanding')}
           />
           <StatCard
+            label="Upcoming"
+            value={fmt(stats?.upcoming)}
+            icon={<Clock size={16} />}
+            iconTint="blue"
+            sub={stats?.upcoming > 0 ? 'Future shoots booked' : 'No upcoming balance'}
+            onClick={() => setActiveModal('upcoming')}
+          />
+          <StatCard
             label="Unpaid Crew"
             value={fmt(stats?.unpaidCrew)}
             danger={stats?.unpaidCrew > 0}
@@ -591,6 +599,7 @@ function DashboardModal({ type, month, projects, onClose, onReload }) {
       'revenue':     `/finances/details/revenue?month=${month}`,
       'profit':      `/finances/details/profit?month=${month}`,
       'outstanding': '/finances/details/outstanding',
+      'upcoming':    '/finances/details/upcoming',
       'unpaid-crew': '/finances/details/unpaid-crew',
     };
     api.get(endpointMap[type]).then(d => { setData(d); setLoading(false); }).catch(() => setLoading(false));
@@ -617,6 +626,7 @@ function DashboardModal({ type, month, projects, onClose, onReload }) {
     'revenue':         'Revenue This Month',
     'profit':          'Profit This Month',
     'outstanding':     'Pending Payments',
+    'upcoming':        'Upcoming — Future Shoots',
     'unpaid-crew':     'Unpaid Crew',
   };
 
@@ -714,6 +724,35 @@ function DashboardModal({ type, month, projects, onClose, onReload }) {
                 {data.length > 0 && (
                   <div style={{ padding: '10px 12px', fontWeight: 700, borderTop: '1px solid var(--border)', textAlign: 'right', color: 'var(--danger)' }}>
                     Total Pending: {fmt(data.reduce((s, r) => s + r.outstanding, 0))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {type === 'upcoming' && (
+              <div className="table-wrap">
+                <div style={{ padding: '8px 12px 4px', fontSize: '12px', color: '#888' }}>
+                  Future shoots with an unpaid balance — not yet due.
+                </div>
+                <table>
+                  <thead><tr><th>Project</th><th>Client</th><th>Budget</th><th>Received</th><th>Balance</th><th>Shoot Date</th></tr></thead>
+                  <tbody>
+                    {data.map(row => (
+                      <tr key={row.id}>
+                        <td><Link to={`/projects/${row.id}`} className="link text-bold" onClick={onClose}>{row.project_title}</Link></td>
+                        <td className="text-2 text-sm">{row.client_name || '—'}</td>
+                        <td className="text-sm">{fmt(row.agreed_budget)}</td>
+                        <td className="text-2 text-sm">{fmt(row.total_received)}</td>
+                        <td className="text-bold" style={{ color: '#3B9EE8' }}>{fmt(row.outstanding)}</td>
+                        <td className="text-sm">{fmtDate(row.shoot_date)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {data.length === 0 && <div className="empty">No upcoming shoots with a balance</div>}
+                {data.length > 0 && (
+                  <div style={{ padding: '10px 12px', fontWeight: 700, borderTop: '1px solid var(--border)', textAlign: 'right', color: '#3B9EE8' }}>
+                    Total Expected: {fmt(data.reduce((s, r) => s + r.outstanding, 0))}
                   </div>
                 )}
               </div>

@@ -1,6 +1,6 @@
 const TASKS = {
   'Music Video': {
-    'Development': ["Director's Treatment", 'Budget Breakdown', 'Concept Approval', 'Moodboard', 'Script/Storyboard'],
+    'Development': ["Director's Treatment", 'Treatment Approved', 'Budget Breakdown', 'Budget Approved', 'Concept Approval', 'Moodboard', 'Script/Storyboard'],
     'Pre-Production': ['Location Scouting', 'Casting', 'Costume Design', 'Makeup & Hair Planning', 'Scenography', 'Equipment Planning', 'Transportation Planning', 'Accommodation Planning', 'Crew Booking', 'Shot List'],
     'Production': (days) => {
       const t = ['Shoot Day 1'];
@@ -10,7 +10,7 @@ const TASKS = {
     'Post-Production': ['Editing', 'Color Grading', 'VFX', 'Sound Design', 'Subtitles', 'Client Review', 'Final Delivery', 'Archive'],
   },
   'TV Commercial': {
-    'Development': ["Director's Treatment", 'Budget Breakdown', 'Brand Brief Review', 'Script', 'Storyboard', 'Client Concept Approval'],
+    'Development': ["Director's Treatment", 'Treatment Approved', 'Budget Breakdown', 'Budget Approved', 'Brand Brief Review', 'Script', 'Storyboard', 'Client Concept Approval'],
     'Pre-Production': ['Location Scouting', 'Casting', 'Costume Design', 'Props Planning', 'Equipment Planning', 'Transportation', 'Accommodation', 'Crew Booking', 'Shot List'],
     'Production': (days) => {
       const t = ['Shoot Day 1'];
@@ -20,7 +20,7 @@ const TASKS = {
     'Post-Production': ['Offline Edit', 'Online Edit', 'Color Grading', 'Sound Mix', 'Graphics/Motion', 'Client Review', 'Broadcast Delivery', 'Archive'],
   },
   'Corporate Video / Brand Film': {
-    'Development': ['Brief Review', 'Budget Breakdown', 'Script', 'Moodboard', 'Storyboard'],
+    'Development': ['Brief Review', 'Budget Breakdown', 'Budget Approved', 'Treatment Approved', 'Script', 'Moodboard', 'Storyboard'],
     'Pre-Production': ['Location Scouting', 'Equipment Planning', 'Crew Booking', 'Transportation', 'Interview Setup Planning'],
     'Production': (days) => {
       const t = ['Shoot Day 1'];
@@ -30,7 +30,7 @@ const TASKS = {
     'Post-Production': ['Edit', 'Color Grade', 'Sound', 'Motion Graphics', 'Client Review', 'Delivery', 'Archive'],
   },
   'Documentary / Short Film': {
-    'Development': ['Treatment', 'Budget Breakdown', 'Research', 'Script', 'Moodboard'],
+    'Development': ['Treatment', 'Treatment Approved', 'Budget Breakdown', 'Budget Approved', 'Research', 'Script', 'Moodboard'],
     'Pre-Production': ['Location Scouting', 'Casting', 'Equipment Planning', 'Crew Booking', 'Transportation', 'Accommodation'],
     'Production': (days) => {
       const t = [];
@@ -40,13 +40,13 @@ const TASKS = {
     'Post-Production': ['Assembly Cut', 'Rough Cut', 'Fine Cut', 'Color Grade', 'Sound Mix', 'Music Licensing', 'Client Review', 'Festival Delivery', 'Archive'],
   },
   'Social Media Video Content': {
-    'Development': ['Brief Review', 'Budget Breakdown', 'Content Plan', 'Script/Shot List'],
+    'Development': ['Brief Review', 'Budget Breakdown', 'Budget Approved', 'Content Plan', 'Script/Shot List'],
     'Pre-Production': ['Location Scouting', 'Props', 'Equipment Planning', 'Crew Booking'],
     'Production': () => ['Shoot Day', 'Equipment Pickup', 'Equipment Return'],
     'Post-Production': ['Edit', 'Captions', 'Thumbnail Design', 'Client Review', 'Delivery'],
   },
   'Event Videography': {
-    'Development': ['Brief Review', 'Budget Breakdown', 'Event Schedule Review', 'Shot List'],
+    'Development': ['Brief Review', 'Budget Breakdown', 'Budget Approved', 'Event Schedule Review', 'Shot List'],
     'Pre-Production': ['Location Recce', 'Equipment Planning', 'Crew Booking', 'Transportation', 'Accommodation'],
     'Production': (days) => {
       const t = [];
@@ -103,23 +103,47 @@ const TASKS = {
     'Production': () => ['Shoot Day', 'Equipment Pickup', 'Equipment Return'],
     'Post-Production': ['Selection/Culling', 'Retouching', 'Client Review', 'Delivery'],
   },
-  'Video Editing': {
-    'Development': ['Brief Review', 'Budget Breakdown', 'Footage Review'],
-    'Pre-Production': ['Project Setup'],
+  'Photo Retouching': {
+    'Development': ['Brief Review', 'Budget Breakdown', 'Reference / Style Review'],
+    'Pre-Production': ['Files Acceptance', 'Culling / Selection', 'Scope Agreement'],
     'Production': () => [],
-    'Post-Production': ['Assembly Cut', 'Rough Cut', 'Fine Cut', 'Color Grade', 'Sound', 'Client Review', 'Delivery'],
+    'Post-Production': ['RAW Processing', 'Exposure & White Balance', 'Cleanup / Object Removal', 'Skin Retouching', 'Frequency Separation', 'Dodge & Burn', 'Color Correction', 'Sharpening', 'Client Review', 'Revisions', 'Final Export', 'Delivery'],
+  },
+  'Photo Editing & Culling': {
+    'Development': ['Brief Review', 'Budget Breakdown', 'Style Reference'],
+    'Pre-Production': ['Files Acceptance', 'Backup / Ingest'],
+    'Production': () => [],
+    'Post-Production': ['Culling / Selection', 'RAW Processing', 'Exposure & Color', 'Crop & Straighten', 'Batch Sync', 'Spot Removal', 'Export Presets', 'Client Gallery', 'Delivery'],
+  },
+  'Video Editing': {
+    'Development': ['Brief Review', 'Budget Breakdown', 'Footage Review', 'Edit Brief Approval'],
+    'Pre-Production': ['Project Setup', 'Media Ingest / Backup', 'Folder Structure'],
+    'Production': () => [],
+    'Post-Production': ['Assembly Cut', 'Rough Cut', 'Fine Cut', 'Color Grade', 'Sound', 'Client Review', 'Revisions', 'Delivery'],
   },
   'Color Grading': {
     'Development': ['Brief Review', 'Budget Breakdown', 'Reference Grade Review'],
-    'Pre-Production': ['Project Setup'],
+    'Pre-Production': ['Files Acceptance', 'Conform / Project Setup', "Client's Brief"],
     'Production': () => [],
-    'Post-Production': ['Grade Pass 1', 'Client Review', 'Grade Pass 2', 'Final Export', 'Delivery'],
+    'Post-Production': ['Primary Grade', 'Secondary Grade', 'Shot Matching', 'Look Development', 'Client Review', 'Grade Revisions', 'Final Render', 'Delivery'],
   },
   'VFX / Motion Graphics': {
-    'Development': ['Brief Review', 'Budget Breakdown', 'Reference Collection'],
-    'Pre-Production': ['Project Setup', 'Asset Collection'],
+    'Development': ['Brief Review', 'Budget Breakdown', 'Reference Collection', 'Concept Approval'],
+    'Pre-Production': ['Project Setup', 'Asset Collection', 'Style Frames', 'Timeline Planning'],
     'Production': () => [],
-    'Post-Production': ['VFX/Motion Build', 'Client Review', 'Revisions', 'Final Export', 'Delivery'],
+    'Post-Production': ['VFX/Motion Build', 'Animation Pass', 'Compositing', 'Sound Design', 'Client Review', 'Revisions', 'Final Export', 'Delivery'],
+  },
+  'Audio Mixing & Mastering': {
+    'Development': ['Brief Review', 'Budget Breakdown', 'Reference Tracks'],
+    'Pre-Production': ['Files Acceptance', 'Session Setup', 'Stem Organization'],
+    'Production': () => [],
+    'Post-Production': ['Editing / Comping', 'Noise Reduction', 'Mixing', 'EQ & Compression', 'Automation', 'Mastering', 'Loudness Check', 'Client Review', 'Revisions', 'Final Export', 'Delivery'],
+  },
+  'Subtitling & Localization': {
+    'Development': ['Brief Review', 'Budget Breakdown', 'Source Material Review'],
+    'Pre-Production': ['Files Acceptance', 'Transcription', 'Glossary / Style Guide'],
+    'Production': () => [],
+    'Post-Production': ['Translation', 'Timing / Spotting', 'Subtitle Formatting', 'QC Review', 'Client Review', 'Revisions', 'Final Export (SRT/Burned-in)', 'Delivery'],
   },
   'Podcast / Audio Production': {
     'Development': ['Brief Review', 'Budget Breakdown', 'Episode Plan'],
@@ -129,9 +153,9 @@ const TASKS = {
   },
   'Branding & Identity': {
     'Development': ['Brief Review', 'Budget Breakdown', 'Research', 'Competitor Analysis', 'Moodboard'],
-    'Pre-Production': ['Concept Development'],
-    'Production': () => ['Logo Design', 'Color Palette', 'Typography', 'Brand Guidelines'],
-    'Post-Production': ['Client Review', 'Revisions', 'Final Files Export', 'Brand Book Delivery'],
+    'Pre-Production': ['Concept Development', 'Brand Strategy', 'Naming / Tagline (if needed)'],
+    'Production': () => ['Logo Design', 'Color Palette', 'Typography', 'Brand Guidelines', 'Mockups'],
+    'Post-Production': ['Client Review', 'Revisions', 'Brand Book', 'Final Files Export', 'Brand Book Delivery'],
   },
   'Social Media Content Management': {
     'Development': ['Brief Review', 'Budget Breakdown', 'Content Strategy', 'Platform Audit'],
@@ -140,16 +164,22 @@ const TASKS = {
     'Post-Production': ['Analytics Review', 'Report Delivery'],
   },
   'Graphic Design': {
-    'Development': ['Brief Review', 'Budget Breakdown', 'Reference Collection'],
-    'Pre-Production': ['Concept Sketches'],
-    'Production': () => ['Design Execution'],
-    'Post-Production': ['Client Review', 'Revisions', 'Final Export', 'Delivery'],
+    'Development': ['Brief Review', 'Budget Breakdown', 'Reference Collection', 'Competitor Analysis'],
+    'Pre-Production': ['Concept Sketches', 'Moodboard', 'Design Direction Approval'],
+    'Production': () => ['Design Execution', 'Design Variations'],
+    'Post-Production': ['Client Review', 'Revisions', 'Final Export', 'File Preparation', 'Delivery'],
   },
   'Web Design': {
     'Development': ['Brief Review', 'Budget Breakdown', 'Sitemap', 'Wireframes', 'Reference Collection'],
-    'Pre-Production': ['Design System', 'UI Design'],
-    'Production': () => ['Development Handoff / Build'],
-    'Post-Production': ['Client Review', 'Revisions', 'QA', 'Launch', 'Delivery'],
+    'Pre-Production': ['Design System', 'UI Design', 'Prototype / Clickable Mockup', 'Client Approval'],
+    'Production': () => ['Development Handoff / Build', 'Responsive Testing'],
+    'Post-Production': ['Client Review', 'Revisions', 'QA Testing', 'SEO Setup', 'Launch', 'Delivery'],
+  },
+  '2D / 3D Animation': {
+    'Development': ['Brief Review', 'Budget Breakdown', 'Concept / Moodboard', 'Script / Storyboard', 'Style Frames'],
+    'Pre-Production': ['Asset Collection', 'Character / Asset Design', 'Rigging / Setup', 'Animatic'],
+    'Production': () => ['Layout / Blocking', 'Animation Pass', 'Modeling / Texturing'],
+    'Post-Production': ['Lighting / Rendering', 'Compositing', 'Sound Design', 'Client Review', 'Revisions', 'Final Render', 'Delivery'],
   },
 };
 

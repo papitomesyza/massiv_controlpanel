@@ -666,9 +666,9 @@ function PhaseBlock({ phase, expanded, onToggle, onComplete, onReactivate, onAdd
                 </div>
               )}
               <div
-                className={`task-checkbox ${task.status === 'done' ? 'done' : task.status === 'in-progress' ? 'in-progress' : ''}`}
-                onClick={() => onTaskStatus(task, task.status === 'done' ? 'todo' : task.status === 'todo' ? 'in-progress' : 'done')}
-                title="Click to cycle status"
+                className={`task-checkbox ${task.status === 'done' ? 'done' : ''}`}
+                onClick={() => onTaskStatus(task, task.status === 'done' ? 'todo' : 'done')}
+                title="Click to toggle done"
               >
                 {task.status === 'done' && <Check size={10} color="#fff" />}
               </div>
