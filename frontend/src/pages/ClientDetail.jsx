@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Edit2, AlertCircle, MessageCircle } from 'lucide-react';
-import { api, fmt, fmtDate } from '../api';
+import { api, fmt } from '../api';
 import Modal from '../components/Modal';
 import StatCard from '../components/StatCard';
 
@@ -54,20 +54,17 @@ export default function ClientDetail() {
         <StatCard label="Total Profit" value={fmt(stats.totalProfit)} danger={stats.totalProfit < 0} />
       </div>
 
-      {/* Outstanding Balance Alert */}
+      {/* Outstanding Balance Alert — per project (agreed_budget minus received) */}
       {totalOutstanding > 0 && (
         <div className="outstanding-alert" style={{ marginBottom: '20px' }}>
           <div className="flex-center gap-2" style={{ marginBottom: '10px' }}>
             <AlertCircle size={16} style={{ color: 'var(--danger)', flexShrink: 0 }} />
-            <span className="text-bold text-danger">Outstanding Balance: {fmt(totalOutstanding)}</span>
+            <span className="text-bold text-danger">Pending Payments: {fmt(totalOutstanding)}</span>
           </div>
           {outstandingPayments.map(p => (
-            <div key={p.id} className="flex-between text-sm" style={{ padding: '4px 0' }}>
+            <div key={p.project_id} className="flex-between text-sm" style={{ padding: '4px 0' }}>
               <span className="text-2">{p.project_title}</span>
-              <div className="flex-center gap-2">
-                <span className="text-danger">{fmt(p.amount)}</span>
-                <span className="text-xs text-2">{fmtDate(p.date)}</span>
-              </div>
+              <span className="text-danger">{fmt(p.amount)}</span>
             </div>
           ))}
         </div>

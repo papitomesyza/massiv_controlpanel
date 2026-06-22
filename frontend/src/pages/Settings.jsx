@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Plus, Trash2, Palette, Image as ImageIcon } from 'lucide-react';
+import { Plus, Trash2, Palette, Image as ImageIcon, Receipt } from 'lucide-react';
 import { api } from '../api';
 import { useNavigate } from 'react-router-dom';
 
@@ -11,9 +11,14 @@ export default function Settings() {
   const [newExpCat, setNewExpCat] = useState('');
   const [newProjCat, setNewProjCat] = useState({ name: '', group_name: '' });
   const [newRole, setNewRole] = useState('');
-  const [password, setPassword] = useState({ newPass: '', confirm: '' });
+  const [password, setPassword] = useState({ currentPass: '', newPass: '', confirm: '' });
   const [pwMsg, setPwMsg] = useState('');
   const [loading, setLoading] = useState(true);
+
+  const [taxRate, setTaxRate] = useState('18');
+  const [taxLabel, setTaxLabel] = useState('Tax');
+  const [taxEnabled, setTaxEnabled] = useState(true);
+  const [taxMsg, setTaxMsg] = useState('');
 
   const [logo, setLogo] = useState(() => localStorage.getItem('massiv_logo'));
   const [agencyName, setAgencyName] = useState(() => localStorage.getItem('massiv_agency_name') || 'MASSIV TV');
@@ -91,15 +96,30 @@ export default function Settings() {
   }
 
   async function load() {
-    const [ec, pc, cr] = await Promise.all([
+    const [ec, pc, cr, tax] = await Promise.all([
       api.get('/settings/expense-categories'),
       api.get('/settings/project-categories'),
       api.get('/settings/crew-roles'),
+      api.get('/settings/tax'),
     ]);
-    setExpCats(ec); setProjCats(pc); setCrewRoles(cr); setLoading(false);
+    setExpCats(ec); setProjCats(pc); setCrewRoles(cr);
+    setTaxRate(String(tax.tax_rate ?? 18));
+    setTaxLabel(tax.tax_label || 'Tax');
+    setTaxEnabled(tax.tax_enabled !== false);
+    setLoading(false);
   }
 
   useEffect(() => { load(); }, []);
+
+  async function saveTax() {
+    const rate = parseFloat(taxRate);
+    if (!Number.isFinite(rate) || rate < 0 || rate > 100) return setTaxMsg('Rate must be 0–100');
+    try {
+      await api.post('/settings/tax', { tax_rate: rate, tax_label: taxLabel.trim() || 'Tax', tax_enabled: taxEnabled });
+      setTaxMsg('Saved');
+    } catch { setTaxMsg('Error saving'); }
+    setTimeout(() => setTaxMsg(''), 3000);
+  }
 
   async function addExpCat() {
     if (!newExpCat.trim()) return;
@@ -135,15 +155,21 @@ export default function Settings() {
   }
 
   async function changePassword() {
+    if (!password.currentPass) return setPwMsg('Enter your current password');
     if (!password.newPass) return setPwMsg('Enter a new password');
     if (password.newPass !== password.confirm) return setPwMsg('Passwords do not match');
-    if (password.newPass.length < 4) return setPwMsg('Min 4 characters');
+    if (password.newPass.length < 8) return setPwMsg('Min 8 characters');
     try {
-      const data = await api.post('/settings/change-password', { newPassword: password.newPass });
+      const data = await api.post('/settings/change-password', { currentPassword: password.currentPass, newPassword: password.newPass });
       localStorage.setItem('massiv_auth', data.token);
       setPwMsg('Password changed successfully');
-      setPassword({ newPass: '', confirm: '' });
+      setPassword({ currentPass: '', newPass: '', confirm: '' });
     } catch (e) { setPwMsg(e.message); }
+  }
+
+  async function downloadBackup() {
+    try { await api.download('/settings/backup/download', `massiv-backup-${new Date().toISOString().slice(0, 10)}.db`); }
+    catch (e) { alert(e.message); }
   }
 
   const projCatGroups = projCats.reduce((acc, c) => {
@@ -349,12 +375,69 @@ export default function Settings() {
           </div>
         </div>
 
+        {/* Tax Configuration */}
+        <div className="card card-pad">
+          <div className="section-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+            <Receipt size={15} />
+            Tax Configuration
+          </div>
+          <div className="form-row">
+            <label className="form-label">Tax Name / Label</label>
+            <input
+              className="input"
+              value={taxLabel}
+              onChange={e => setTaxLabel(e.target.value)}
+              placeholder="e.g. VAT, Turnover Tax, GST"
+            />
+            <div style={{ fontSize: '11px', color: '#666', marginTop: '4px' }}>
+              Shown wherever tax is displayed on invoices and in the Finances section.
+            </div>
+          </div>
+          <div className="form-row">
+            <label className="form-label">Tax Rate (%)</label>
+            <input
+              className="input"
+              type="number"
+              min="0"
+              max="100"
+              step="0.1"
+              value={taxRate}
+              onChange={e => setTaxRate(e.target.value)}
+              placeholder="e.g. 18"
+              style={{ maxWidth: '140px' }}
+            />
+            <div style={{ fontSize: '11px', color: '#666', marginTop: '4px' }}>
+              Applied to invoice totals when generating invoices. You set this — no auto-switching.
+            </div>
+          </div>
+          <div className="form-row" style={{ marginBottom: '0' }}>
+            <label className="form-label">Tax Tracking</label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={taxEnabled}
+                onChange={e => setTaxEnabled(e.target.checked)}
+                style={{ width: '16px', height: '16px', accentColor: '#723CEB' }}
+              />
+              <span style={{ fontSize: '13px' }}>Enable tax tracking in Finances</span>
+            </label>
+          </div>
+          <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <button className="btn btn-primary" onClick={saveTax}>Save Tax Settings</button>
+            {taxMsg && <span style={{ fontSize: '12px', color: taxMsg === 'Saved' ? '#4CAF50' : '#FF4444' }}>{taxMsg}</span>}
+          </div>
+        </div>
+
         {/* Password */}
         <div className="card card-pad">
           <div className="section-title" style={{ marginBottom: '12px' }}>Change Password</div>
           <div className="form-row">
+            <label className="form-label">Current Password</label>
+            <input type="password" className="input" value={password.currentPass} onChange={e => setPassword(p => ({ ...p, currentPass: e.target.value }))} placeholder="Current password" />
+          </div>
+          <div className="form-row">
             <label className="form-label">New Password</label>
-            <input type="password" className="input" value={password.newPass} onChange={e => setPassword(p => ({ ...p, newPass: e.target.value }))} placeholder="New password" />
+            <input type="password" className="input" value={password.newPass} onChange={e => setPassword(p => ({ ...p, newPass: e.target.value }))} placeholder="New password (min 8 chars)" />
           </div>
           <div className="form-row">
             <label className="form-label">Confirm Password</label>
@@ -362,6 +445,17 @@ export default function Settings() {
           </div>
           {pwMsg && <div style={{ fontSize: '12px', color: pwMsg.includes('success') ? '#aaa' : '#FF4444', marginBottom: '12px' }}>{pwMsg}</div>}
           <button className="btn btn-primary" onClick={changePassword}>Update Password</button>
+        </div>
+
+        {/* Data Management */}
+        <div className="card card-pad">
+          <div className="section-title" style={{ marginBottom: '12px' }}>Data Management</div>
+          <div style={{ fontSize: '12px', color: '#888', marginBottom: '14px' }}>
+            Download a full backup of the database file. Keep this safe — it contains all your project data.
+          </div>
+          <button className="btn btn-ghost" onClick={downloadBackup}>
+            Download Backup
+          </button>
         </div>
 
       </div>

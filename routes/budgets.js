@@ -2,6 +2,22 @@ const express = require('express');
 const router = express.Router();
 const { db } = require('../db/database');
 
+function validateLineFields({ days, rate, amount }) {
+  if (days !== undefined && days !== null) {
+    const d = Number(days);
+    if (!Number.isFinite(d) || d < 0) return 'days must be at least 0';
+  }
+  if (rate !== undefined && rate !== null) {
+    const r = Number(rate);
+    if (!Number.isFinite(r) || r < 0 || r > 1000000) return 'rate must be between 0 and 1,000,000';
+  }
+  if (amount !== undefined && amount !== null) {
+    const a = Number(amount);
+    if (!Number.isFinite(a) || a < 0 || a > 1000000) return 'amount must be between 0 and 1,000,000';
+  }
+  return null;
+}
+
 const FLAT_FEE_CATS = new Set([
   'Video Editing', 'Color Grading', 'VFX / Motion Graphics',
   'Podcast / Audio Production', 'Branding & Identity',
@@ -51,6 +67,10 @@ router.get('/:id', (req, res) => {
 router.post('/', (req, res) => {
   const { title, project_id, category, client_name, shoot_days, shoot_location, status, vat_enabled, vat_rate, notes, show_providers } = req.body;
   if (!title || !category) return res.status(400).json({ error: 'Title and category required' });
+  if (vat_rate !== undefined && vat_rate !== null) {
+    const vr = Number(vat_rate);
+    if (!Number.isFinite(vr) || vr < 0 || vr > 100) return res.status(400).json({ error: 'vat_rate must be between 0 and 100' });
+  }
 
   const result = db.prepare(`
     INSERT INTO budgets (project_id, title, category, client_name, shoot_days, shoot_location, status, vat_enabled, vat_rate, notes, show_providers)
@@ -78,6 +98,10 @@ router.put('/:id', (req, res) => {
   if (!budget) return res.status(404).json({ error: 'Budget not found' });
 
   const { title, project_id, category, client_name, shoot_days, shoot_location, status, vat_enabled, vat_rate, notes, show_providers } = req.body;
+  if (vat_rate !== undefined && vat_rate !== null) {
+    const vr = Number(vat_rate);
+    if (!Number.isFinite(vr) || vr < 0 || vr > 100) return res.status(400).json({ error: 'vat_rate must be between 0 and 100' });
+  }
 
   db.prepare(`
     UPDATE budgets SET
@@ -118,6 +142,8 @@ router.post('/:id/lines', (req, res) => {
 
   const { section, position_label, description, crew_id, days, rate, amount, sort_order } = req.body;
   if (!section) return res.status(400).json({ error: 'Section required' });
+  const lineErr = validateLineFields({ days, rate, amount });
+  if (lineErr) return res.status(400).json({ error: lineErr });
 
   const result = db.prepare(`
     INSERT INTO budget_lines (budget_id, section, position_label, description, crew_id, days, rate, amount, sort_order)
@@ -137,6 +163,8 @@ router.put('/:id/lines/:lineId', (req, res) => {
   if (!line) return res.status(404).json({ error: 'Line not found' });
 
   const { section, position_label, description, crew_id, days, rate, amount, sort_order } = req.body;
+  const lineErr2 = validateLineFields({ days, rate, amount });
+  if (lineErr2) return res.status(400).json({ error: lineErr2 });
 
   db.prepare(`
     UPDATE budget_lines SET
@@ -173,6 +201,11 @@ router.post('/:id/lines/batch-replace', (req, res) => {
     INSERT INTO budget_lines (budget_id, section, position_label, description, crew_id, days, rate, amount, sort_order)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
+
+  for (const l of lines) {
+    const err = validateLineFields({ days: l.days, rate: l.rate, amount: l.amount });
+    if (err) return res.status(400).json({ error: err });
+  }
 
   db.transaction(() => {
     deleteLines.run(req.params.id);
@@ -217,7 +250,7 @@ router.get('/:id/pdf', (req, res) => {
   const ROW_H        = 22;
   const SUB_ROW_H    = 22;
   const SEC_GAP      = 20;
-  const totalsH      = budget.vat_enabled ? 100 : 68;
+  const totalsH      = budget.vat_enabled ? 82 : 68;
   const notesH       = budget.notes ? 46 : 0;
 
   const sectionsH = activeSections.reduce(
@@ -392,11 +425,6 @@ router.get('/:id/pdf', (req, res) => {
   ty += 10;
 
   if (budget.vat_enabled) {
-    doc.font('Helvetica-Bold').fontSize(11).fillColor('#FFFFFF')
-       .text('TOTAL', 40, ty, { lineBreak: false });
-    doc.font('Helvetica-Bold').fontSize(11).fillColor('#FFFFFF')
-       .text(fmt(grandSubtotal), 0, ty, { width: VW - 40, align: 'right', lineBreak: false });
-    ty += 18;
     doc.font('Helvetica-Bold').fontSize(13).fillColor('#FF902F')
        .text('TOTAL INC. VAT', 40, ty, { lineBreak: false });
     doc.font('Helvetica-Bold').fontSize(13).fillColor('#FF902F')

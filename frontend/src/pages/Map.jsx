@@ -2,8 +2,12 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MapPin } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
+import 'react-leaflet-cluster/lib/assets/MarkerCluster.css';
+import 'react-leaflet-cluster/lib/assets/MarkerCluster.Default.css';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import MarkerClusterGroup from 'react-leaflet-cluster';
 import L from 'leaflet';
+import 'leaflet.heat';
 import { api, fmt } from '../api';
 
 // Fix default leaflet marker icon broken in webpack/vite environments
@@ -29,6 +33,17 @@ function createProjectIcon() {
   });
 }
 
+function HeatmapLayer({ points }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!points.length) return;
+    const heat = L.heatLayer(points, { radius: 35, blur: 20, maxZoom: 10, max: 1 });
+    heat.addTo(map);
+    return () => { heat.remove(); };
+  }, [map, points]);
+  return null;
+}
+
 function FitBoundsButton({ positions }) {
   const map = useMap();
   if (positions.length === 0) return null;
@@ -42,18 +57,17 @@ function FitBoundsButton({ positions }) {
   }
 
   return (
-    <div
+    <button
       onClick={fitAll}
+      className="btn btn-secondary btn-sm"
       style={{
         position: 'absolute', top: '12px', right: '12px', zIndex: 1000,
-        background: '#1e1e1e', border: '1px solid rgba(255,255,255,0.15)',
-        color: '#fff', padding: '6px 14px', borderRadius: '8px',
-        cursor: 'pointer', fontSize: '12px', fontWeight: 600,
-        boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+        boxShadow: '0 2px 12px rgba(0,0,0,0.5)',
+        borderRadius: '10px',
       }}
     >
       Fit All
-    </div>
+    </button>
   );
 }
 
@@ -65,6 +79,7 @@ export default function Map() {
   const [categories, setCategories] = useState([]);
   const [statusFilter, setStatusFilter] = useState('All');
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [mapMode, setMapMode] = useState('pins'); // 'pins' | 'heat'
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -86,6 +101,8 @@ export default function Map() {
   });
 
   const positions = filtered.map(p => [parseFloat(p.location_lat), parseFloat(p.location_lng)]);
+  // Heatmap points: [lat, lng, intensity] — each project contributes equally (weight 1)
+  const heatPoints = filtered.map(p => [parseFloat(p.location_lat), parseFloat(p.location_lng), 1]);
   const projectIcon = createProjectIcon();
 
   const defaultCenter = [50.0, 15.0];
@@ -108,7 +125,7 @@ export default function Map() {
         </div>
       </div>
 
-      {/* Filters */}
+      {/* Filters + map mode toggle */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px', flexWrap: 'wrap', flexShrink: 0 }}>
         <div style={{ display: 'flex', gap: '6px' }}>
           {STATUS_OPTIONS.map(s => (
@@ -135,6 +152,24 @@ export default function Map() {
             </optgroup>
           ))}
         </select>
+
+        {/* View toggle: Pins vs Heatmap */}
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: '4px' }}>
+          <button
+            className={`btn btn-sm ${mapMode === 'pins' ? 'btn-primary' : 'btn-ghost'}`}
+            style={{ borderRadius: '50px', padding: '4px 14px', fontSize: '12px' }}
+            onClick={() => setMapMode('pins')}
+          >
+            Pins
+          </button>
+          <button
+            className={`btn btn-sm ${mapMode === 'heat' ? 'btn-primary' : 'btn-ghost'}`}
+            style={{ borderRadius: '50px', padding: '4px 14px', fontSize: '12px' }}
+            onClick={() => setMapMode('heat')}
+          >
+            Heatmap
+          </button>
+        </div>
       </div>
 
       {/* Map */}
@@ -153,45 +188,66 @@ export default function Map() {
               maxZoom={20}
             />
 
-            {filtered.map(p => (
-              <Marker
-                key={p.id}
-                position={[parseFloat(p.location_lat), parseFloat(p.location_lng)]}
-                icon={projectIcon}
+            {mapMode === 'pins' && (
+              <MarkerClusterGroup
+                chunkedLoading
+                iconCreateFunction={cluster => L.divIcon({
+                  className: '',
+                  html: `<div style="
+                    width:36px;height:36px;border-radius:50%;
+                    background:linear-gradient(135deg,#FF902F,#723CEB);
+                    border:2px solid #fff;
+                    box-shadow:0 2px 8px rgba(0,0,0,0.5);
+                    display:flex;align-items:center;justify-content:center;
+                    color:#fff;font-size:13px;font-weight:700;
+                  ">${cluster.getChildCount()}</div>`,
+                  iconSize: [36, 36],
+                  iconAnchor: [18, 18],
+                })}
               >
-                <Popup>
-                  <div style={{ background: '#1e1e1e', minWidth: '200px', padding: '4px 0' }}>
-                    <div style={{ fontWeight: 700, color: '#fff', marginBottom: '6px', fontSize: '14px' }}>{p.title}</div>
-                    {p.client_name && <div style={{ color: '#888', fontSize: '12px', marginBottom: '4px' }}>{p.client_name}</div>}
-                    <div style={{ display: 'flex', gap: '6px', marginBottom: '8px', flexWrap: 'wrap' }}>
-                      {p.category_name && (
-                        <span style={{ background: 'rgba(114,60,235,0.2)', color: '#a78bfa', padding: '2px 8px', borderRadius: '50px', fontSize: '11px' }}>
-                          {p.category_name}
-                        </span>
-                      )}
-                      <span style={{ background: 'rgba(255,255,255,0.08)', color: '#ccc', padding: '2px 8px', borderRadius: '50px', fontSize: '11px' }}>
-                        {p.status?.replace(/-/g, ' ')}
-                      </span>
-                    </div>
-                    {p.agreed_budget > 0 && (
-                      <div style={{ color: '#FF902F', fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>
-                        {fmt(p.agreed_budget)}
+                {filtered.map(p => (
+                  <Marker
+                    key={p.id}
+                    position={[parseFloat(p.location_lat), parseFloat(p.location_lng)]}
+                    icon={projectIcon}
+                  >
+                    <Popup>
+                      <div style={{ background: '#1e1e1e', minWidth: '200px', padding: '4px 0' }}>
+                        <div style={{ fontWeight: 700, color: '#fff', marginBottom: '6px', fontSize: '14px' }}>{p.title}</div>
+                        {p.client_name && <div style={{ color: '#888', fontSize: '12px', marginBottom: '4px' }}>{p.client_name}</div>}
+                        <div style={{ display: 'flex', gap: '6px', marginBottom: '8px', flexWrap: 'wrap' }}>
+                          {p.category_name && (
+                            <span style={{ background: 'rgba(114,60,235,0.2)', color: '#a78bfa', padding: '2px 8px', borderRadius: '50px', fontSize: '11px' }}>
+                              {p.category_name}
+                            </span>
+                          )}
+                          <span style={{ background: 'rgba(255,255,255,0.08)', color: '#ccc', padding: '2px 8px', borderRadius: '50px', fontSize: '11px' }}>
+                            {p.status?.replace(/-/g, ' ')}
+                          </span>
+                        </div>
+                        {p.agreed_budget > 0 && (
+                          <div style={{ color: '#FF902F', fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>
+                            {fmt(p.agreed_budget)}
+                          </div>
+                        )}
+                        <button
+                          onClick={() => navigate(`/projects/${p.id}`)}
+                          style={{
+                            background: 'linear-gradient(135deg,#FF902F,#723CEB)',
+                            color: '#fff', border: 'none', borderRadius: '8px',
+                            padding: '5px 12px', fontSize: '12px', cursor: 'pointer', fontWeight: 600,
+                          }}
+                        >
+                          View Project →
+                        </button>
                       </div>
-                    )}
-                    <button
-                      onClick={() => navigate(`/projects/${p.id}`)}
-                      style={{
-                        background: 'linear-gradient(135deg,#FF902F,#723CEB)',
-                        color: '#fff', border: 'none', borderRadius: '8px',
-                        padding: '5px 12px', fontSize: '12px', cursor: 'pointer', fontWeight: 600,
-                      }}
-                    >
-                      View Project →
-                    </button>
-                  </div>
-                </Popup>
-              </Marker>
-            ))}
+                    </Popup>
+                  </Marker>
+                ))}
+              </MarkerClusterGroup>
+            )}
+
+            {mapMode === 'heat' && <HeatmapLayer points={heatPoints} />}
 
             <FitBoundsButton positions={positions} />
           </MapContainer>

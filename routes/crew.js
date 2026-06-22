@@ -2,6 +2,14 @@ const express = require('express');
 const router = express.Router();
 const { db } = require('../db/database');
 
+function validateMoney(val, name) {
+  const n = Number(val);
+  if (!Number.isFinite(n)) return `${name} must be a number`;
+  if (n < 0) return `${name} must be at least 0`;
+  if (n > 1000000) return `${name} must be at most 1,000,000`;
+  return null;
+}
+
 router.get('/', (req, res) => {
   const { search, sort, type } = req.query;
   let query = 'SELECT * FROM crew WHERE 1=1';
@@ -172,6 +180,14 @@ router.put('/:id/archive', (req, res) => {
 });
 
 router.delete('/:id', (req, res) => {
+  const assignCount = db.prepare('SELECT COUNT(*) as n FROM crew_assignments WHERE crew_id = ?').get(req.params.id).n;
+  const taskCount = db.prepare('SELECT COUNT(*) as n FROM tasks WHERE assigned_crew_id = ?').get(req.params.id).n;
+  const total = assignCount + taskCount;
+  if (total > 0) {
+    return res.status(400).json({
+      error: `Cannot delete: this crew member has ${assignCount > 0 ? `${assignCount} project assignment${assignCount > 1 ? 's' : ''}` : ''}${assignCount > 0 && taskCount > 0 ? ' and ' : ''}${taskCount > 0 ? `${taskCount} task assignment${taskCount > 1 ? 's' : ''}` : ''}. Archive them instead.`,
+    });
+  }
   db.prepare('DELETE FROM crew WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
@@ -187,6 +203,8 @@ router.get('/:id/debts', (req, res) => {
 router.post('/:id/debts', (req, res) => {
   const { description, amount, date_incurred, notes, status } = req.body;
   if (!description || amount === undefined) return res.status(400).json({ error: 'Description and amount required' });
+  const err = validateMoney(amount, 'amount');
+  if (err) return res.status(400).json({ error: err });
   const result = db.prepare(
     'INSERT INTO crew_debts (crew_id, description, amount, date_incurred, notes, status) VALUES (?, ?, ?, ?, ?, ?)'
   ).run(req.params.id, description, amount, date_incurred || new Date().toISOString().slice(0, 10), notes || null, status || 'unpaid');
@@ -195,6 +213,10 @@ router.post('/:id/debts', (req, res) => {
 
 router.put('/:id/debts/:debtId', (req, res) => {
   const { description, amount, date_incurred, status, payment_date, notes } = req.body;
+  if (amount !== undefined) {
+    const err = validateMoney(amount, 'amount');
+    if (err) return res.status(400).json({ error: err });
+  }
   db.prepare(
     'UPDATE crew_debts SET description=?, amount=?, date_incurred=?, status=?, payment_date=?, notes=? WHERE id=? AND crew_id=?'
   ).run(description, amount, date_incurred, status || 'unpaid', payment_date || null, notes || null, req.params.debtId, req.params.id);

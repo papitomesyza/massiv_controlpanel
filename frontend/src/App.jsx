@@ -15,6 +15,7 @@ import Assets from './pages/Assets';
 import Settings from './pages/Settings';
 import Calendar from './pages/Calendar';
 import Map from './pages/Map';
+import Invoices from './pages/Invoices';
 import PublicExpense from './pages/PublicExpense';
 import { AgencyProvider } from './context/AgencyContext';
 
@@ -78,6 +79,7 @@ export default function App() {
           <Route path="settings" element={<Settings />} />
           <Route path="calendar" element={<Calendar />} />
           <Route path="map" element={<Map />} />
+          <Route path="invoices" element={<Invoices />} />
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>

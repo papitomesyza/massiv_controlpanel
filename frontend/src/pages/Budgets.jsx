@@ -1,14 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, FileText, Trash2, Download, Pencil } from 'lucide-react';
+import { Plus, FileText, Trash2, Download, Pencil, Receipt } from 'lucide-react';
 import { api, fmt, fmtDate } from '../api';
+import { useNavigate } from 'react-router-dom';
 import BudgetWizard from '../components/BudgetWizard';
 
 export default function Budgets() {
+  const navigate = useNavigate();
   const [budgets, setBudgets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showWizard, setShowWizard] = useState(false);
   const [editingBudget, setEditingBudget] = useState(null);
   const [deleting, setDeleting] = useState(null);
+  const [creatingInvoice, setCreatingInvoice] = useState(null);
 
   async function load() {
     try {
@@ -49,6 +52,17 @@ export default function Budgets() {
     setShowWizard(true);
   }
 
+  async function handleCreateInvoice(budget) {
+    setCreatingInvoice(budget.id);
+    try {
+      await api.post(`/invoices/from-estimate/${budget.id}`, {});
+      navigate('/invoices');
+    } catch (e) {
+      alert(e.message);
+    }
+    setCreatingInvoice(null);
+  }
+
   function handleWizardClose() {
     setShowWizard(false);
     setEditingBudget(null);
@@ -75,11 +89,11 @@ export default function Budgets() {
     <div>
       <div className="page-header">
         <div>
-          <div className="page-title">Investment Estimations</div>
+          <div className="page-title">Estimates</div>
           <div className="page-subtitle">Investment estimation proposals for clients</div>
         </div>
         <button className="btn btn-primary" onClick={handleNew}>
-          <Plus size={15} /> New Investment Estimation
+          <Plus size={15} /> New Estimate
         </button>
       </div>
 
@@ -87,9 +101,9 @@ export default function Budgets() {
         {budgets.length === 0 ? (
           <div className="empty" style={{ padding: '64px 32px' }}>
             <FileText size={40} color="#333" style={{ marginBottom: '16px' }} />
-            <div style={{ marginBottom: '8px', color: '#fff', fontWeight: 600, fontSize: '16px' }}>No investment estimations yet</div>
-            <div style={{ marginBottom: '24px' }}>Create your first investment estimation.</div>
-            <button className="btn btn-primary" onClick={handleNew}><Plus size={15} /> New Investment Estimation</button>
+            <div style={{ marginBottom: '8px', color: '#fff', fontWeight: 600, fontSize: '16px' }}>No estimates yet</div>
+            <div style={{ marginBottom: '24px' }}>Create your first estimate.</div>
+            <button className="btn btn-primary" onClick={handleNew}><Plus size={15} /> New Estimate</button>
           </div>
         ) : (
           <div className="table-wrap">
@@ -130,6 +144,15 @@ export default function Budgets() {
                         </button>
                         <button className="btn-icon" title="Export PDF" onClick={() => handleExportPdf(b)}>
                           <Download size={14} />
+                        </button>
+                        <button
+                          className="btn-icon"
+                          title="Create Invoice from this estimate"
+                          onClick={() => handleCreateInvoice(b)}
+                          disabled={creatingInvoice === b.id}
+                          style={{ color: '#723CEB' }}
+                        >
+                          <Receipt size={14} />
                         </button>
                         <button
                           className="btn-icon"

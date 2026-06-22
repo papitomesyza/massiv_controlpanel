@@ -18,8 +18,8 @@ export default function Login() {
       const data = await api.post('/auth/login', { password });
       localStorage.setItem('massiv_auth', data.token);
       navigate('/dashboard');
-    } catch {
-      setError('Invalid password');
+    } catch (e) {
+      setError(e.message || 'Invalid password');
     } finally {
       setLoading(false);
     }

@@ -1,20 +1,36 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, FolderKanban, Users, UserCog, Package, BarChart3, FileText, Settings, LogOut, CalendarDays, MapPin } from 'lucide-react';
+import {
+  LayoutDashboard, FolderKanban, Users, UserCog, Package,
+  BarChart3, FileText, Settings, LogOut, CalendarDays, MapPin, Receipt,
+  Plus, X, Lightbulb,
+} from 'lucide-react';
 import { useAgency } from '../context/AgencyContext';
 import { api } from '../api';
 
-const links = [
+const OPS_LINKS = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/projects',  icon: FolderKanban,   label: 'Projects'  },
   { to: '/calendar',  icon: CalendarDays,    label: 'Calendar'  },
   { to: '/map',       icon: MapPin,          label: 'Map'       },
+  { to: '/finances',  icon: BarChart3,       label: 'Finances'  },
+  { to: '/budgets',   icon: FileText,        label: 'Estimates' },
+  { to: '/invoices',  icon: Receipt,         label: 'Invoices'  },
+];
+
+const DB_LINKS = [
   { to: '/clients',   icon: Users,           label: 'Clients'   },
   { to: '/crew',      icon: UserCog,         label: 'Crew'      },
   { to: '/assets',    icon: Package,         label: 'Assets'    },
-  { to: '/finances',  icon: BarChart3,       label: 'Finances'  },
-  { to: '/budgets',   icon: FileText,        label: 'Investment Estimations' },
-  { to: '/settings',  icon: Settings,        label: 'Settings'  },
+];
+
+const ALL_LINKS = [...OPS_LINKS, ...DB_LINKS, { to: '/settings', icon: Settings, label: 'Settings' }];
+
+const FAB_ACTIONS = [
+  { label: 'New Project',  icon: FolderKanban, to: '/projects?new=1' },
+  { label: 'New Estimate', icon: FileText,     to: '/budgets' },
+  { label: 'New Invoice',  icon: Receipt,      to: '/invoices' },
+  { label: 'New Lead',     icon: Lightbulb,    to: '/projects?newlead=1' },
 ];
 
 function fmtShortDate(d) {
@@ -26,14 +42,33 @@ export default function Layout() {
   const navigate = useNavigate();
   const { name, tagline, logo } = useAgency();
   const [upcoming, setUpcoming] = useState([]);
+  const [fabOpen, setFabOpen] = useState(false);
+  const fabRef = useRef(null);
 
   useEffect(() => {
     api.get('/calendar/upcoming?limit=3').then(setUpcoming).catch(() => {});
   }, []);
 
-  function logout() {
+  useEffect(() => {
+    if (!fabOpen) return;
+    function handleClick(e) {
+      if (fabRef.current && !fabRef.current.contains(e.target)) {
+        setFabOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [fabOpen]);
+
+  async function logout() {
+    try { await api.post('/auth/logout', {}); } catch (_) {}
     localStorage.removeItem('massiv_auth');
     navigate('/login');
+  }
+
+  function handleFabAction(to) {
+    setFabOpen(false);
+    navigate(to);
   }
 
   return (
@@ -59,7 +94,22 @@ export default function Layout() {
         </div>
 
         <nav className="sidebar-nav">
-          {links.map(({ to, icon: Icon, label }) => (
+          <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#444', padding: '4px 16px 6px', userSelect: 'none' }}>
+            Operations
+          </div>
+          {OPS_LINKS.map(({ to, icon: Icon, label }) => (
+            <NavLink key={to} to={to} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
+              <div className="nav-icon"><Icon size={18} /></div>
+              {label}
+            </NavLink>
+          ))}
+
+          <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', margin: '8px 16px' }} />
+
+          <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#444', padding: '4px 16px 6px', userSelect: 'none' }}>
+            Database
+          </div>
+          {DB_LINKS.map(({ to, icon: Icon, label }) => (
             <NavLink key={to} to={to} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
               <div className="nav-icon"><Icon size={18} /></div>
               {label}
@@ -72,10 +122,7 @@ export default function Layout() {
             <div className="sidebar-upcoming-title">Upcoming</div>
             {upcoming.map(ev => (
               <div key={ev.id} className="sidebar-upcoming-item">
-                <span
-                  className="sidebar-upcoming-dot"
-                  style={{ background: ev.color || '#723CEB' }}
-                />
+                <span className="sidebar-upcoming-dot" style={{ background: ev.color || '#723CEB' }} />
                 <div className="sidebar-upcoming-info">
                   <span className="sidebar-upcoming-name">{ev.title.length > 22 ? ev.title.slice(0, 22) + '…' : ev.title}</span>
                   <span className="sidebar-upcoming-date">{fmtShortDate(ev.start_date)}</span>
@@ -86,6 +133,10 @@ export default function Layout() {
         )}
 
         <div className="sidebar-footer">
+          <NavLink to="/settings" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
+            <div className="nav-icon"><Settings size={18} /></div>
+            Settings
+          </NavLink>
           <div className="built-by">built by year28</div>
           <button className="logout-btn" onClick={logout}>
             <div className="nav-icon"><LogOut size={18} /></div>
@@ -101,9 +152,26 @@ export default function Layout() {
         <footer className="page-footer">built by year28</footer>
       </div>
 
+      {/* Sticky FAB */}
+      <div className="fab-wrap" ref={fabRef}>
+        {fabOpen && (
+          <div className="fab-menu">
+            {FAB_ACTIONS.map(({ label, icon: Icon, to }) => (
+              <button key={label} className="fab-item" onClick={() => handleFabAction(to)}>
+                <span className="fab-item-icon"><Icon size={15} /></span>
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+        <button className="fab-btn" onClick={() => setFabOpen(o => !o)} aria-label="Quick actions">
+          {fabOpen ? <X size={20} /> : <Plus size={20} />}
+        </button>
+      </div>
+
       <nav className="bottom-nav">
         <div className="bottom-nav-inner">
-          {links.map(({ to, icon: Icon, label }) => (
+          {ALL_LINKS.map(({ to, icon: Icon, label }) => (
             <NavLink key={to} to={to} className={({ isActive }) => `bottom-nav-item${isActive ? ' active' : ''}`}>
               <Icon size={20} />
               {label}

@@ -8,7 +8,12 @@ router.get('/', (req, res) => {
     SELECT c.*,
       COUNT(DISTINCT p.id) as total_projects,
       COALESCE(SUM(CASE WHEN cp.status='received' THEN cp.amount ELSE 0 END), 0) as total_revenue,
-      COALESCE(SUM(CASE WHEN cp.status='pending' THEN cp.amount ELSE 0 END), 0) as outstanding_balance
+      COALESCE((
+        SELECT SUM(CASE WHEN (p2.agreed_budget - COALESCE(r.total,0)) > 0 THEN (p2.agreed_budget - COALESCE(r.total,0)) ELSE 0 END)
+        FROM projects p2
+        LEFT JOIN (SELECT project_id, SUM(amount) as total FROM client_payments WHERE status='received' GROUP BY project_id) r ON r.project_id = p2.id
+        WHERE p2.client_id = c.id AND p2.status != 'completed'
+      ), 0) as outstanding_balance
     FROM clients c
     LEFT JOIN projects p ON p.client_id = c.id
     LEFT JOIN client_payments cp ON cp.project_id = p.id
@@ -51,7 +56,7 @@ router.get('/:id', (req, res) => {
     SELECT p.*, pc.name as category_name,
       (SELECT COALESCE(SUM(cp.amount),0) FROM client_payments cp WHERE cp.project_id=p.id AND cp.status='received') as total_received,
       (SELECT COALESCE(SUM(ca.days*ca.rate_per_day),0) FROM crew_assignments ca WHERE ca.project_id=p.id) as total_crew_cost,
-      (SELECT COALESCE(SUM(e.amount),0) FROM expenses e WHERE e.project_id=p.id) as total_expenses
+      (SELECT COALESCE(SUM(e.amount),0) FROM expenses e WHERE e.project_id=p.id AND e.status='confirmed') as total_expenses
     FROM projects p
     LEFT JOIN project_categories pc ON pc.id = p.category_id
     WHERE p.client_id = ?
@@ -59,11 +64,14 @@ router.get('/:id', (req, res) => {
   `).all(req.params.id);
 
   const outstandingPayments = db.prepare(`
-    SELECT cp.*, p.title as project_title
-    FROM client_payments cp
-    JOIN projects p ON p.id = cp.project_id
-    WHERE p.client_id = ? AND cp.status = 'pending'
-    ORDER BY cp.date ASC
+    SELECT p.id as project_id, p.title as project_title, p.agreed_budget,
+      COALESCE(r.total, 0) as total_received,
+      (p.agreed_budget - COALESCE(r.total, 0)) as amount
+    FROM projects p
+    LEFT JOIN (SELECT project_id, SUM(amount) as total FROM client_payments WHERE status='received' GROUP BY project_id) r ON r.project_id = p.id
+    WHERE p.client_id = ? AND p.status != 'completed'
+      AND (p.agreed_budget - COALESCE(r.total, 0)) > 0
+    ORDER BY amount DESC
   `).all(req.params.id);
 
   const stats = projects.reduce((acc, p) => {
@@ -84,6 +92,12 @@ router.put('/:id', (req, res) => {
 });
 
 router.delete('/:id', (req, res) => {
+  const projectCount = db.prepare('SELECT COUNT(*) as n FROM projects WHERE client_id = ?').get(req.params.id).n;
+  if (projectCount > 0) {
+    return res.status(400).json({
+      error: `Cannot delete: this client has ${projectCount} project${projectCount > 1 ? 's' : ''}. Reassign or delete them first.`,
+    });
+  }
   db.prepare('DELETE FROM clients WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });

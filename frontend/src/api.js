@@ -49,6 +49,15 @@ export const api = {
   del: (path) => request('DELETE', path),
   postForm: (path, formData) => requestForm('POST', path, formData),
   putForm: (path, formData) => requestForm('PUT', path, formData),
+  getBlobUrl: async (path) => {
+    const token = localStorage.getItem('massiv_auth');
+    const res = await fetch(`${BASE}${path}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return URL.createObjectURL(blob);
+  },
   download: async (path, filename) => {
     const token = localStorage.getItem('massiv_auth');
     const res = await fetch(`${BASE}${path}`, {

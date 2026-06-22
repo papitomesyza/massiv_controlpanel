@@ -84,9 +84,16 @@ export default function Calendar() {
 
   const eventsByDate = {};
   events.forEach(ev => {
-    const k = ev.start_date;
-    if (!eventsByDate[k]) eventsByDate[k] = [];
-    eventsByDate[k].push(ev);
+    const start = new Date(ev.start_date + 'T00:00:00');
+    const end = ev.end_date ? new Date(ev.end_date + 'T00:00:00') : start;
+    const cur = new Date(start);
+    while (cur <= end) {
+      // Use local date components to avoid UTC offset shifting the date
+      const k = dateStr(cur.getFullYear(), cur.getMonth(), cur.getDate());
+      if (!eventsByDate[k]) eventsByDate[k] = [];
+      if (!eventsByDate[k].find(e => e.id === ev.id)) eventsByDate[k].push(ev);
+      cur.setDate(cur.getDate() + 1);
+    }
   });
 
   const totalCells = Math.ceil((firstDOW + daysInMonth) / 7) * 7;

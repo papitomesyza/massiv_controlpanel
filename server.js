@@ -1,7 +1,6 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const cors = require('cors');
 const multer = require('multer');
 const { initDb, db } = require('./db/database');
 
@@ -32,11 +31,7 @@ const fileFilter = (req, file, cb) => {
 
 const upload = multer({ storage, fileFilter, limits: { fileSize: 10 * 1024 * 1024 } });
 
-app.use(cors());
 app.use(express.json({ limit: '50mb' }));
-
-// Serve uploaded files without auth
-app.use('/uploads', express.static(UPLOADS_DIR));
 
 // Public: agency branding (no auth needed for public expense page)
 app.get('/api/settings/agency-public', (req, res) => {
@@ -57,12 +52,33 @@ app.use('/api/public', (req, res, next) => {
 
 function requireAuth(req, res, next) {
   const auth = req.headers.authorization;
-  const setting = db.prepare("SELECT value FROM settings WHERE key = 'password'").get();
-  const currentPassword = setting ? setting.value : 'massiv2026';
-  const expected = `Bearer ${Buffer.from(currentPassword).toString('base64')}`;
-  if (auth === expected) return next();
-  res.status(401).json({ error: 'Unauthorized' });
+  if (!auth || !auth.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' });
+  const token = auth.slice(7);
+  const session = db.prepare("SELECT id FROM sessions WHERE token = ? AND expires_at > datetime('now')").get(token);
+  if (!session) return res.status(401).json({ error: 'Unauthorized' });
+  next();
 }
+
+// Authenticated upload file serving
+app.get('/api/uploads/:filename', requireAuth, (req, res) => {
+  const filename = req.params.filename;
+  // Reject path traversal attempts
+  if (/[/\\]/.test(filename) || filename.includes('..')) {
+    return res.status(400).json({ error: 'Invalid filename' });
+  }
+  const filePath = path.join(UPLOADS_DIR, filename);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Not found' });
+
+  const ext = path.extname(filename).toLowerCase();
+  const mimeMap = {
+    '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+    '.png': 'image/png', '.webp': 'image/webp',
+    '.pdf': 'application/pdf',
+  };
+  const contentType = mimeMap[ext] || 'application/octet-stream';
+  res.setHeader('Content-Type', contentType);
+  res.sendFile(filePath);
+});
 
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/tasks', requireAuth, require('./routes/tasks'));
@@ -74,6 +90,7 @@ app.use('/api/budgets', requireAuth, require('./routes/budgets'));
 app.use('/api/leads', requireAuth, require('./routes/leads'));
 app.use('/api/assets', requireAuth, require('./routes/assets'));
 app.use('/api/calendar', requireAuth, require('./routes/calendar'));
+app.use('/api/invoices', requireAuth, require('./routes/invoices'));
 
 // Projects — inject multer for expense upload endpoints
 app.use('/api/projects', requireAuth, (req, res, next) => {

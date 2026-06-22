@@ -173,6 +173,10 @@ body {
   border-top: 1px solid var(--border-subtle);
 }
 
+.sidebar-footer .nav-link {
+  margin: 2px -12px;
+}
+
 .built-by {
   font-size: 11px;
   color: #444444;
@@ -1266,4 +1270,201 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: #723CEB; curso
   .lead-card {
     width: 100%;
   }
+}
+
+/* ===== ICON CHIP TINTS (stat-icon-wrap modifiers) ===== */
+.stat-icon-wrap.ic-purple { background: rgba(114,60,235,0.15); color: #723CEB; }
+.stat-icon-wrap.ic-orange { background: rgba(255,144,47,0.15);  color: #FF902F; }
+.stat-icon-wrap.ic-danger { background: rgba(255,68,68,0.15);   color: #FF4444; }
+.stat-icon-wrap.ic-success { background: rgba(76,175,80,0.15);  color: #4CAF50; }
+
+/* ===== FAB (floating shortcut button) ===== */
+.fab-wrap {
+  position: fixed; top: 24px; right: 24px;
+  z-index: 200;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
+}
+.fab-btn {
+  width: 44px; height: 44px;
+  border-radius: 14px;
+  background: var(--gradient-primary);
+  border: none; color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(114,60,235,0.35);
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+.fab-btn:hover { transform: scale(1.06); box-shadow: 0 6px 24px rgba(114,60,235,0.5); }
+.fab-menu {
+  background: #1e1e1e;
+  border: 1px solid var(--border-default);
+  border-radius: 14px;
+  padding: 6px;
+  display: flex; flex-direction: column; gap: 2px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  animation: fab-in 0.15s ease;
+  min-width: 164px;
+}
+@keyframes fab-in {
+  from { opacity: 0; transform: scale(0.95) translateY(-4px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+.fab-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 14px;
+  border: none; background: transparent;
+  color: #e0e0e0; font-family: var(--font);
+  font-size: 13px; font-weight: 500;
+  cursor: pointer; border-radius: 10px;
+  transition: background 0.15s;
+  white-space: nowrap; text-align: left; width: 100%;
+}
+.fab-item:hover { background: rgba(255,255,255,0.06); color: #fff; }
+.fab-item-icon { color: #666; transition: color 0.15s; flex-shrink: 0; }
+.fab-item:hover .fab-item-icon { color: #FF902F; }
+@media (max-width: 768px) {
+  .fab-wrap { right: 16px; top: auto; bottom: 86px; }
+}
+
+/* ===== DASHBOARD LEADS BAND ===== */
+.dash-leads-band {
+  background: rgba(255,144,47,0.03);
+  border: 1px solid rgba(255,144,47,0.12);
+  border-radius: 16px;
+  padding: 20px 24px;
+}
+.dash-leads-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 16px;
+}
+.dash-leads-title {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.7px;
+  color: #FF902F;
+}
+.dash-leads-count {
+  background: rgba(255,144,47,0.15);
+  color: #FF902F;
+  font-size: 11px; font-weight: 700;
+  border-radius: 50px; padding: 2px 8px;
+  line-height: 1.4;
+}
+.dash-leads-empty {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 20px 0 4px; gap: 6px;
+  color: #444; font-size: 13px; text-align: center;
+}
+.dash-leads-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+.dash-lead-card {
+  background: #1e1e1e;
+  border: 1px solid rgba(255,255,255,0.06);
+  border-left: 3px solid #FF902F;
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex; flex-direction: column; gap: 6px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.dash-lead-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+}
+
+/* ===== PROJECT DASH CARD (dashboard active projects) ===== */
+.project-dash-card {
+  padding: 16px;
+  transition: all 0.2s ease;
+}
+.project-dash-card:hover {
+  background: var(--bg-card-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 24px rgba(0,0,0,0.45);
+}
+
+/* ===== MINI BUDGET BAR ===== */
+.mini-bar-track {
+  height: 4px; background: rgba(255,255,255,0.07);
+  border-radius: 4px; overflow: hidden;
+}
+.mini-bar-fill {
+  height: 100%; border-radius: 4px;
+  transition: width 0.3s ease;
+}
+.mini-bar-received { background: rgba(76,175,80,0.65); }
+.mini-bar-spent   { background: rgba(255,144,47,0.5); }
+
+/* ===== EXPENSE BAR ROW (dashboard expense categories) ===== */
+.expense-bar-row { margin-bottom: 14px; }
+.expense-bar-row:last-child { margin-bottom: 0; }
+.expense-bar-header {
+  display: flex; justify-content: space-between; align-items: baseline;
+  margin-bottom: 5px;
+}
+.expense-bar-name { font-size: 13px; color: #c8c8c8; }
+.expense-bar-amt  { font-size: 13px; font-weight: 700; color: #ffffff; }
+.expense-bar-track {
+  height: 5px; background: rgba(255,255,255,0.07);
+  border-radius: 4px; overflow: hidden;
+}
+.expense-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #723CEB 0%, #FF902F 100%);
+  border-radius: 4px;
+  transition: width 0.4s ease;
+  opacity: 0.65;
+}
+
+/* ===== PROJECT ROW CARD (Projects page list view) ===== */
+.project-row-card {
+  padding: 16px 20px;
+  display: flex; flex-direction: column; gap: 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  transition: background 0.15s ease;
+  cursor: pointer;
+}
+.project-row-card:last-child { border-bottom: none; }
+.project-row-card:hover { background: rgba(255,255,255,0.02); }
+.project-row-top {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.project-row-title {
+  font-size: 14px; font-weight: 700; color: #ffffff;
+  flex: 1; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.project-row-meta {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; color: #777; flex-wrap: wrap;
+}
+.project-row-bars {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+}
+.project-bar-label {
+  display: flex; justify-content: space-between; align-items: baseline;
+  margin-bottom: 4px; font-size: 11px; color: #555;
+}
+
+/* ===== SHOOT CHIP ===== */
+.shoot-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 50px;
+  font-size: 11px; font-weight: 600;
+  background: rgba(114,60,235,0.12); color: #a78bfa;
+  white-space: nowrap; flex-shrink: 0;
+}
+.shoot-chip.urgent { background: rgba(255,144,47,0.12); color: #FF902F; }
+.shoot-chip.today  { background: rgba(255,68,68,0.12);  color: #FF5555; }
+
+/* ===== RESPONSIVE ADDITIONS ===== */
+@media (max-width: 680px) {
+  .project-row-bars { grid-template-columns: 1fr; }
+  .dash-leads-grid  { grid-template-columns: 1fr; }
+}
+@media (max-width: 768px) {
+  .project-row-card { padding: 12px 16px; }
 }

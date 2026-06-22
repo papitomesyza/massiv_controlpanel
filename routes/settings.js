@@ -1,5 +1,10 @@
 const express = require('express');
 const router = express.Router();
+const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
+const path = require('path');
+const os = require('os');
+const fs = require('fs');
 const { db } = require('../db/database');
 
 router.get('/expense-categories', (req, res) => {
@@ -17,6 +22,8 @@ router.delete('/expense-categories/:id', (req, res) => {
   const cat = db.prepare('SELECT * FROM expense_categories WHERE id = ?').get(req.params.id);
   if (!cat) return res.status(404).json({ error: 'Not found' });
   if (cat.is_default) return res.status(400).json({ error: 'Cannot delete default category' });
+  const usage = db.prepare('SELECT COUNT(*) as n FROM expenses WHERE category_id = ?').get(req.params.id).n;
+  if (usage > 0) return res.status(400).json({ error: `Cannot delete: used by ${usage} expense${usage > 1 ? 's' : ''}` });
   db.prepare('DELETE FROM expense_categories WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
@@ -36,6 +43,8 @@ router.delete('/project-categories/:id', (req, res) => {
   const cat = db.prepare('SELECT * FROM project_categories WHERE id = ?').get(req.params.id);
   if (!cat) return res.status(404).json({ error: 'Not found' });
   if (cat.is_default) return res.status(400).json({ error: 'Cannot delete default category' });
+  const usage = db.prepare('SELECT COUNT(*) as n FROM projects WHERE category_id = ?').get(req.params.id).n;
+  if (usage > 0) return res.status(400).json({ error: `Cannot delete: used by ${usage} project${usage > 1 ? 's' : ''}` });
   db.prepare('DELETE FROM project_categories WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
@@ -59,7 +68,6 @@ router.delete('/crew-roles/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-// GET /api/settings/agency — returns all three branding fields as one object
 router.get('/agency', (req, res) => {
   const rows = db.prepare(
     "SELECT key, value FROM settings WHERE key IN ('agency_name', 'agency_tagline', 'agency_logo')"
@@ -73,7 +81,6 @@ router.get('/agency', (req, res) => {
   });
 });
 
-// POST /api/settings/agency — saves all three branding fields atomically
 router.post('/agency', (req, res) => {
   const { agency_name, agency_tagline, agency_logo_base64 } = req.body;
   const setOrDelete = (key, value) => {
@@ -123,17 +130,69 @@ router.get('/', (req, res) => {
   res.json(result);
 });
 
+// Tax configuration — must be before the /:key catch-all
+router.get('/tax', (req, res) => {
+  const rows = db.prepare("SELECT key, value FROM settings WHERE key IN ('tax_rate', 'tax_label', 'tax_enabled')").all();
+  const map = {};
+  rows.forEach(r => { map[r.key] = r.value; });
+  res.json({
+    tax_rate: parseFloat(map.tax_rate || '18'),
+    tax_label: map.tax_label || 'Tax',
+    tax_enabled: map.tax_enabled !== '0',
+  });
+});
+
+router.post('/tax', (req, res) => {
+  const { tax_rate, tax_label, tax_enabled } = req.body;
+  const upsert = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
+  if (tax_rate !== undefined) upsert.run('tax_rate', String(Number(tax_rate) || 0));
+  if (tax_label !== undefined) upsert.run('tax_label', tax_label || 'Tax');
+  if (tax_enabled !== undefined) upsert.run('tax_enabled', tax_enabled ? '1' : '0');
+  res.json({ ok: true });
+});
+
 router.get('/:key', (req, res) => {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(req.params.key);
   res.json({ value: row ? row.value : null });
 });
 
 router.post('/change-password', (req, res) => {
-  const { newPassword } = req.body;
-  if (!newPassword || newPassword.length < 4) return res.status(400).json({ error: 'Password must be at least 4 characters' });
-  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('password', ?)").run(newPassword);
-  const token = Buffer.from(newPassword).toString('base64');
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword) return res.status(400).json({ error: 'Current password required' });
+  if (!newPassword || newPassword.length < 8) return res.status(400).json({ error: 'New password must be at least 8 characters' });
+
+  const hashRow = db.prepare("SELECT value FROM settings WHERE key = 'password_hash'").get();
+  if (!hashRow) return res.status(500).json({ error: 'Server configuration error' });
+
+  if (!bcrypt.compareSync(currentPassword, hashRow.value)) {
+    return res.status(401).json({ error: 'Current password is incorrect' });
+  }
+
+  const newHash = bcrypt.hashSync(newPassword, 10);
+  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('password_hash', ?)").run(newHash);
+  db.prepare('DELETE FROM sessions').run();
+
+  const token = crypto.randomBytes(32).toString('hex');
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  db.prepare('INSERT INTO sessions (token, expires_at) VALUES (?, ?)').run(token, expiresAt);
+
   res.json({ token });
+});
+
+// Authenticated database backup download
+router.get('/backup/download', (req, res) => {
+  const tmpPath = path.join(os.tmpdir(), `massiv-backup-${Date.now()}.db`);
+  const backupDate = new Date().toISOString().slice(0, 10);
+  db.backup(tmpPath)
+    .then(() => {
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Content-Disposition', `attachment; filename="massiv-backup-${backupDate}.db"`);
+      const stream = fs.createReadStream(tmpPath);
+      stream.pipe(res);
+      stream.on('end', () => fs.unlink(tmpPath, () => {}));
+      stream.on('error', () => fs.unlink(tmpPath, () => {}));
+    })
+    .catch(() => res.status(500).json({ error: 'Backup failed' }));
 });
 
 module.exports = router;

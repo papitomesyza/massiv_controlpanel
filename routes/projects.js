@@ -6,6 +6,30 @@ const { db } = require('../db/database');
 
 const PHASES = ['Development', 'Pre-Production', 'Production', 'Post-Production'];
 
+function validateMoney(val, name) {
+  const n = Number(val);
+  if (!Number.isFinite(n)) return `${name} must be a number`;
+  if (n < 0) return `${name} must be at least 0`;
+  if (n > 1000000) return `${name} must be at most 1,000,000`;
+  return null;
+}
+
+function validateDays(val, name) {
+  const n = Number(val);
+  if (!Number.isFinite(n)) return `${name} must be a number`;
+  if (n < 0) return `${name} must be at least 0`;
+  return null;
+}
+
+function getUploadsDir() {
+  return path.join(process.env.DATA_DIR || path.join(__dirname, '..', 'data'), 'uploads');
+}
+
+function deleteFile(filename) {
+  if (!filename) return;
+  try { fs.unlink(path.join(getUploadsDir(), filename), () => {}); } catch (_) {}
+}
+
 function getProjectFull(id) {
   const project = db.prepare(`
     SELECT p.*, c.name as client_name, c.company as client_company,
@@ -37,10 +61,18 @@ function getProjectFull(id) {
 
   const clientPayments = db.prepare('SELECT * FROM client_payments WHERE project_id = ? ORDER BY date').all(id);
 
+  // Only confirmed expenses for PnL
   const expenses = db.prepare(`
     SELECT e.*, ec.name as category_name
     FROM expenses e LEFT JOIN expense_categories ec ON ec.id = e.category_id
-    WHERE e.project_id = ? ORDER BY e.date DESC, e.id DESC
+    WHERE e.project_id = ? AND e.status = 'confirmed' ORDER BY e.date DESC, e.id DESC
+  `).all(id);
+
+  // Pending expenses for review queue
+  const pendingExpenses = db.prepare(`
+    SELECT e.*, ec.name as category_name
+    FROM expenses e LEFT JOIN expense_categories ec ON ec.id = e.category_id
+    WHERE e.project_id = ? AND e.status = 'pending' ORDER BY e.id DESC
   `).all(id);
 
   const statusHistory = db.prepare(
@@ -56,17 +88,22 @@ function getProjectFull(id) {
   const totalReceived = clientPayments.filter(p => p.status === 'received').reduce((s, p) => s + p.amount, 0);
   const totalCrewCost = crewAssignments.reduce((s, c) => s + (c.days * c.rate_per_day), 0);
   const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
-  const grossProfit = project.agreed_budget - totalCrewCost - totalExpenses;
-  const netProfit = totalReceived - totalCrewCost - totalExpenses;
-  const profitMargin = project.agreed_budget > 0 ? (netProfit / project.agreed_budget) * 100 : 0;
+  // Expected Profit = agreed_budget - crew - expenses
+  const expectedProfit = project.agreed_budget - totalCrewCost - totalExpenses;
+  // Realized Profit = received - crew - expenses
+  const realizedProfit = totalReceived - totalCrewCost - totalExpenses;
+  // Margin = realized / received (only when received > 0)
+  const profitMargin = totalReceived > 0 ? (realizedProfit / totalReceived) * 100 : null;
 
   return {
     project, phases: phasesWithTasks, revisionRounds,
-    crewAssignments, clientPayments, expenses, statusHistory, duplicatedFromTitle,
+    crewAssignments, clientPayments, expenses, pendingExpenses, statusHistory, duplicatedFromTitle,
     pnl: {
-      agreedBudget: project.agreed_budget, totalReceived, totalCrewCost,
-      totalExpenses, grossProfit, netProfit,
-      profitMargin: Math.round(profitMargin * 10) / 10,
+      agreedBudget: project.agreed_budget,
+      clientBudget: project.client_budget || 0,
+      totalReceived, totalCrewCost,
+      totalExpenses, expectedProfit, realizedProfit,
+      profitMargin: profitMargin !== null ? Math.round(profitMargin * 10) / 10 : null,
     },
   };
 }
@@ -87,7 +124,7 @@ router.get('/', (req, res) => {
       (SELECT COUNT(*) FROM project_phases ph WHERE ph.project_id=p.id AND ph.status='completed') as completed_phases,
       COALESCE(SUM(CASE WHEN cp.status='received' THEN cp.amount ELSE 0 END),0) as total_received,
       COALESCE((SELECT SUM(ca.days*ca.rate_per_day) FROM crew_assignments ca WHERE ca.project_id=p.id),0) as total_crew_cost,
-      COALESCE((SELECT SUM(e.amount) FROM expenses e WHERE e.project_id=p.id),0) as total_expenses
+      COALESCE((SELECT SUM(e.amount) FROM expenses e WHERE e.project_id=p.id AND e.status='confirmed'),0) as total_expenses
     FROM projects p
     LEFT JOIN clients c ON c.id = p.client_id
     LEFT JOIN project_categories pc ON pc.id = p.category_id
@@ -123,8 +160,12 @@ router.get('/', (req, res) => {
 });
 
 function syncProjectCalendarEvent(projectId, title, shootDate, shootLocation) {
-  if (!shootDate) return;
-  const existing = db.prepare('SELECT id FROM calendar_events WHERE project_id = ? AND event_type = ?').get(projectId, 'shoot');
+  if (!shootDate) {
+    // Clear shoot event when shoot_date is cleared
+    db.prepare("DELETE FROM calendar_events WHERE project_id = ? AND event_type = 'shoot'").run(projectId);
+    return;
+  }
+  const existing = db.prepare("SELECT id FROM calendar_events WHERE project_id = ? AND event_type = 'shoot'").get(projectId, 'shoot');
   if (existing) {
     db.prepare('UPDATE calendar_events SET title=?, start_date=?, location=? WHERE id=?')
       .run(title, shootDate, shootLocation || null, existing.id);
@@ -138,6 +179,11 @@ function syncProjectCalendarEvent(projectId, title, shootDate, shootLocation) {
 router.post('/', (req, res) => {
   const { client_id, title, category_id, client_budget, agreed_budget, notes, shoot_date, shoot_days, shoot_location, location_name, location_lat, location_lng } = req.body;
   if (!title) return res.status(400).json({ error: 'Title required' });
+
+  const errCB = validateMoney(client_budget || 0, 'client_budget');
+  if (errCB) return res.status(400).json({ error: errCB });
+  const errAB = validateMoney(agreed_budget || 0, 'agreed_budget');
+  if (errAB) return res.status(400).json({ error: errAB });
 
   const effectiveLocation = location_name || shoot_location || null;
   const result = db.prepare(
@@ -155,7 +201,7 @@ router.post('/', (req, res) => {
     insertLocked.run(devPhase.id, projectId, 'Budget Approved');
   }
 
-  if (shoot_date) syncProjectCalendarEvent(projectId, title, shoot_date, effectiveLocation);
+  syncProjectCalendarEvent(projectId, title, shoot_date, effectiveLocation);
 
   const phases = db.prepare('SELECT * FROM project_phases WHERE project_id = ? ORDER BY order_index').all(projectId);
   res.json({ id: projectId, phases });
@@ -171,6 +217,12 @@ router.get('/:id', (req, res) => {
 // Update project
 router.put('/:id', (req, res) => {
   const { client_id, title, category_id, status, client_budget, agreed_budget, notes, shoot_date, shoot_days, shoot_location, location_name, location_lat, location_lng } = req.body;
+
+  const errCB = validateMoney(client_budget || 0, 'client_budget');
+  if (errCB) return res.status(400).json({ error: errCB });
+  const errAB = validateMoney(agreed_budget || 0, 'agreed_budget');
+  if (errAB) return res.status(400).json({ error: errAB });
+
   const prev = db.prepare('SELECT status FROM projects WHERE id = ?').get(req.params.id);
   const effectiveLocation = location_name || shoot_location || null;
   db.prepare(`
@@ -181,15 +233,8 @@ router.put('/:id', (req, res) => {
     notes || null, shoot_date || null, shoot_days || 1, effectiveLocation,
     location_name || null, location_lat || null, location_lng || null, req.params.id);
   if (prev) recordStatusChange(req.params.id, prev.status, status);
-  if (shoot_date) syncProjectCalendarEvent(req.params.id, title, shoot_date, effectiveLocation);
-  res.json({ ok: true });
-});
-
-// Update client approval flags
-router.put('/:id/approval', (req, res) => {
-  const { treatment_approved, budget_approved } = req.body;
-  db.prepare('UPDATE projects SET treatment_approved=?, budget_approved=? WHERE id=?')
-    .run(treatment_approved ? 1 : 0, budget_approved ? 1 : 0, req.params.id);
+  // Pass shoot_date (may be null/empty) to handle calendar event deletion
+  syncProjectCalendarEvent(req.params.id, title, shoot_date || null, effectiveLocation);
   res.json({ ok: true });
 });
 
@@ -219,14 +264,27 @@ router.put('/:id/phases/:phaseId/complete', (req, res) => {
   res.json({ ok: true });
 });
 
-// Reactivate a phase
+// Reactivate a phase — keeps state consistent
 router.put('/:id/phases/:phaseId/reactivate', (req, res) => {
   const { id, phaseId } = req.params;
-  db.prepare("UPDATE project_phases SET status='active', completed_at=NULL WHERE id=? AND project_id=?").run(phaseId, id);
+  const phase = db.prepare('SELECT * FROM project_phases WHERE id = ? AND project_id = ?').get(phaseId, id);
+  if (!phase) return res.status(404).json({ error: 'Phase not found' });
+
+  const prev = db.prepare('SELECT status FROM projects WHERE id = ?').get(id);
+
+  // Set all currently-active phases back to pending, then activate the target
+  db.prepare("UPDATE project_phases SET status='pending' WHERE project_id=? AND status='active'").run(id);
+  db.prepare("UPDATE project_phases SET status='active', completed_at=NULL WHERE id=?").run(phaseId);
+
+  // Update project status to match reactivated phase
+  const newStatus = phase.phase_name.toLowerCase().replace(/ /g, '-');
+  db.prepare('UPDATE projects SET status=? WHERE id=?').run(newStatus, id);
+  if (prev) recordStatusChange(id, prev.status, newStatus);
+
   res.json({ ok: true });
 });
 
-// Duplicate project
+// Duplicate project — copies location fields
 router.post('/:id/duplicate', (req, res) => {
   const { title } = req.body;
   if (!title || !title.trim()) return res.status(400).json({ error: 'Title required' });
@@ -238,11 +296,12 @@ router.post('/:id/duplicate', (req, res) => {
   if (existing) return res.status(400).json({ error: 'A project with this title already exists' });
 
   const result = db.prepare(
-    'INSERT INTO projects (client_id, title, category_id, client_budget, agreed_budget, notes, shoot_date, shoot_days, shoot_location, status, duplicated_from) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO projects (client_id, title, category_id, client_budget, agreed_budget, notes, shoot_date, shoot_days, shoot_location, location_name, location_lat, location_lng, status, duplicated_from) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(
     original.client_id, title.trim(), original.category_id, original.client_budget,
     original.agreed_budget, original.notes, original.shoot_date, original.shoot_days,
-    original.shoot_location, 'development', original.id
+    original.shoot_location, original.location_name, original.location_lat, original.location_lng,
+    'development', original.id
   );
 
   const newProjectId = result.lastInsertRowid;
@@ -273,8 +332,9 @@ router.post('/:id/duplicate', (req, res) => {
   res.json({ id: newProjectId });
 });
 
-// Delete project
+// Delete project — also deletes linked shoot calendar events
 router.delete('/:id', (req, res) => {
+  db.prepare("DELETE FROM calendar_events WHERE project_id = ? AND event_type = 'shoot'").run(req.params.id);
   db.prepare('DELETE FROM projects WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
@@ -304,11 +364,27 @@ router.delete('/:id/tasks/:taskId', (req, res) => {
   res.json({ ok: true });
 });
 
+// Batch task insert — continues sort_order from each phase's current max
 router.post('/:id/tasks/batch', (req, res) => {
   const { tasks } = req.body;
   if (!Array.isArray(tasks) || tasks.length === 0) return res.json({ ok: true });
-  const insert = db.prepare('INSERT INTO tasks (phase_id, project_id, title, assigned_crew_id) VALUES (?, ?, ?, ?)');
-  const insertMany = db.transaction(list => list.forEach(t => insert.run(t.phase_id, req.params.id, t.title, t.assigned_crew_id || null)));
+
+  // Determine current max sort_order per phase
+  const phaseMaxes = {};
+  tasks.forEach(t => {
+    if (!(t.phase_id in phaseMaxes)) {
+      const row = db.prepare('SELECT COALESCE(MAX(sort_order), -1) as m FROM tasks WHERE phase_id = ?').get(t.phase_id);
+      phaseMaxes[t.phase_id] = row.m;
+    }
+  });
+
+  const phaseCounters = {};
+  const insert = db.prepare('INSERT INTO tasks (phase_id, project_id, title, assigned_crew_id, sort_order) VALUES (?, ?, ?, ?, ?)');
+  const insertMany = db.transaction(list => list.forEach(t => {
+    if (!(t.phase_id in phaseCounters)) phaseCounters[t.phase_id] = phaseMaxes[t.phase_id];
+    phaseCounters[t.phase_id]++;
+    insert.run(t.phase_id, req.params.id, t.title, t.assigned_crew_id || null, phaseCounters[t.phase_id]);
+  }));
   insertMany(tasks);
   res.json({ ok: true });
 });
@@ -333,6 +409,8 @@ router.delete('/:id/revisions/:revId', (req, res) => {
 router.post('/:id/payments', (req, res) => {
   const { amount, date, method, notes, status } = req.body;
   if (!amount || !date) return res.status(400).json({ error: 'Amount and date required' });
+  const err = validateMoney(amount, 'amount');
+  if (err) return res.status(400).json({ error: err });
   const result = db.prepare('INSERT INTO client_payments (project_id, amount, date, method, notes, status) VALUES (?, ?, ?, ?, ?, ?)')
     .run(req.params.id, amount, date, method || 'bank_transfer', notes || null, status || 'pending');
   res.json({ id: result.lastInsertRowid });
@@ -340,6 +418,8 @@ router.post('/:id/payments', (req, res) => {
 
 router.put('/:id/payments/:payId', (req, res) => {
   const { amount, date, method, notes, status } = req.body;
+  const err = validateMoney(amount, 'amount');
+  if (err) return res.status(400).json({ error: err });
   db.prepare('UPDATE client_payments SET amount=?, date=?, method=?, notes=?, status=? WHERE id=? AND project_id=?')
     .run(amount, date, method, notes || null, status, req.params.payId, req.params.id);
   res.json({ ok: true });
@@ -354,6 +434,14 @@ router.delete('/:id/payments/:payId', (req, res) => {
 router.post('/:id/crew', (req, res) => {
   const { crew_id, role_on_project, days, rate_per_day, paid_status, payment_date, payment_amount, payment_method, payment_notes } = req.body;
   if (!crew_id) return res.status(400).json({ error: 'crew_id required' });
+
+  const errD = validateDays(days || 0, 'days');
+  if (errD) return res.status(400).json({ error: errD });
+  const errR = validateMoney(rate_per_day || 0, 'rate_per_day');
+  if (errR) return res.status(400).json({ error: errR });
+  const errP = validateMoney(payment_amount || 0, 'payment_amount');
+  if (errP) return res.status(400).json({ error: errP });
+
   const result = db.prepare(
     'INSERT INTO crew_assignments (project_id, crew_id, role_on_project, days, rate_per_day, paid_status, payment_date, payment_amount, payment_method, payment_notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(req.params.id, crew_id, role_on_project || null, days || 1, rate_per_day || 0, paid_status || 'unpaid', payment_date || null, payment_amount || 0, payment_method || null, payment_notes || null);
@@ -362,6 +450,14 @@ router.post('/:id/crew', (req, res) => {
 
 router.put('/:id/crew/:assignId', (req, res) => {
   const { role_on_project, days, rate_per_day, paid_status, payment_date, payment_amount, payment_method, payment_notes } = req.body;
+
+  const errD = validateDays(days || 0, 'days');
+  if (errD) return res.status(400).json({ error: errD });
+  const errR = validateMoney(rate_per_day || 0, 'rate_per_day');
+  if (errR) return res.status(400).json({ error: errR });
+  const errP = validateMoney(payment_amount || 0, 'payment_amount');
+  if (errP) return res.status(400).json({ error: errP });
+
   db.prepare(`
     UPDATE crew_assignments SET role_on_project=?, days=?, rate_per_day=?,
       paid_status=?, payment_date=?, payment_amount=?, payment_method=?, payment_notes=?
@@ -378,27 +474,29 @@ router.delete('/:id/crew/:assignId', (req, res) => {
   res.json({ ok: true });
 });
 
-// --- EXPENSES ---
+// --- EXPENSES (admin-created: status = confirmed) ---
 router.post('/:id/expenses', (req, res) => {
   const { category_id, amount, date, notes } = req.body;
   if (!amount || !date) return res.status(400).json({ error: 'Amount and date required' });
+  const err = validateMoney(amount, 'amount');
+  if (err) return res.status(400).json({ error: err });
   const imagePath = req.file ? req.file.filename : null;
   const result = db.prepare(
-    'INSERT INTO expenses (project_id, category_id, amount, date, notes, invoice_image_path, source) VALUES (?, ?, ?, ?, ?, ?, ?)'
-  ).run(req.params.id, category_id || null, amount, date, notes || null, imagePath, 'admin');
+    "INSERT INTO expenses (project_id, category_id, amount, date, notes, invoice_image_path, source, status) VALUES (?, ?, ?, ?, ?, ?, 'admin', 'confirmed')"
+  ).run(req.params.id, category_id || null, amount, date, notes || null, imagePath);
   res.json({ id: result.lastInsertRowid });
 });
 
 router.put('/:id/expenses/:expId', (req, res) => {
   const { category_id, amount, date, notes } = req.body;
+  if (amount !== undefined) {
+    const err = validateMoney(amount, 'amount');
+    if (err) return res.status(400).json({ error: err });
+  }
   const existing = db.prepare('SELECT invoice_image_path FROM expenses WHERE id = ? AND project_id = ?').get(req.params.expId, req.params.id);
   let imagePath = existing ? existing.invoice_image_path : null;
   if (req.file) {
-    // Delete old image if replacing
-    if (imagePath) {
-      const oldPath = path.join(process.env.DATA_DIR || path.join(__dirname, '..', 'data'), 'uploads', imagePath);
-      fs.unlink(oldPath, () => {});
-    }
+    if (imagePath) deleteFile(imagePath);
     imagePath = req.file.filename;
   }
   db.prepare('UPDATE expenses SET category_id=?, amount=?, date=?, notes=?, invoice_image_path=? WHERE id=? AND project_id=?')
@@ -408,11 +506,36 @@ router.put('/:id/expenses/:expId', (req, res) => {
 
 router.delete('/:id/expenses/:expId', (req, res) => {
   const expense = db.prepare('SELECT invoice_image_path FROM expenses WHERE id = ? AND project_id = ?').get(req.params.expId, req.params.id);
-  if (expense && expense.invoice_image_path) {
-    const filePath = path.join(process.env.DATA_DIR || path.join(__dirname, '..', 'data'), 'uploads', expense.invoice_image_path);
-    fs.unlink(filePath, () => {});
-  }
+  if (expense) deleteFile(expense.invoice_image_path);
   db.prepare('DELETE FROM expenses WHERE id = ? AND project_id = ?').run(req.params.expId, req.params.id);
+  res.json({ ok: true });
+});
+
+// Approve a pending expense
+router.post('/:id/expenses/:expId/approve', (req, res) => {
+  const expense = db.prepare('SELECT * FROM expenses WHERE id = ? AND project_id = ? AND status = ?').get(req.params.expId, req.params.id, 'pending');
+  if (!expense) return res.status(404).json({ error: 'Pending expense not found' });
+
+  let categoryId = expense.category_id;
+  if (!categoryId && expense.category_text) {
+    let catRow = db.prepare('SELECT id FROM expense_categories WHERE name = ?').get(expense.category_text);
+    if (!catRow) {
+      const r = db.prepare('INSERT INTO expense_categories (name, is_default) VALUES (?, 0)').run(expense.category_text);
+      catRow = { id: r.lastInsertRowid };
+    }
+    categoryId = catRow.id;
+  }
+
+  db.prepare("UPDATE expenses SET status='confirmed', category_id=? WHERE id=?").run(categoryId, expense.id);
+  res.json({ ok: true });
+});
+
+// Reject a pending expense — deletes it and its file
+router.post('/:id/expenses/:expId/reject', (req, res) => {
+  const expense = db.prepare('SELECT * FROM expenses WHERE id = ? AND project_id = ? AND status = ?').get(req.params.expId, req.params.id, 'pending');
+  if (!expense) return res.status(404).json({ error: 'Pending expense not found' });
+  deleteFile(expense.invoice_image_path);
+  db.prepare('DELETE FROM expenses WHERE id = ?').run(expense.id);
   res.json({ ok: true });
 });
 
@@ -472,15 +595,16 @@ router.get('/:id/pdf', (req, res) => {
 
   doc.fontSize(12).font('Helvetica-Bold').fillColor('#000').text('Financial Summary');
   doc.moveDown(0.3);
-  [
+  const pnlRows = [
     ['Agreed Budget', fmt(pnl.agreedBudget)],
     ['Total Received', fmt(pnl.totalReceived)],
     ['Total Crew Cost', fmt(pnl.totalCrewCost)],
     ['Total Expenses', fmt(pnl.totalExpenses)],
-    ['Gross Profit', fmt(pnl.grossProfit)],
-    ['Net Profit', fmt(pnl.netProfit)],
-    ['Profit Margin', `${pnl.profitMargin}%`],
-  ].forEach(([label, val]) => {
+    ['Expected Profit', fmt(pnl.expectedProfit)],
+    ['Realized Profit', fmt(pnl.realizedProfit)],
+    ['Profit Margin', pnl.profitMargin !== null ? `${pnl.profitMargin}%` : '—'],
+  ];
+  pnlRows.forEach(([label, val]) => {
     doc.fontSize(10).font('Helvetica').fillColor('#333').text(label, { continued: true, width: 250 });
     doc.fillColor('#000').text(val, { align: 'right' });
   });

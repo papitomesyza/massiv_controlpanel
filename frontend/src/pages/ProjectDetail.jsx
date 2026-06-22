@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Plus, Check, Trash2, Edit2, ChevronDown, ChevronRight, FileDown, ArrowLeft, Lock, X, Copy, ArrowRight, Clock, GripVertical, Link2, Link2Off, ExternalLink, Image, Download, FileText } from 'lucide-react';
 import { api, fmt, fmtDate } from '../api';
@@ -34,6 +34,8 @@ export default function ProjectDetail() {
   const [lightboxSrc, setLightboxSrc] = useState(null);
   const [revokeConfirm, setRevokeConfirm] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [invoiceBlobUrls, setInvoiceBlobUrls] = useState({});
+  const blobUrlsRef = useRef({});
 
   const load = useCallback(async () => {
     try {
@@ -57,10 +59,34 @@ export default function ProjectDetail() {
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    if (!data) return;
+    Object.values(blobUrlsRef.current).forEach(u => URL.revokeObjectURL(u));
+    blobUrlsRef.current = {};
+    setInvoiceBlobUrls({});
+
+    const filenames = [
+      ...data.expenses.filter(e => e.invoice_image_path).map(e => e.invoice_image_path),
+      ...(data.pendingExpenses || []).filter(e => e.invoice_image_path).map(e => e.invoice_image_path),
+    ];
+    const unique = [...new Set(filenames)];
+    if (unique.length === 0) return;
+
+    let active = true;
+    Promise.all(unique.map(async fn => [fn, await api.getBlobUrl(`/uploads/${fn}`)])).then(pairs => {
+      if (!active) { pairs.forEach(([, u]) => u && URL.revokeObjectURL(u)); return; }
+      const map = {};
+      pairs.forEach(([fn, u]) => { if (u) map[fn] = u; });
+      blobUrlsRef.current = map;
+      setInvoiceBlobUrls(map);
+    });
+    return () => { active = false; };
+  }, [data]);
+
   if (loading) return <div className="loading">Loading project...</div>;
   if (!data) return null;
 
-  const { project, phases, revisionRounds, crewAssignments, clientPayments, expenses, pnl, statusHistory, duplicatedFromTitle } = data;
+  const { project, phases, revisionRounds, crewAssignments, clientPayments, expenses, pendingExpenses, pnl, statusHistory, duplicatedFromTitle } = data;
 
   async function handleCompletePhase(phase) {
     const nextPhase = phases.find(p => p.order_index === phase.order_index + 1);
@@ -143,7 +169,6 @@ export default function ProjectDetail() {
   }
 
   const postProdPhase = phases.find(p => p.phase_name === 'Post-Production');
-  const netPositive = pnl.netProfit >= 0;
 
   return (
     <div>
@@ -392,6 +417,37 @@ export default function ProjectDetail() {
               )}
             </div>
 
+            {(pendingExpenses || []).length > 0 && (
+              <div style={{ marginBottom: '14px', paddingBottom: '4px', borderBottom: '1px solid var(--border)' }}>
+                <div className="text-sm" style={{ color: '#FF902F', fontWeight: 700, marginBottom: '8px' }}>
+                  Pending review ({pendingExpenses.length})
+                </div>
+                {pendingExpenses.map(pe => (
+                  <div key={pe.id} className="fin-row" style={{ alignItems: 'flex-start' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div>
+                        <span className="text-sm">{pe.category_text || 'Uncategorized'}</span>
+                        <span className="text-xs text-2" style={{ marginLeft: '8px' }}>{fmtDate(pe.date)}</span>
+                      </div>
+                      {pe.notes && <div className="text-xs text-2">{pe.notes}</div>}
+                      {pe.submitted_by && <div className="text-xs text-2">by {pe.submitted_by}</div>}
+                    </div>
+                    <div className="flex-center gap-2" style={{ flexShrink: 0 }}>
+                      <span className="text-bold text-sm">{fmt(pe.amount)}</span>
+                      <button className="btn btn-ghost btn-sm" style={{ color: '#4CAF50', fontSize: '11px' }}
+                        onClick={async () => { await api.post(`/projects/${id}/expenses/${pe.id}/approve`, {}); load(); }}>
+                        Approve
+                      </button>
+                      <button className="btn btn-danger btn-sm" style={{ fontSize: '11px' }}
+                        onClick={async () => { await api.del(`/projects/${id}/expenses/${pe.id}`); load(); }}>
+                        Reject
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {expenses.map(e => (
               <div key={e.id} className="fin-row" style={{ alignItems: 'flex-start' }}>
                 <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', flex: 1, minWidth: 0 }}>
@@ -399,8 +455,9 @@ export default function ProjectDetail() {
                     <div
                       onClick={() => {
                         const isPdf = e.invoice_image_path.toLowerCase().endsWith('.pdf');
-                        if (!isPdf) setLightboxSrc({ src: `/uploads/${e.invoice_image_path}`, filename: e.invoice_image_path });
-                        else window.open(`/uploads/${e.invoice_image_path}`, '_blank');
+                        const blobUrl = invoiceBlobUrls[e.invoice_image_path];
+                        if (isPdf) { if (blobUrl) window.open(blobUrl, '_blank'); }
+                        else setLightboxSrc({ src: blobUrl || '', filename: e.invoice_image_path });
                       }}
                       style={{ flexShrink: 0, cursor: 'pointer' }}
                       title="View invoice"
@@ -411,7 +468,7 @@ export default function ProjectDetail() {
                         </div>
                       ) : (
                         <img
-                          src={`/uploads/${e.invoice_image_path}`}
+                          src={invoiceBlobUrls[e.invoice_image_path] || ''}
                           alt="invoice"
                           style={{ width: '32px', height: '32px', borderRadius: '4px', objectFit: 'cover' }}
                         />
@@ -450,9 +507,7 @@ export default function ProjectDetail() {
           </div>
 
           <div className="card card-pad">
-            <div className="section-title" style={{ marginBottom: '12px' }}>
-              {netPositive ? null : null}P&L Summary
-            </div>
+            <div className="section-title" style={{ marginBottom: '12px' }}>P&L Summary</div>
             {[
               { label: 'Agreed Budget', val: fmt(pnl.agreedBudget) },
               { label: 'Total Received', val: fmt(pnl.totalReceived) },
@@ -461,10 +516,23 @@ export default function ProjectDetail() {
             ].map(({ label, val }) => (
               <div key={label} className="fin-row"><span className="text-2">{label}</span><span>{val}</span></div>
             ))}
+            {pnl.clientBudget > 0 && (
+              <div className="fin-row">
+                <span className="text-2">Negotiation Delta</span>
+                <span style={{ color: (pnl.agreedBudget - pnl.clientBudget) >= 0 ? '#4CAF50' : '#FF4444', fontWeight: 600 }}>
+                  {(pnl.agreedBudget - pnl.clientBudget) >= 0 ? '+' : ''}{fmt(pnl.agreedBudget - pnl.clientBudget)}
+                </span>
+              </div>
+            )}
             <div style={{ borderTop: '1px solid var(--border)', marginTop: '8px', paddingTop: '8px' }}>
-              <div className="fin-row"><span>Gross Profit</span><span className={pnl.grossProfit < 0 ? 'text-danger text-bold' : 'text-bold'}>{fmt(pnl.grossProfit)}</span></div>
-              <div className="fin-row"><span>Net Profit</span><span className={pnl.netProfit < 0 ? 'text-danger text-bold' : 'text-bold'}>{fmt(pnl.netProfit)}</span></div>
-              <div className="fin-row"><span>Profit Margin</span><span className={pnl.profitMargin < 0 ? 'text-danger text-bold' : 'text-bold'}>{pnl.profitMargin}%</span></div>
+              <div className="fin-row"><span>Expected Profit</span><span className={pnl.expectedProfit < 0 ? 'text-danger text-bold' : 'text-bold'}>{fmt(pnl.expectedProfit)}</span></div>
+              <div className="fin-row"><span>Realized Profit</span><span className={pnl.realizedProfit < 0 ? 'text-danger text-bold' : 'text-bold'}>{fmt(pnl.realizedProfit)}</span></div>
+              <div className="fin-row">
+                <span>Profit Margin</span>
+                <span className={pnl.profitMargin !== null && pnl.profitMargin < 0 ? 'text-danger text-bold' : 'text-bold'}>
+                  {pnl.profitMargin === null ? '—' : `${pnl.profitMargin}%`}
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -481,7 +549,7 @@ export default function ProjectDetail() {
         <CrewAssignModal assign={crewModal} projectId={id} crewList={crewList} onClose={() => setCrewModal(null)} onSaved={load} onAddCrew={() => setShowNewCrew(true)} />
       )}
       {expenseModal !== null && (
-        <ExpenseModal expense={expenseModal} projectId={id} expCats={expCats} onClose={() => setExpenseModal(null)} onSaved={load} />
+        <ExpenseModal expense={expenseModal} projectId={id} expCats={expCats} invoiceBlobUrls={invoiceBlobUrls} onClose={() => setExpenseModal(null)} onSaved={load} />
       )}
       {revisionModal && (
         <RevisionModal projectId={id} onClose={() => setRevisionModal(false)} onSaved={load} />
@@ -967,7 +1035,7 @@ function CrewAssignModal({ assign, projectId, crewList, onClose, onSaved, onAddC
 }
 
 /* ---- Expense Modal ---- */
-function ExpenseModal({ expense, projectId, expCats, onClose, onSaved }) {
+function ExpenseModal({ expense, projectId, expCats, invoiceBlobUrls, onClose, onSaved }) {
   const isEdit = !!expense?.id;
   const [form, setForm] = useState({
     category_id: expense?.category_id || '',
@@ -1045,7 +1113,7 @@ function ExpenseModal({ expense, projectId, expCats, onClose, onSaved }) {
         {existingImage && !file && (
           <div className="text-xs text-2" style={{ marginBottom: '6px' }}>
             Current: {existingImage.endsWith('.pdf') ? <FileText size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> : (
-              <img src={`/uploads/${existingImage}`} alt="current" style={{ width: '24px', height: '24px', objectFit: 'cover', borderRadius: '3px', verticalAlign: 'middle' }} />
+              <img src={(invoiceBlobUrls || {})[existingImage] || ''} alt="current" style={{ width: '24px', height: '24px', objectFit: 'cover', borderRadius: '3px', verticalAlign: 'middle' }} />
             )} {existingImage}
           </div>
         )}

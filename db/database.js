@@ -21,6 +21,13 @@ function initDb() {
       value TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      token TEXT NOT NULL UNIQUE,
+      created_at TEXT DEFAULT (datetime('now')),
+      expires_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS clients (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
@@ -309,8 +316,6 @@ function initDb() {
     );
   `);
 
-  // No seeding needed for asset_items; categories are free-text
-
   db.exec(`
     CREATE TABLE IF NOT EXISTS expense_links (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -321,6 +326,83 @@ function initDb() {
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
     );
   `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS invoice_tax_records (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      invoice_id INTEGER,
+      invoice_number TEXT,
+      invoice_total REAL,
+      tax_rate_applied REAL,
+      tax_amount REAL,
+      tax_status TEXT DEFAULT 'unpaid',
+      paid_date TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS invoice_services (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code TEXT,
+      name TEXT NOT NULL,
+      unit TEXT DEFAULT 'Shërbim',
+      default_price REAL DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS invoices (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      invoice_number TEXT,
+      project_id INTEGER,
+      estimate_id INTEGER,
+      client_id INTEGER,
+      client_name TEXT DEFAULT '',
+      client_nr_unik TEXT DEFAULT '',
+      client_address TEXT DEFAULT '',
+      issue_date TEXT,
+      due_date TEXT,
+      description TEXT DEFAULT '',
+      notes TEXT DEFAULT '',
+      currency TEXT DEFAULT 'EUR',
+      language TEXT DEFAULT 'sq',
+      subtotal REAL DEFAULT 0,
+      invoice_discount REAL DEFAULT 0,
+      discount_type TEXT DEFAULT 'amount',
+      total_after_discount REAL DEFAULT 0,
+      tax_enabled INTEGER DEFAULT 0,
+      tax_rate_applied REAL DEFAULT 0,
+      tax_amount REAL DEFAULT 0,
+      amount_due REAL DEFAULT 0,
+      status TEXT DEFAULT 'draft',
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL,
+      FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS invoice_lines (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      invoice_id INTEGER NOT NULL,
+      line_no INTEGER DEFAULT 1,
+      code TEXT,
+      description TEXT DEFAULT '',
+      unit TEXT DEFAULT '',
+      qty REAL DEFAULT 1,
+      price REAL DEFAULT 0,
+      line_discount_pct REAL DEFAULT 0,
+      amount REAL DEFAULT 0,
+      sort_order INTEGER DEFAULT 0,
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE
+    );
+  `);
+
+  // Default tax settings — INSERT OR IGNORE so existing values are never overwritten
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_rate', '18')").run();
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_label', 'Tax')").run();
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_enabled', '1')").run();
+
+  // Invoice defaults — seed counter at 34 (last issued was 33/25)
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('invoice_next_num', '34')").run();
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('invoice_last_year', '25')").run();
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('invoice_language', 'sq')").run();
 
   // Schema migrations — safe to run on every boot
   [
@@ -336,7 +418,52 @@ function initDb() {
     'ALTER TABLE expenses ADD COLUMN submitted_by TEXT',
     'ALTER TABLE expenses ADD COLUMN invoice_image_path TEXT',
     "ALTER TABLE expenses ADD COLUMN source TEXT DEFAULT 'admin'",
+    "ALTER TABLE expenses ADD COLUMN status TEXT DEFAULT 'confirmed'",
+    'ALTER TABLE expenses ADD COLUMN category_text TEXT',
   ].forEach(sql => { try { db.exec(sql); } catch (_) {} });
+
+  // Backfill: any existing expense with no status gets confirmed
+  try {
+    db.exec("UPDATE expenses SET status = 'confirmed' WHERE status IS NULL");
+  } catch (_) {}
+
+  // Indexes — created only if missing
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_expenses_project ON expenses(project_id);
+    CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(date);
+    CREATE INDEX IF NOT EXISTS idx_expenses_status ON expenses(status);
+    CREATE INDEX IF NOT EXISTS idx_client_payments_project ON client_payments(project_id);
+    CREATE INDEX IF NOT EXISTS idx_client_payments_status_date ON client_payments(status, date);
+    CREATE INDEX IF NOT EXISTS idx_crew_assignments_project ON crew_assignments(project_id);
+    CREATE INDEX IF NOT EXISTS idx_crew_assignments_crew ON crew_assignments(crew_id);
+    CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
+    CREATE INDEX IF NOT EXISTS idx_tasks_phase ON tasks(phase_id);
+    CREATE INDEX IF NOT EXISTS idx_calendar_events_start ON calendar_events(start_date);
+    CREATE INDEX IF NOT EXISTS idx_budget_lines_budget ON budget_lines(budget_id);
+    CREATE INDEX IF NOT EXISTS idx_status_history_project ON project_status_history(project_id);
+    CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
+  `);
+
+  // Password migration — run once on boot
+  migratePassword();
+}
+
+function migratePassword() {
+  const bcrypt = require('bcryptjs');
+  const pw = db.prepare("SELECT value FROM settings WHERE key = 'password'").get();
+  if (pw) {
+    const hash = bcrypt.hashSync(pw.value, 10);
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('password_hash', ?)").run(hash);
+    db.prepare("DELETE FROM settings WHERE key = 'password'").run();
+    console.log('INFO: Plaintext password migrated to bcrypt hash.');
+    return;
+  }
+  const existing = db.prepare("SELECT value FROM settings WHERE key = 'password_hash'").get();
+  if (!existing) {
+    const hash = bcrypt.hashSync('massiv2026', 10);
+    db.prepare("INSERT INTO settings (key, value) VALUES ('password_hash', ?)").run(hash);
+    console.warn('WARNING: No password found. Default password "massiv2026" set. Change it in Settings immediately.');
+  }
 }
 
 module.exports = { db, initDb };
