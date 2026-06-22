@@ -122,7 +122,7 @@ function OverviewTab({ month, setMonth, filterCat, setFilterCat, filterClient, s
           {/* Period KPI cards */}
           <div style={{ marginBottom: '20px' }}>
             <div className="section-title" style={{ marginBottom: '12px' }}>
-              {new Date(`${month}-01`).toLocaleString('default', { month: 'long', year: 'numeric' })}
+              {`${month.slice(5)}/${month.slice(0, 4)}`}
             </div>
             <div className="stats-grid">
               <StatCard label="Realized Revenue" value={fmt(stats?.revenue)} icon={<TrendingUp size={18} />} gradient />
@@ -260,7 +260,7 @@ function PLTab() {
 
   const periodLabel = viewMode === 'year'
     ? `Full Year ${year}`
-    : `${new Date(`${selMonth}-01T00:00:00`).toLocaleString('default', { month: 'long', year: 'numeric' })}`;
+    : `${selMonth.slice(5)}/${selMonth.slice(0, 4)}`;
 
   const grossProfit = statement ? statement.revenue - statement.crewCosts - statement.expenses : 0;
 

@@ -240,7 +240,7 @@ export default function ProjectDetail() {
                     <ArrowRight size={10} style={{ color: '#555' }} />
                     <span>{h.to_status.replace(/-/g, ' ')}</span>
                     <span className="text-xs text-2" style={{ marginLeft: 'auto' }}>
-                      {new Date(h.changed_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      {fmtDate(h.changed_at)}
                       {' '}
                       {new Date(h.changed_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
                     </span>
@@ -297,7 +297,7 @@ export default function ProjectDetail() {
                 <div key={log.id} className="list-item" style={{ alignItems: 'flex-start' }}>
                   <div style={{ flex: 1 }}>
                     <div className="text-xs text-2" style={{ marginBottom: '2px' }}>
-                      {new Date(log.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      {fmtDate(log.created_at)}
                       {' · '}
                       {new Date(log.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
                     </div>

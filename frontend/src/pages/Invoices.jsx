@@ -12,6 +12,19 @@ const TABS = [
   { key: 'setup', label: 'Invoice Setup' },
 ];
 
+const KOSOVO_BANKS = [
+  'Raiffeisen Bank Kosovo',
+  'ProCredit Bank',
+  'NLB Banka',
+  'TEB',
+  'Banka Ekonomike',
+  'Banka për Biznes (BPB)',
+  'Banka Kombëtare Tregtare (BKT)',
+  'Banka Kreditore e Prishtinës',
+  'Ziraat Bank Kosova',
+  'Is Bank',
+];
+
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
 function StatusBadge({ status, dueDate }) {
@@ -222,8 +235,11 @@ function InvoiceSetupTab() {
   const [settings, setSettings] = useState(null);
   const [form, setForm] = useState({
     billing_name: '', billing_address: '', billing_tel: '',
-    billing_nr_unik: '', billing_bank: '', billing_swift: '',
-    language: 'sq', next_num_seed: '34',
+    billing_nr_unik: '', billing_bank_account: '', billing_bank_name: '',
+    billing_bank_name_custom: '',
+    billing_swift: '',
+    language: 'sq', next_num_seed: '34', next_year_seed: '25',
+    tax_enabled: false,
   });
   const [logo, setLogo] = useState(null);
   const [stamp, setStamp] = useState(null);
@@ -243,15 +259,21 @@ function InvoiceSetupTab() {
     try {
       const s = await api.get('/invoices/settings');
       setSettings(s);
+      const rawBankName = s.billing_bank_name || '';
+      const isKnownBank = KOSOVO_BANKS.includes(rawBankName);
       setForm({
         billing_name: s.billing_name || '',
         billing_address: s.billing_address || '',
         billing_tel: s.billing_tel || '',
         billing_nr_unik: s.billing_nr_unik || '',
-        billing_bank: s.billing_bank || '',
+        billing_bank_account: s.billing_bank_account || '',
+        billing_bank_name: isKnownBank ? rawBankName : (rawBankName ? 'Other' : ''),
+        billing_bank_name_custom: !isKnownBank && rawBankName ? rawBankName : '',
         billing_swift: s.billing_swift || '',
         language: s.language || 'sq',
         next_num_seed: String(s.next_num_seed || 34),
+        next_year_seed: String(s.next_year_seed || '25'),
+        tax_enabled: !!s.tax_enabled,
       });
       setLogo(s.logo_base64 || null);
       setStamp(s.stamp_base64 || null);
@@ -270,11 +292,23 @@ function InvoiceSetupTab() {
 
   async function saveSettings() {
     try {
+      const bankNameToSave = form.billing_bank_name === 'Other'
+        ? form.billing_bank_name_custom
+        : form.billing_bank_name;
       await api.post('/invoices/settings', {
-        ...form,
+        billing_name: form.billing_name,
+        billing_address: form.billing_address,
+        billing_tel: form.billing_tel,
+        billing_nr_unik: form.billing_nr_unik,
+        billing_bank_account: form.billing_bank_account,
+        billing_bank_name: bankNameToSave,
+        billing_swift: form.billing_swift,
+        language: form.language,
         next_num_seed: parseInt(form.next_num_seed, 10),
+        next_year_seed: form.next_year_seed,
         logo_base64: logo,
         stamp_base64: stamp,
+        tax_enabled: form.tax_enabled ? 1 : 0,
       });
       setMsg('Settings saved');
       loadSettings();
@@ -339,18 +373,41 @@ function InvoiceSetupTab() {
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
           {[
-            { key: 'billing_name',     label: 'Company Name' },
-            { key: 'billing_address',  label: 'Adresa (Address)' },
-            { key: 'billing_tel',      label: 'Tel' },
-            { key: 'billing_nr_unik',  label: 'Nr. Unik (Business No.)' },
-            { key: 'billing_bank',     label: 'Bank Account (TEB)' },
-            { key: 'billing_swift',    label: 'SWIFT' },
+            { key: 'billing_name',        label: 'Company Name' },
+            { key: 'billing_address',     label: 'Adresa (Address)' },
+            { key: 'billing_tel',         label: 'Tel' },
+            { key: 'billing_nr_unik',     label: 'Nr. Unik (Business No.)' },
+            { key: 'billing_bank_account', label: 'Bank Account (IBAN)' },
+            { key: 'billing_swift',       label: 'SWIFT' },
           ].map(({ key, label }) => (
             <div key={key}>
               <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '4px' }}>{label}</label>
-              <input className="input" value={form[key]} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))} />
+              <input className="input" value={form[key]}
+                placeholder={key === 'billing_bank_account' ? 'e.g. 2020-0002-3941-2856' : ''}
+                onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))} />
             </div>
           ))}
+        </div>
+        {/* Bank dropdown */}
+        <div style={{ marginTop: '12px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+          <div>
+            <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '4px' }}>Bank</label>
+            <select className="select" style={{ width: '100%' }}
+              value={form.billing_bank_name}
+              onChange={e => setForm(f => ({ ...f, billing_bank_name: e.target.value, billing_bank_name_custom: '' }))}>
+              <option value="">— Select bank —</option>
+              {KOSOVO_BANKS.map(b => <option key={b} value={b}>{b}</option>)}
+              <option value="Other">Other (specify)</option>
+            </select>
+          </div>
+          {form.billing_bank_name === 'Other' && (
+            <div>
+              <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '4px' }}>Bank Name</label>
+              <input className="input" value={form.billing_bank_name_custom}
+                placeholder="Enter bank name"
+                onChange={e => setForm(f => ({ ...f, billing_bank_name_custom: e.target.value }))} />
+            </div>
+          )}
         </div>
       </div>
 
@@ -371,26 +428,42 @@ function InvoiceSetupTab() {
           </div>
           <div>
             <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '4px' }}>
-              Next Invoice Number (seed)
+              Starting Number / Year
             </label>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
               <input className="input" type="number" min="1" value={form.next_num_seed}
                 onChange={e => setForm(f => ({ ...f, next_num_seed: e.target.value }))}
-                style={{ flex: 1 }} />
+                style={{ width: '90px' }}
+                placeholder="34" />
+              <span style={{ fontSize: '14px', color: '#555' }}>/</span>
+              <input className="input" value={form.next_year_seed}
+                onChange={e => setForm(f => ({ ...f, next_year_seed: e.target.value }))}
+                style={{ width: '60px' }}
+                placeholder="25" />
               <span style={{ fontSize: '13px', color: '#666', whiteSpace: 'nowrap' }}>
-                → Next: {settings?.next_number_preview || '—'}
+                → Next: <strong style={{ color: '#fff' }}>{settings?.next_number_preview || '—'}</strong>
               </span>
+            </div>
+            <div style={{ fontSize: '11px', color: '#555', marginTop: '5px' }}>
+              Year never changes automatically — you control it here.
             </div>
           </div>
         </div>
 
-        {/* Tax (read-only, configured in Settings) */}
+        {/* Tax enabled toggle */}
         {settings && (
-          <div style={{ marginTop: '14px', padding: '10px 14px', background: 'rgba(114,60,235,0.06)', borderRadius: '10px', fontSize: '12px', color: '#888' }}>
-            <Receipt size={12} style={{ marginRight: '6px', verticalAlign: 'middle', color: '#723CEB' }} />
-            Tax: <strong style={{ color: '#fff' }}>{settings.tax_label} {settings.tax_rate}%</strong>
-            {' '}— {settings.tax_enabled ? 'enabled' : 'disabled'}.
-            Configure in <strong style={{ color: '#723CEB' }}>Settings → Tax</strong>.
+          <div style={{ marginTop: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(114,60,235,0.06)', borderRadius: '10px' }}>
+            <div style={{ fontSize: '12px', color: '#888' }}>
+              <Receipt size={12} style={{ marginRight: '6px', verticalAlign: 'middle', color: '#723CEB' }} />
+              Tax: <strong style={{ color: '#fff' }}>{settings.tax_label} {settings.tax_rate}%</strong>
+            </div>
+            <button
+              className={`btn btn-sm ${form.tax_enabled ? 'btn-primary' : 'btn-ghost'}`}
+              style={{ borderRadius: '50px', padding: '4px 16px', fontSize: '12px' }}
+              onClick={() => setForm(f => ({ ...f, tax_enabled: !f.tax_enabled }))}
+            >
+              {form.tax_enabled ? 'Enabled' : 'Disabled'}
+            </button>
           </div>
         )}
       </div>

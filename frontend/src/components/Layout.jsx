@@ -35,7 +35,11 @@ const FAB_ACTIONS = [
 
 function fmtShortDate(d) {
   if (!d) return '';
-  return new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+  const date = new Date(d + 'T00:00:00');
+  if (isNaN(date.getTime())) return '';
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  return `${day}/${month}`;
 }
 
 export default function Layout() {
@@ -137,11 +141,11 @@ export default function Layout() {
             <div className="nav-icon"><Settings size={18} /></div>
             Settings
           </NavLink>
-          <div className="built-by">built by year28</div>
           <button className="logout-btn" onClick={logout}>
             <div className="nav-icon"><LogOut size={18} /></div>
             Logout
           </button>
+          <div className="built-by">built by year28</div>
         </div>
       </aside>
 

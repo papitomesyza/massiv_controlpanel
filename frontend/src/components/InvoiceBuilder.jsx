@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import {
-  X, Plus, Trash2, ChevronDown, FileText, Send, Check,
+  X, Plus, Trash2, ChevronDown, FileText, Send, Check, Search,
 } from 'lucide-react';
 import { api, fmt, fmtDate } from '../api';
 
@@ -37,7 +37,7 @@ function computeTotals(lines, invoiceDiscount, discountType, taxEnabled, taxRate
   const taxAmt = taxEnabled ? afterDiscount * (Number(taxRate) || 0) / 100 : 0;
   return {
     subtotal,
-    discountAmt,
+    discountAmt: discAmt,
     afterDiscount,
     taxAmt,
     amountDue: afterDiscount + taxAmt,
@@ -314,6 +314,15 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
         </div>
       </div>
 
+      {/* Service picker modal */}
+      {showServicePicker && (
+        <ServicePickerModal
+          services={services}
+          onSelect={svc => applyService(showServicePicker, svc)}
+          onClose={() => setShowServicePicker(null)}
+        />
+      )}
+
       {/* Scrollable body */}
       <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
         <div style={{ maxWidth: '920px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -412,7 +421,7 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
                   {lines.map((line, idx) => (
                     <tr key={line._id} style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
                       {/* Code */}
-                      <td style={{ padding: '6px 8px', width: '80px', position: 'relative' }}>
+                      <td style={{ padding: '6px 8px', width: '80px' }}>
                         <div style={{ display: 'flex', gap: '4px' }}>
                           <input className="input" style={{ fontSize: '12px', padding: '5px 8px', width: '54px' }}
                             placeholder="2001" value={line.code}
@@ -423,19 +432,12 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
                               className="btn btn-ghost btn-sm"
                               style={{ padding: '4px 6px' }}
                               title="Pick from catalogue"
-                              onClick={() => setShowServicePicker(showServicePicker === line._id ? null : line._id)}
+                              onClick={() => setShowServicePicker(line._id)}
                             >
                               <ChevronDown size={12} />
                             </button>
                           )}
                         </div>
-                        {showServicePicker === line._id && (
-                          <ServicePickerDropdown
-                            services={services}
-                            onSelect={svc => applyService(line._id, svc)}
-                            onClose={() => setShowServicePicker(null)}
-                          />
-                        )}
                       </td>
                       {/* Description */}
                       <td style={{ padding: '6px 8px', minWidth: '180px' }}>
@@ -620,49 +622,106 @@ function StatusBadge({ status, dueDate }) {
   );
 }
 
-function ServicePickerDropdown({ services, onSelect, onClose }) {
-  const ref = useRef(null);
+function ServicePickerModal({ services, onSelect, onClose }) {
+  const [q, setQ] = useState('');
+  const inputRef = useRef(null);
+
   useEffect(() => {
-    function onClick(e) { if (ref.current && !ref.current.contains(e.target)) onClose(); }
-    document.addEventListener('mousedown', onClick);
-    return () => document.removeEventListener('mousedown', onClick);
+    if (inputRef.current) inputRef.current.focus();
+  }, []);
+
+  useEffect(() => {
+    function onKey(e) { if (e.key === 'Escape') onClose(); }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  const filtered = q.trim()
+    ? services.filter(s =>
+        (s.code && s.code.toLowerCase().includes(q.toLowerCase())) ||
+        s.name.toLowerCase().includes(q.toLowerCase())
+      )
+    : services;
+
   return (
-    <div ref={ref} style={{
-      position: 'absolute', top: '100%', left: 0, zIndex: 200,
-      background: '#1e1e1e', border: '1px solid rgba(255,255,255,0.12)',
-      borderRadius: '10px', minWidth: '280px', maxHeight: '240px',
-      overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
-      marginTop: '4px',
-    }}>
-      {services.map(s => (
-        <button key={s.id} onClick={() => onSelect(s)}
-          style={{
-            width: '100%', background: 'none', border: 'none',
-            padding: '9px 14px', cursor: 'pointer', textAlign: 'left',
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-            borderBottom: '1px solid rgba(255,255,255,0.04)',
-            color: '#fff',
-          }}
-          onMouseEnter={e => e.currentTarget.style.background = 'rgba(114,60,235,0.1)'}
-          onMouseLeave={e => e.currentTarget.style.background = 'none'}
-        >
-          <div>
-            {s.code && <span style={{ fontSize: '11px', color: '#723CEB', marginRight: '8px' }}>{s.code}</span>}
-            <span style={{ fontSize: '13px' }}>{s.name}</span>
-            <span style={{ fontSize: '11px', color: '#666', marginLeft: '6px' }}>{s.unit}</span>
-          </div>
-          <span style={{ fontSize: '12px', color: '#FF902F', whiteSpace: 'nowrap' }}>
-            {fmt(s.default_price)}
-          </span>
-        </button>
-      ))}
-      {services.length === 0 && (
-        <div style={{ padding: '14px', fontSize: '12px', color: '#555', textAlign: 'center' }}>
-          No services in catalogue yet
+    <div
+      style={{
+        position: 'fixed', inset: 0, zIndex: 3000,
+        background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(8px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div style={{
+        background: '#1e1e1e', borderRadius: '16px',
+        width: '420px', maxWidth: '92vw', maxHeight: '70vh',
+        display: 'flex', flexDirection: 'column',
+        boxShadow: '0 24px 80px rgba(0,0,0,0.8)',
+        border: '1px solid rgba(255,255,255,0.10)',
+      }}>
+        {/* Header */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '16px 18px 12px',
+          borderBottom: '1px solid rgba(255,255,255,0.07)',
+          flexShrink: 0,
+        }}>
+          <span style={{ fontWeight: 700, fontSize: '14px' }}>Select Service</span>
+          <button className="btn btn-ghost btn-sm" style={{ padding: '4px' }} onClick={onClose}>
+            <X size={15} />
+          </button>
         </div>
-      )}
+        {/* Search */}
+        <div style={{ padding: '12px 18px 8px', flexShrink: 0, position: 'relative' }}>
+          <Search size={13} style={{ position: 'absolute', left: '28px', top: '50%', transform: 'translateY(-50%)', color: '#555', pointerEvents: 'none' }} />
+          <input
+            ref={inputRef}
+            className="input"
+            placeholder="Search by code or name…"
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            style={{ width: '100%', fontSize: '13px', paddingLeft: '30px' }}
+          />
+        </div>
+        {/* Service list */}
+        <div style={{ overflowY: 'auto', flex: 1, paddingBottom: '8px' }}>
+          {filtered.length === 0 ? (
+            <div style={{ padding: '28px 18px', textAlign: 'center', color: '#555', fontSize: '13px', lineHeight: 1.5 }}>
+              {services.length === 0
+                ? 'No services in catalogue yet — add them in Invoice Setup.'
+                : 'No services match your search.'}
+            </div>
+          ) : (
+            filtered.map(s => (
+              <button key={s.id} onClick={() => onSelect(s)}
+                style={{
+                  width: '100%', background: 'none', border: 'none',
+                  padding: '11px 18px', cursor: 'pointer', textAlign: 'left',
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  color: '#fff', borderBottom: '1px solid rgba(255,255,255,0.04)',
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(114,60,235,0.12)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'none'}
+              >
+                <div>
+                  <div>
+                    {s.code && (
+                      <span style={{ fontSize: '11px', color: '#723CEB', marginRight: '8px', fontWeight: 700 }}>
+                        {s.code}
+                      </span>
+                    )}
+                    <span style={{ fontSize: '13px', fontWeight: 600 }}>{s.name}</span>
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#666', marginTop: '2px' }}>{s.unit}</div>
+                </div>
+                <span style={{ fontSize: '13px', color: '#FF902F', fontWeight: 600, whiteSpace: 'nowrap', marginLeft: '16px' }}>
+                  {fmt(s.default_price)}
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -216,7 +216,13 @@ export default function Dashboard() {
       <div className="page-header">
         <div>
           <div className="page-title">Dashboard</div>
-          <div className="page-subtitle">{new Date().toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
+          <div className="page-subtitle">{(() => {
+              const d = new Date();
+              const wd = d.toLocaleDateString('en-GB', { weekday: 'long' });
+              const day = String(d.getDate()).padStart(2, '0');
+              const month = String(d.getMonth() + 1).padStart(2, '0');
+              return `${wd}, ${day}/${month}/${d.getFullYear()}`;
+            })()}</div>
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           {editMode ? (

@@ -56,17 +56,10 @@ function getInvoiceFull(id) {
 }
 
 function assignInvoiceNumber() {
-  const now = new Date();
-  const yy = String(now.getFullYear()).slice(-2);
-  const lastYear = getSetting('invoice_last_year', yy);
-
   let nextNum = parseInt(getSetting('invoice_next_num', '34'), 10);
   if (isNaN(nextNum) || nextNum < 1) nextNum = 1;
 
-  if (lastYear !== yy) {
-    nextNum = 1;
-    setSetting('invoice_last_year', yy);
-  }
+  const yy = getSetting('invoice_year', String(new Date().getFullYear()).slice(-2));
 
   const invoiceNumber = `${nextNum}/${yy}`;
   setSetting('invoice_next_num', String(nextNum + 1));
@@ -80,8 +73,9 @@ router.get('/settings', (req, res) => {
   const keys = [
     'invoice_billing_name', 'invoice_billing_address', 'invoice_billing_tel',
     'invoice_billing_nr_unik', 'invoice_billing_bank', 'invoice_billing_swift',
+    'invoice_billing_bank_account', 'invoice_billing_bank_name',
     'invoice_language', 'invoice_logo', 'invoice_stamp',
-    'invoice_next_num', 'invoice_last_year',
+    'invoice_next_num', 'invoice_year',
     'tax_rate', 'tax_label', 'tax_enabled',
   ];
   const rows = db.prepare(
@@ -90,11 +84,18 @@ router.get('/settings', (req, res) => {
   const map = {};
   rows.forEach(r => { map[r.key] = r.value; });
 
-  const now = new Date();
-  const yy = String(now.getFullYear()).slice(-2);
-  const storedYear = map.invoice_last_year || yy;
+  const currentYY = String(new Date().getFullYear()).slice(-2);
+  const storedYear = map.invoice_year || currentYY;
   const nextNum = parseInt(map.invoice_next_num || '34', 10);
-  const effectiveNext = storedYear !== yy ? 1 : (isNaN(nextNum) ? 34 : nextNum);
+  const effectiveNext = isNaN(nextNum) ? 34 : nextNum;
+
+  // Backward compat: map old combined bank field to new split fields
+  let billingBankAccount = map.invoice_billing_bank_account || '';
+  let billingBankName = map.invoice_billing_bank_name || '';
+  if (!billingBankAccount && !billingBankName && map.invoice_billing_bank) {
+    billingBankAccount = map.invoice_billing_bank;
+    if (/teb/i.test(map.invoice_billing_bank)) billingBankName = 'TEB';
+  }
 
   res.json({
     billing_name: map.invoice_billing_name || '',
@@ -102,15 +103,18 @@ router.get('/settings', (req, res) => {
     billing_tel: map.invoice_billing_tel || '',
     billing_nr_unik: map.invoice_billing_nr_unik || '',
     billing_bank: map.invoice_billing_bank || '',
+    billing_bank_account: billingBankAccount,
+    billing_bank_name: billingBankName,
     billing_swift: map.invoice_billing_swift || '',
     language: map.invoice_language || 'sq',
     logo_base64: map.invoice_logo || null,
     stamp_base64: map.invoice_stamp || null,
-    next_number_preview: `${effectiveNext}/${yy}`,
-    next_num_seed: isNaN(nextNum) ? 34 : nextNum,
+    next_number_preview: `${effectiveNext}/${storedYear}`,
+    next_num_seed: effectiveNext,
+    next_year_seed: storedYear,
     tax_rate: parseFloat(map.tax_rate || '18'),
     tax_label: map.tax_label || 'Tax',
-    tax_enabled: map.tax_enabled !== '0',
+    tax_enabled: map.tax_enabled === '1',
   });
 });
 
@@ -118,7 +122,9 @@ router.post('/settings', (req, res) => {
   const {
     billing_name, billing_address, billing_tel,
     billing_nr_unik, billing_bank, billing_swift,
-    language, next_num_seed, logo_base64, stamp_base64,
+    billing_bank_account, billing_bank_name,
+    language, next_num_seed, next_year_seed, logo_base64, stamp_base64,
+    tax_enabled,
   } = req.body;
 
   if (billing_name !== undefined) setSetting('invoice_billing_name', billing_name);
@@ -127,13 +133,20 @@ router.post('/settings', (req, res) => {
   if (billing_nr_unik !== undefined) setSetting('invoice_billing_nr_unik', billing_nr_unik);
   if (billing_bank !== undefined) setSetting('invoice_billing_bank', billing_bank);
   if (billing_swift !== undefined) setSetting('invoice_billing_swift', billing_swift);
+  if (billing_bank_account !== undefined) setSetting('invoice_billing_bank_account', billing_bank_account);
+  if (billing_bank_name !== undefined) setSetting('invoice_billing_bank_name', billing_bank_name);
   if (language !== undefined) setSetting('invoice_language', language || 'sq');
   if (next_num_seed !== undefined) {
     const n = parseInt(next_num_seed, 10);
     if (Number.isFinite(n) && n >= 1) setSetting('invoice_next_num', String(n));
   }
+  if (next_year_seed !== undefined) {
+    const yr = String(next_year_seed).trim();
+    if (yr) setSetting('invoice_year', yr);
+  }
   if (logo_base64 !== undefined) setSetting('invoice_logo', logo_base64 || null);
   if (stamp_base64 !== undefined) setSetting('invoice_stamp', stamp_base64 || null);
+  if (tax_enabled !== undefined) setSetting('tax_enabled', tax_enabled ? '1' : '0');
 
   res.json({ ok: true });
 });
@@ -480,7 +493,7 @@ router.post('/from-estimate/:budgetId', (req, res) => {
   due.setDate(due.getDate() + 30);
 
   const taxRate = parseFloat(getSetting('tax_rate', '18'));
-  const taxOn = getSetting('tax_enabled', '1') !== '0' ? 1 : 0;
+  const taxOn = getSetting('tax_enabled', '0') === '1' ? 1 : 0;
 
   const totals = computeTotals({ lines: invoiceLines, tax_enabled: taxOn, tax_rate: taxRate });
 
@@ -564,7 +577,8 @@ const LABELS = {
     nr_unik_label: 'Nr. Unik',
     address_label: 'Adresa',
     tel_label: 'Tel',
-    bank_label: 'TEB',
+    bank_label: 'Banka',
+    account_label: 'Llogaria',
     swift_label: 'SWIFT',
   },
   en: {
@@ -593,6 +607,7 @@ const LABELS = {
     address_label: 'Address',
     tel_label: 'Tel',
     bank_label: 'Bank',
+    account_label: 'Account',
     swift_label: 'SWIFT',
   },
 };
@@ -606,22 +621,33 @@ router.get('/:id/pdf', (req, res) => {
   const lang = inv.language || 'sq';
   const L = LABELS[lang] || LABELS.sq;
 
-  const billingName    = getSetting('invoice_billing_name', '');
-  const billingAddr    = getSetting('invoice_billing_address', '');
-  const billingTel     = getSetting('invoice_billing_tel', '');
-  const billingNr      = getSetting('invoice_billing_nr_unik', '');
-  const billingBank    = getSetting('invoice_billing_bank', '');
-  const billingSwift   = getSetting('invoice_billing_swift', '');
-  const logoData       = getSetting('invoice_logo') || getSetting('agency_logo');
-  const stampData      = getSetting('invoice_stamp');
-  const taxLabel       = getSetting('tax_label', 'Tax');
+  const billingName  = getSetting('invoice_billing_name', '');
+  const billingAddr  = getSetting('invoice_billing_address', '');
+  const billingTel   = getSetting('invoice_billing_tel', '');
+  const billingNr    = getSetting('invoice_billing_nr_unik', '');
+  const billingSwift = getSetting('invoice_billing_swift', '');
+  // Bank split: new keys, with fallback to old combined key
+  let billingBankName    = getSetting('invoice_billing_bank_name') || '';
+  let billingBankAccount = getSetting('invoice_billing_bank_account') || '';
+  if (!billingBankName && !billingBankAccount) {
+    const oldBank = getSetting('invoice_billing_bank', '');
+    if (oldBank) {
+      billingBankAccount = oldBank;
+      if (/teb/i.test(oldBank)) billingBankName = 'TEB';
+    }
+  }
+  const logoData     = getSetting('invoice_logo') || getSetting('agency_logo');
+  const stampData    = getSetting('invoice_stamp');
+  const taxLabel     = getSetting('tax_label', 'Tax');
 
   const fmtMoney = v => `€${Number(v || 0).toFixed(2)}`;
   const fmtDate = d => {
     if (!d) return '';
-    return new Date(d + 'T00:00:00').toLocaleDateString('en-GB', {
-      day: '2-digit', month: '2-digit', year: 'numeric',
-    });
+    const date = new Date(String(d).includes('T') ? d : d + 'T00:00:00');
+    if (isNaN(date.getTime())) return '';
+    const dd = String(date.getDate()).padStart(2, '0');
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    return `${dd}/${mm}/${date.getFullYear()}`;
   };
 
   const safeClient = (inv.client_name || 'client').replace(/[^a-z0-9]/gi, '-').slice(0, 40);
@@ -634,136 +660,145 @@ router.get('/:id/pdf', (req, res) => {
   const doc = new PDFDocument({ size: 'A4', margin: 0, autoFirstPage: true });
   doc.pipe(res);
 
-  const ML = 45, MR = 45, MT = 42;
-  const PW = doc.page.width;   // 595
-  const PH = doc.page.height;  // 842
-  const CW = PW - ML - MR;     // 505
+  // ── Layout constants ─────────────────────────────────────────────────────────
+  const ML = 50, MR = 50, MT = 45;
+  const PW = doc.page.width;    // 595
+  const PH = doc.page.height;   // 842
+  const CW = PW - ML - MR;      // 495
+  const SECTION_GAP = 18;
 
-  function newPageSetup() {
-    doc.rect(0, 0, PW, PH).fill('#FFFFFF');
-  }
+  function newPageSetup() { doc.rect(0, 0, PW, PH).fill('#FFFFFF'); }
   newPageSetup();
 
   let y = MT;
 
-  // ── Header block ─────────────────────────────────────────────────────────────
-  // Logo left
+  // ── HEADER ───────────────────────────────────────────────────────────────────
+  // Logo (left edge at ML)
   if (logoData) {
     try {
       const buf = Buffer.from(logoData.replace(/^data:image\/\w+;base64,/, ''), 'base64');
       doc.image(buf, ML, y, { fit: [140, 56] });
     } catch (_) {
-      doc.fontSize(15).font('Helvetica-Bold').fillColor('#111')
+      doc.fontSize(14).font('Helvetica-Bold').fillColor('#111')
         .text(billingName || 'COMPANY', ML, y + 10, { lineBreak: false });
     }
   } else {
-    doc.fontSize(15).font('Helvetica-Bold').fillColor('#111')
+    doc.fontSize(14).font('Helvetica-Bold').fillColor('#111')
       .text(billingName || 'COMPANY', ML, y + 10, { lineBreak: false });
   }
 
-  // Company details right
-  const detX = PW - MR - 210;
+  // Company details (right-aligned, right edge at PW-MR)
+  const detW = 185;
+  const detX = PW - MR - detW;
   let detY = y;
-  doc.fontSize(10).font('Helvetica-Bold').fillColor('#111')
-    .text(billingName, detX, detY, { width: 210, lineBreak: false });
-  detY += 14;
+  if (billingName) {
+    doc.fontSize(10).font('Helvetica-Bold').fillColor('#111')
+      .text(billingName, detX, detY, { width: detW, align: 'right', lineBreak: false });
+    detY += 14;
+  }
   if (billingAddr) {
     doc.fontSize(8).font('Helvetica').fillColor('#444')
-      .text(billingAddr, detX, detY, { width: 210, lineBreak: false });
+      .text(billingAddr, detX, detY, { width: detW, align: 'right', lineBreak: false });
     detY += 12;
   }
-
   const detRow = (lbl, val) => {
     if (!val) return;
-    doc.fontSize(8).font('Helvetica-Bold').fillColor('#666')
-      .text(lbl + ': ', detX, detY, { continued: true, lineBreak: false });
-    doc.font('Helvetica').fillColor('#222').text(val, { lineBreak: false });
-    detY += 12;
+    doc.fontSize(8).font('Helvetica').fillColor('#666')
+      .text(`${lbl}: ${val}`, detX, detY, { width: detW, align: 'right', lineBreak: false });
+    detY += 11;
   };
   detRow(L.tel_label, billingTel);
   detRow(L.nr_unik_label, billingNr);
-  detRow(L.bank_label, billingBank);
+  detRow(L.bank_label, billingBankName);
+  detRow(L.account_label, billingBankAccount);
   detRow(L.swift_label, billingSwift);
 
-  y = Math.max(y + 64, detY) + 10;
+  y = Math.max(y + 64, detY) + SECTION_GAP;
 
+  // Header rule (margin-to-margin)
   doc.moveTo(ML, y).lineTo(PW - MR, y).strokeColor('#DDDDDD').lineWidth(0.7).stroke();
-  y += 14;
+  y += SECTION_GAP;
 
-  // ── Faturë + Client block ─────────────────────────────────────────────────────
-  const midX = ML + CW / 2 + 8;
-  const leftW = CW / 2 - 16;
-  const rightW = CW / 2 - 8;
+  // ── FATURË / CLIENT ROW ──────────────────────────────────────────────────────
+  const sectionBaseY = y;
+  const rightColX = ML + CW * 0.50;
+  const rightColW = PW - MR - rightColX;
+  const leftColW = rightColX - ML - 12;
 
-  // Left: Faturë title + meta
-  const titleY = y;
-  doc.fontSize(22).font('Helvetica-Bold').fillColor('#111').text(L.title, ML, y, { lineBreak: false });
-  y += 30;
+  // Left: Faturë title + meta rows
+  doc.fontSize(22).font('Helvetica-Bold').fillColor('#111')
+    .text(L.title, ML, sectionBaseY, { lineBreak: false });
+  y = sectionBaseY + 30;
+
+  const metaLabelX = ML;
+  const metaLabelW = 90;
+  const metaValueX = ML + 95;
+  const metaValueW = rightColX - metaValueX - 8;
 
   const metaRow = (lbl, val) => {
     if (!val) return;
-    const ry = y;
-    doc.fontSize(9).font('Helvetica-Bold').fillColor('#777').text(lbl + ':', ML, ry, { width: 85, lineBreak: false });
-    doc.font('Helvetica').fillColor('#111').text(val, ML + 88, ry, { width: leftW - 88, lineBreak: false });
-    y += 13;
+    doc.fontSize(9).font('Helvetica-Bold').fillColor('#777')
+      .text(lbl + ':', metaLabelX, y, { width: metaLabelW, lineBreak: false });
+    doc.font('Helvetica').fillColor('#111')
+      .text(val, metaValueX, y, { width: metaValueW, lineBreak: false });
+    y += 14;
   };
   metaRow(L.number, inv.invoice_number || '—');
   metaRow(L.date, fmtDate(inv.issue_date));
   metaRow(L.due_date, fmtDate(inv.due_date));
-
   const leftBottom = y;
 
-  // Right: Client block
-  let cy = titleY;
+  // Right: client block (same baseline as Faturë title)
+  let cy = sectionBaseY;
   doc.fontSize(8).font('Helvetica-Bold').fillColor('#999')
-    .text(L.client_section.toUpperCase(), midX, cy, { lineBreak: false });
+    .text(L.client_section.toUpperCase(), rightColX, cy, { width: rightColW, lineBreak: false });
   cy += 13;
   doc.fontSize(11).font('Helvetica-Bold').fillColor('#111')
-    .text(inv.client_name || '—', midX, cy, { width: rightW, lineBreak: false });
-  cy += 15;
+    .text(inv.client_name || '—', rightColX, cy, { width: rightColW, lineBreak: false });
+  cy += 16;
   if (inv.client_nr_unik) {
     doc.fontSize(8.5).font('Helvetica').fillColor('#555')
-      .text(`${L.nr_unik_label}: ${inv.client_nr_unik}`, midX, cy, { width: rightW, lineBreak: false });
+      .text(`${L.nr_unik_label}: ${inv.client_nr_unik}`, rightColX, cy, { width: rightColW, lineBreak: false });
     cy += 12;
   }
   if (inv.client_address) {
     doc.fontSize(8.5).font('Helvetica').fillColor('#555')
-      .text(inv.client_address, midX, cy, { width: rightW });
-    cy += 12;
+      .text(inv.client_address, rightColX, cy, { width: rightColW });
+    cy = doc.y + 4;
   }
 
-  y = Math.max(leftBottom, cy) + 8;
+  y = Math.max(leftBottom, cy) + SECTION_GAP;
 
-  // Description line
+  // Description (below client/faturë row, within margins)
   if (inv.description) {
     doc.moveTo(ML, y).lineTo(PW - MR, y).strokeColor('#EEEEEE').lineWidth(0.5).stroke();
     y += 8;
     doc.fontSize(9).font('Helvetica-Bold').fillColor('#777')
       .text(L.description_label + ': ', ML, y, { continued: true, lineBreak: false });
     doc.font('Helvetica').fillColor('#333').text(inv.description, { lineBreak: false, width: CW });
-    y += 15;
+    y += 16;
   }
 
-  y += 4;
-  doc.moveTo(ML, y).lineTo(PW - MR, y).strokeColor('#CCCCCC').lineWidth(0.5).stroke();
-  y += 10;
+  // Pre-table rule (margin-to-margin)
+  doc.moveTo(ML, y).lineTo(PW - MR, y).strokeColor('#CCCCCC').lineWidth(0.6).stroke();
+  y += 8;
 
-  // ── Line-items table ──────────────────────────────────────────────────────────
-  // Column layout (total CW = 505)
+  // ── TABLE ─────────────────────────────────────────────────────────────────────
+  // Columns sum to CW=495; Amt right edge = ML+415+80 = PW-MR ✓
   const C = {
     nr:    { x: ML,       w: 22  },
     code:  { x: ML + 22,  w: 46  },
-    name:  { x: ML + 68,  w: 170 },
-    unit:  { x: ML + 238, w: 50  },
-    qty:   { x: ML + 288, w: 38  },
-    price: { x: ML + 326, w: 64  },
-    disc:  { x: ML + 390, w: 38  },
-    amt:   { x: ML + 428, w: 77  },
+    name:  { x: ML + 68,  w: 151 },
+    unit:  { x: ML + 219, w: 50  },
+    qty:   { x: ML + 269, w: 42  },
+    price: { x: ML + 311, w: 66  },
+    disc:  { x: ML + 377, w: 38  },
+    amt:   { x: ML + 415, w: 80  },
   };
 
   const HEADER_H = 18;
   const ROW_H = 20;
-  const SIG_RESERVE = 120; // space needed for totals + signature block
+  const SIG_RESERVE = 130;
 
   function drawTableHeader(yPos) {
     doc.rect(ML, yPos, CW, HEADER_H).fill('#F2F2F2');
@@ -782,22 +817,18 @@ router.get('/:id/pdf', (req, res) => {
 
   y = drawTableHeader(y);
   doc.moveTo(ML, y).lineTo(PW - MR, y).strokeColor('#CCCCCC').lineWidth(0.5).stroke();
-  y += 1;
 
   const invoiceLines = inv.lines || [];
 
   invoiceLines.forEach((line, idx) => {
-    // Check if we need a new page
     if (y + ROW_H > PH - SIG_RESERVE - 40) {
       doc.addPage();
       newPageSetup();
       y = MT;
       y = drawTableHeader(y);
       doc.moveTo(ML, y).lineTo(PW - MR, y).strokeColor('#CCCCCC').lineWidth(0.5).stroke();
-      y += 1;
     }
 
-    // Alternate row background
     if (idx % 2 === 1) {
       doc.rect(ML, y, CW, ROW_H).fill('#FAFAFA');
     } else {
@@ -806,31 +837,30 @@ router.get('/:id/pdf', (req, res) => {
 
     const rY = y + 5;
     doc.fontSize(8.5).font('Helvetica').fillColor('#333');
-    doc.text(String(idx + 1),                            C.nr.x,    rY, { width: C.nr.w,    lineBreak: false });
-    doc.text(line.code || '',                            C.code.x,  rY, { width: C.code.w,  lineBreak: false });
-    doc.text(line.description || '',                     C.name.x,  rY, { width: C.name.w,  lineBreak: false });
-    doc.text(line.unit || '',                            C.unit.x,  rY, { width: C.unit.w,  lineBreak: false });
-    doc.text(String(Number(line.qty || 0)),              C.qty.x,   rY, { width: C.qty.w,   align: 'right', lineBreak: false });
-    doc.text(fmtMoney(line.price),                       C.price.x, rY, { width: C.price.w, align: 'right', lineBreak: false });
-    const discTxt = (line.line_discount_pct || 0) > 0
-      ? `${Number(line.line_discount_pct)}%` : '';
-    doc.text(discTxt,                                    C.disc.x,  rY, { width: C.disc.w,  align: 'right', lineBreak: false });
-    doc.font('Helvetica-Bold').text(fmtMoney(line.amount), C.amt.x, rY, { width: C.amt.w,  align: 'right', lineBreak: false });
+    doc.text(String(idx + 1),               C.nr.x,    rY, { width: C.nr.w,    lineBreak: false });
+    doc.text(line.code || '',               C.code.x,  rY, { width: C.code.w,  lineBreak: false });
+    doc.text(line.description || '',        C.name.x,  rY, { width: C.name.w,  lineBreak: false });
+    doc.text(line.unit || '',               C.unit.x,  rY, { width: C.unit.w,  lineBreak: false });
+    doc.text(String(Number(line.qty || 0)), C.qty.x,   rY, { width: C.qty.w,   align: 'right', lineBreak: false });
+    doc.text(fmtMoney(line.price),          C.price.x, rY, { width: C.price.w, align: 'right', lineBreak: false });
+    const discTxt = (line.line_discount_pct || 0) > 0 ? `${Number(line.line_discount_pct)}%` : '';
+    doc.text(discTxt,                       C.disc.x,  rY, { width: C.disc.w,  align: 'right', lineBreak: false });
+    doc.font('Helvetica-Bold').text(fmtMoney(line.amount), C.amt.x, rY, { width: C.amt.w, align: 'right', lineBreak: false });
 
     y += ROW_H;
     doc.moveTo(ML, y).lineTo(PW - MR, y).strokeColor('#EEEEEE').lineWidth(0.3).stroke();
   });
 
   // Closing table border
-  doc.moveTo(ML, y).lineTo(PW - MR, y).strokeColor('#CCCCCC').lineWidth(0.5).stroke();
-  y += 12;
+  doc.moveTo(ML, y).lineTo(PW - MR, y).strokeColor('#CCCCCC').lineWidth(0.6).stroke();
+  y += SECTION_GAP;
 
-  // ── Totals + Notes + Signatures ───────────────────────────────────────────────
-  // Ensure all of this fits on one page
+  // ── TOTALS + NOTES ────────────────────────────────────────────────────────────
   const notesH = inv.notes ? Math.min(60, inv.notes.length * 0.6 + 28) : 0;
-  const totalsH = 80 + (inv.tax_enabled && inv.tax_amount > 0 ? 14 : 0) +
-    ((inv.invoice_discount || 0) > 0 ? 28 : 0);
-  const sigH = 70;
+  const taxRows = (inv.tax_enabled && (inv.tax_amount || 0) > 0) ? 1 : 0;
+  const discRows = (inv.invoice_discount || 0) > 0 ? 2 : 0;
+  const totalsH = (3 + taxRows + discRows) * 14 + 36;
+  const sigH = 90;
   const neededH = Math.max(notesH, totalsH) + sigH + 20;
 
   if (y + neededH > PH - 30) {
@@ -839,19 +869,21 @@ router.get('/:id/pdf', (req, res) => {
     y = MT;
   }
 
-  // Totals block — right side
-  const totX = PW - MR - 210;
-  const totLabelW = 130;
-  const totValueW = 80;
+  // Totals block: label right-aligned, value right-aligned; right edge at PW-MR = Vlera column
+  const totValueW = C.amt.w;        // 80 — same width as table Amt column
+  const totValX   = C.amt.x;        // ML+415 — same x as table Amt column
+  const totLabelW = 140;
+  const totLabelX = totValX - totLabelW;   // ML+275
+
   let totY = y;
 
   const totRow = (label, value, bold = false, large = false, color = '#333') => {
     const fs = large ? 11 : 9;
     const fn = (bold || large) ? 'Helvetica-Bold' : 'Helvetica';
-    doc.fontSize(fs).font(fn).fillColor('#666')
-      .text(label, totX, totY, { width: totLabelW, lineBreak: false });
+    doc.fontSize(fs).font('Helvetica-Bold').fillColor('#666')
+      .text(label, totLabelX, totY, { width: totLabelW, align: 'right', lineBreak: false });
     doc.font(fn).fillColor(color)
-      .text(value, totX + totLabelW, totY, { width: totValueW, align: 'right', lineBreak: false });
+      .text(value, totValX, totY, { width: totValueW, align: 'right', lineBreak: false });
     totY += large ? 18 : 14;
   };
 
@@ -864,44 +896,51 @@ router.get('/:id/pdf', (req, res) => {
     totRow(`${taxLabel} ${inv.tax_rate_applied}%`, fmtMoney(inv.tax_amount));
   }
 
-  doc.moveTo(totX, totY).lineTo(PW - MR, totY).strokeColor('#999999').lineWidth(0.7).stroke();
+  // Thin rule above Për pagesë, spanning label+value columns
+  doc.moveTo(totLabelX, totY).lineTo(PW - MR, totY).strokeColor('#AAAAAA').lineWidth(0.7).stroke();
   totY += 7;
   totRow(L.amount_due, fmtMoney(inv.amount_due), true, true, '#111');
 
-  // Notes — left side aligned with totals start
+  // Notes (left side, same y baseline as totals)
   let notesEndY = y;
   if (inv.notes) {
     doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#666')
       .text(L.notes + ':', ML, y, { lineBreak: false });
     notesEndY = y + 14;
     doc.fontSize(8.5).font('Helvetica').fillColor('#444')
-      .text(inv.notes, ML, notesEndY, { width: totX - ML - 24 });
+      .text(inv.notes, ML, notesEndY, { width: totLabelX - ML - 16 });
     notesEndY = doc.y + 4;
   }
 
-  // ── Signature Lines ────────────────────────────────────────────────────────
-  const sigBaseY = Math.max(totY, notesEndY) + 24;
-  const sigLineY = sigBaseY + 36;
-  const SIG_W = 155;
+  // ── SIGNATURE LINES ───────────────────────────────────────────────────────────
+  // Both lines at identical Y, mirrored: left=ML..ML+SIG_W, right=(PW-MR-SIG_W)..PW-MR
+  const SIG_W    = 160;
   const leftSigX = ML;
   const rightSigX = PW - MR - SIG_W;
 
-  // Stamp overlay over Dorezoi line (rendered first, under the line)
+  const sigBaseY = Math.max(totY, notesEndY) + SECTION_GAP;
+  const sigLineY = sigBaseY + 38;
+
+  // Stamp image centered over left signature line
   if (stampData) {
     try {
       const stampBuf = Buffer.from(stampData.replace(/^data:image\/\w+;base64,/, ''), 'base64');
-      const SW = 130, SH = 72;
-      doc.image(stampBuf, leftSigX + (SIG_W - SW) / 2, sigLineY - SH - 2, { fit: [SW, SH] });
+      const SW = 130, SH = 68;
+      const stampX = leftSigX + (SIG_W - SW) / 2;
+      const stampY = sigLineY - SH - 2;
+      doc.image(stampBuf, stampX, stampY, { fit: [SW, SH] });
     } catch (_) {}
   }
 
+  // Left line + label
   doc.moveTo(leftSigX, sigLineY).lineTo(leftSigX + SIG_W, sigLineY)
-    .strokeColor('#888').lineWidth(0.7).stroke();
+    .strokeColor('#888888').lineWidth(0.7).stroke();
   doc.fontSize(8).font('Helvetica').fillColor('#666')
     .text(L.delivered_by, leftSigX, sigLineY + 5, { width: SIG_W, align: 'center', lineBreak: false });
 
+  // Right line + label (mirrored)
   doc.moveTo(rightSigX, sigLineY).lineTo(rightSigX + SIG_W, sigLineY)
-    .strokeColor('#888').lineWidth(0.7).stroke();
+    .strokeColor('#888888').lineWidth(0.7).stroke();
   doc.fontSize(8).font('Helvetica').fillColor('#666')
     .text(L.received_by, rightSigX, sigLineY + 5, { width: SIG_W, align: 'center', lineBreak: false });
 
