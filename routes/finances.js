@@ -204,15 +204,19 @@ router.get('/details/profit', (req, res) => {
   const rows = db.prepare(`
     SELECT p.id, p.title, c.name as client_name,
       COALESCE((SELECT SUM(cp.amount) FROM client_payments cp WHERE cp.project_id=p.id AND cp.status='received' AND strftime('%Y-%m', cp.date)=?), 0) as revenue,
-      COALESCE((SELECT SUM(ca.days*ca.rate_per_day) FROM crew_assignments ca WHERE ca.project_id=p.id), 0) as crew_cost,
-      COALESCE((SELECT SUM(e.amount) FROM expenses e WHERE e.project_id=p.id AND e.status='confirmed'), 0) as expenses
+      COALESCE((SELECT SUM(ca.payment_amount) FROM crew_assignments ca WHERE ca.project_id=p.id AND ca.paid_status IN ('paid','partial') AND strftime('%Y-%m', ca.payment_date)=?), 0) as crew_cost,
+      COALESCE((SELECT SUM(e.amount) FROM expenses e WHERE e.project_id=p.id AND e.status='confirmed' AND strftime('%Y-%m', e.date)=?), 0) as expenses
     FROM projects p
     LEFT JOIN clients c ON c.id = p.client_id
     WHERE p.id IN (
       SELECT DISTINCT project_id FROM client_payments WHERE status='received' AND strftime('%Y-%m', date)=?
+      UNION
+      SELECT DISTINCT project_id FROM crew_assignments WHERE paid_status IN ('paid','partial') AND strftime('%Y-%m', payment_date)=?
+      UNION
+      SELECT DISTINCT project_id FROM expenses WHERE status='confirmed' AND strftime('%Y-%m', date)=?
     )
     ORDER BY p.title
-  `).all(month, month);
+  `).all(month, month, month, month, month, month);
   res.json(rows.map(r => ({ ...r, net_profit: r.revenue - r.crew_cost - r.expenses })));
 });
 
