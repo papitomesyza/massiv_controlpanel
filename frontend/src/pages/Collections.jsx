@@ -1,13 +1,28 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Plus, Edit2, Trash2, FolderKanban, Library, X,
-  Archive, ArchiveRestore, Search, Link2, FileText,
+  Plus, Edit2, Trash2, FolderKanban, Library, Clapperboard, User, X,
+  Archive, ArchiveRestore, Search, Link2, FileText, GripVertical,
 } from 'lucide-react';
+import {
+  DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors,
+} from '@dnd-kit/core';
+import { SortableContext, useSortable, rectSortingStrategy, arrayMove } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { api } from '../api';
 
+// ── Kind metadata ─────────────────────────────────────────────────────────────
+
+const KIND_META = {
+  project:  { label: 'Project Collections', icon: FolderKanban, emptyMsg: 'No project collections yet. Link one to a project.' },
+  studio:   { label: 'Studio',              icon: Clapperboard,  emptyMsg: 'No Studio collections yet. Add creative references for the agency.' },
+  personal: { label: 'Personal',            icon: User,          emptyMsg: 'No Personal collections yet. Save ideas and personal inspiration here.' },
+};
+
+// ── Collection tile ───────────────────────────────────────────────────────────
+
 function CollectionTile({ collection, onEdit, onDelete, onArchive, onClick }) {
-  const isProject = collection.project_id !== null;
+  const isProject = collection.kind === 'project';
   const [imgFailed, setImgFailed] = useState(false);
   const hasCover = !!collection.cover_thumbnail && !imgFailed;
 
@@ -15,10 +30,8 @@ function CollectionTile({ collection, onEdit, onDelete, onArchive, onClick }) {
     <div
       className="card"
       style={{
-        cursor: 'pointer', overflow: 'hidden',
-        display: 'flex', flexDirection: 'column',
-        position: 'relative',
-        opacity: collection.archived ? 0.75 : 1,
+        cursor: 'pointer', overflow: 'hidden', display: 'flex', flexDirection: 'column',
+        position: 'relative', opacity: collection.archived ? 0.75 : 1,
       }}
       onClick={onClick}
     >
@@ -63,8 +76,7 @@ function CollectionTile({ collection, onEdit, onDelete, onArchive, onClick }) {
         {collection.description && (
           <p style={{
             fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.4, margin: 0,
-            overflow: 'hidden', display: '-webkit-box',
-            WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+            overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
           }}>
             {collection.description}
           </p>
@@ -84,6 +96,44 @@ function CollectionTile({ collection, onEdit, onDelete, onArchive, onClick }) {
     </div>
   );
 }
+
+// ── Sortable tile wrapper ─────────────────────────────────────────────────────
+
+function SortableCollectionTile(props) {
+  const { collection } = props;
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: collection.id });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.45 : 1,
+        zIndex: isDragging ? 999 : undefined,
+        position: 'relative',
+      }}
+      {...attributes}
+    >
+      {/* Drag handle */}
+      <div
+        {...listeners}
+        onClick={e => e.stopPropagation()}
+        title="Drag to reorder"
+        style={{
+          position: 'absolute', top: 7, left: 7, zIndex: 20,
+          cursor: isDragging ? 'grabbing' : 'grab',
+          background: 'rgba(0,0,0,0.55)', borderRadius: 6, padding: '3px 5px',
+          color: '#aaa', touchAction: 'none', display: 'flex', alignItems: 'center',
+        }}
+      >
+        <GripVertical size={11} />
+      </div>
+      <CollectionTile {...props} />
+    </div>
+  );
+}
+
+// ── Edit modal ────────────────────────────────────────────────────────────────
 
 function EditModal({ collection, onSave, onClose }) {
   const [name, setName] = useState(collection.name);
@@ -132,16 +182,17 @@ function EditModal({ collection, onSave, onClose }) {
   );
 }
 
+// ── New Collection modal (3 types) ───────────────────────────────────────────
+
 function NewCollectionModal({ projects, onClose, onCreated }) {
   const [step, setStep] = useState('type');
-
   const [selectedProjectId, setSelectedProjectId] = useState('');
   const [projName, setProjName] = useState('');
   const [projDesc, setProjDesc] = useState('');
-
-  const [otherName, setOtherName] = useState('');
-  const [otherDesc, setOtherDesc] = useState('');
-
+  const [studioName, setStudioName] = useState('');
+  const [studioDesc, setStudioDesc] = useState('');
+  const [personalName, setPersonalName] = useState('');
+  const [personalDesc, setPersonalDesc] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -160,31 +211,31 @@ function NewCollectionModal({ projects, onClose, onCreated }) {
     setSaving(true); setError('');
     try {
       const res = await api.post('/collections', {
-        name: projName.trim(),
-        description: projDesc.trim() || undefined,
-        project_id: Number(selectedProjectId),
+        name: projName.trim(), description: projDesc.trim() || undefined,
+        project_id: Number(selectedProjectId), kind: 'project',
       });
       onCreated(res, !!res.alreadyExisted);
-    } catch (err) {
-      setError(err.message || 'Failed to create');
-      setSaving(false);
-    }
+    } catch (err) { setError(err.message || 'Failed to create'); setSaving(false); }
   }
 
-  async function handleCreateOther(e) {
+  async function handleCreateStudio(e) {
     e.preventDefault();
-    if (!otherName.trim()) { setError('Name is required'); return; }
+    if (!studioName.trim()) { setError('Name is required'); return; }
     setSaving(true); setError('');
     try {
-      const res = await api.post('/collections', {
-        name: otherName.trim(),
-        description: otherDesc.trim() || undefined,
-      });
+      const res = await api.post('/collections', { name: studioName.trim(), description: studioDesc.trim() || undefined, kind: 'studio' });
       onCreated(res);
-    } catch (err) {
-      setError(err.message || 'Failed to create');
-      setSaving(false);
-    }
+    } catch (err) { setError(err.message || 'Failed to create'); setSaving(false); }
+  }
+
+  async function handleCreatePersonal(e) {
+    e.preventDefault();
+    if (!personalName.trim()) { setError('Name is required'); return; }
+    setSaving(true); setError('');
+    try {
+      const res = await api.post('/collections', { name: personalName.trim(), description: personalDesc.trim() || undefined, kind: 'personal' });
+      onCreated(res);
+    } catch (err) { setError(err.message || 'Failed to create'); setSaving(false); }
   }
 
   const typeCardBase = {
@@ -194,6 +245,27 @@ function NewCollectionModal({ projects, onClose, onCreated }) {
     color: 'var(--text-primary)', fontFamily: 'var(--font)',
     transition: 'border-color 0.15s, background 0.15s',
   };
+
+  const typeOptions = [
+    {
+      key: 'project',
+      icon: <FolderKanban size={18} color="var(--accent)" />,
+      title: 'Project Collection',
+      sub: 'Linked to a specific project. One per project.',
+    },
+    {
+      key: 'studio',
+      icon: <Clapperboard size={18} color="var(--accent)" />,
+      title: 'Studio',
+      sub: 'Creative agency references — Music Videos, Commercials, Directors…',
+    },
+    {
+      key: 'personal',
+      icon: <User size={18} color="var(--accent)" />,
+      title: 'Personal',
+      sub: 'Personal inspiration — ideas, moodboards, anything for you.',
+    },
+  ];
 
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -208,41 +280,25 @@ function NewCollectionModal({ projects, onClose, onCreated }) {
             <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '0 0 6px' }}>
               What kind of collection?
             </p>
-
-            <button
-              style={typeCardBase}
-              onClick={() => pickType('project')}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = 'rgba(199,255,46,0.04)'; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-default)'; e.currentTarget.style.background = 'var(--bg-secondary)'; }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '13px' }}>
-                <div style={{ width: 38, height: 38, borderRadius: 10, background: 'rgba(199,255,46,0.10)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <FolderKanban size={18} color="var(--accent)" />
+            {typeOptions.map(opt => (
+              <button
+                key={opt.key}
+                style={typeCardBase}
+                onClick={() => pickType(opt.key)}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = 'rgba(199,255,46,0.04)'; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-default)'; e.currentTarget.style.background = 'var(--bg-secondary)'; }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '13px' }}>
+                  <div style={{ width: 38, height: 38, borderRadius: 10, background: 'rgba(199,255,46,0.10)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    {opt.icon}
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: 3 }}>{opt.title}</div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{opt.sub}</div>
+                  </div>
                 </div>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: 3 }}>Project Collection</div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Linked to a specific project. One per project.</div>
-                </div>
-              </div>
-            </button>
-
-            <button
-              style={typeCardBase}
-              onClick={() => pickType('other')}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = 'rgba(199,255,46,0.04)'; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-default)'; e.currentTarget.style.background = 'var(--bg-secondary)'; }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '13px' }}>
-                <div style={{ width: 38, height: 38, borderRadius: 10, background: 'rgba(199,255,46,0.10)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <Library size={18} color="var(--accent)" />
-                </div>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: 3 }}>Other Collection</div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>General-purpose inspiration board or reference.</div>
-                </div>
-              </div>
-            </button>
-
+              </button>
+            ))}
             <div className="modal-footer">
               <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
             </div>
@@ -274,15 +330,33 @@ function NewCollectionModal({ projects, onClose, onCreated }) {
           </form>
         )}
 
-        {step === 'other' && (
-          <form onSubmit={handleCreateOther}>
+        {step === 'studio' && (
+          <form onSubmit={handleCreateStudio}>
             <div className="form-row">
               <label className="form-label">Name *</label>
-              <input className="input" value={otherName} onChange={e => setOtherName(e.target.value)} placeholder="e.g. UI/UX Inspiration" autoFocus />
+              <input className="input" value={studioName} onChange={e => setStudioName(e.target.value)} placeholder="e.g. Music Video References" autoFocus />
             </div>
             <div className="form-row">
               <label className="form-label">Description</label>
-              <input className="input" value={otherDesc} onChange={e => setOtherDesc(e.target.value)} placeholder="Optional description" />
+              <input className="input" value={studioDesc} onChange={e => setStudioDesc(e.target.value)} placeholder="Optional description" />
+            </div>
+            {error && <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 10px' }}>{error}</p>}
+            <div className="modal-footer">
+              <button type="button" className="btn btn-ghost" onClick={() => { setStep('type'); setError(''); }}>Back</button>
+              <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Creating…' : 'Create'}</button>
+            </div>
+          </form>
+        )}
+
+        {step === 'personal' && (
+          <form onSubmit={handleCreatePersonal}>
+            <div className="form-row">
+              <label className="form-label">Name *</label>
+              <input className="input" value={personalName} onChange={e => setPersonalName(e.target.value)} placeholder="e.g. Business Ideas" autoFocus />
+            </div>
+            <div className="form-row">
+              <label className="form-label">Description</label>
+              <input className="input" value={personalDesc} onChange={e => setPersonalDesc(e.target.value)} placeholder="Optional description" />
             </div>
             {error && <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 10px' }}>{error}</p>}
             <div className="modal-footer">
@@ -296,6 +370,8 @@ function NewCollectionModal({ projects, onClose, onCreated }) {
   );
 }
 
+// ── Sortable section (one per kind) ──────────────────────────────────────────
+
 const SECTION_LABEL = {
   fontSize: '11px', fontWeight: 700, letterSpacing: '0.1em',
   textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '14px',
@@ -305,6 +381,72 @@ const TILE_GRID = {
   gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
   gap: '14px',
 };
+
+function SortableSection({ kind, list, onListChange, onEdit, onDelete, onArchive, navigate }) {
+  const meta = KIND_META[kind];
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
+  );
+
+  function handleDragEnd({ active, over }) {
+    if (!over || active.id === over.id) return;
+    const oldIndex = list.findIndex(c => c.id === active.id);
+    const newIndex = list.findIndex(c => c.id === over.id);
+    const newList = arrayMove(list, oldIndex, newIndex);
+    onListChange(kind, newList);
+    api.put('/collections/reorder', { orderedIds: newList.map(c => c.id) }).catch(() => {});
+  }
+
+  return (
+    <section style={{ marginBottom: '32px' }}>
+      <h2 style={SECTION_LABEL}>{meta.label}</h2>
+      {list.length === 0 ? (
+        <div className="card" style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
+          {meta.emptyMsg}
+        </div>
+      ) : (
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={list.map(c => c.id)} strategy={rectSortingStrategy}>
+            <div style={TILE_GRID}>
+              {list.map(c => (
+                <SortableCollectionTile
+                  key={c.id}
+                  collection={c}
+                  onEdit={onEdit}
+                  onDelete={onDelete}
+                  onArchive={onArchive}
+                  onClick={() => navigate(`/collections/${c.id}`)}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
+      )}
+    </section>
+  );
+}
+
+// ── Simple (non-sortable) tile grid for archived view ─────────────────────────
+
+function StaticTileGrid({ list, onEdit, onDelete, onArchive, navigate }) {
+  return (
+    <div style={TILE_GRID}>
+      {list.map(c => (
+        <CollectionTile
+          key={c.id}
+          collection={c}
+          onEdit={onEdit}
+          onDelete={onDelete}
+          onArchive={onArchive}
+          onClick={() => navigate(`/collections/${c.id}`)}
+        />
+      ))}
+    </div>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function Collections() {
   const navigate = useNavigate();
@@ -318,6 +460,11 @@ export default function Collections() {
   const [searchResults, setSearchResults] = useState(null);
   const [searching, setSearching] = useState(false);
 
+  // Per-section sorted lists (active only; derived from collections)
+  const [sortedProject, setSortedProject] = useState([]);
+  const [sortedStudio, setSortedStudio] = useState([]);
+  const [sortedPersonal, setSortedPersonal] = useState([]);
+
   async function loadData() {
     try {
       const [colls, projs] = await Promise.all([api.get('/collections'), api.get('/projects')]);
@@ -330,7 +477,22 @@ export default function Collections() {
     loadData().finally(() => setLoading(false));
   }, []);
 
-  // Debounced API card search
+  // Sync sorted lists when collections change
+  useEffect(() => {
+    const active = collections.filter(c => !c.archived);
+    const byKind = kind => active.filter(c => c.kind === kind).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+    setSortedProject(byKind('project'));
+    setSortedStudio(byKind('studio'));
+    setSortedPersonal(byKind('personal'));
+  }, [collections]);
+
+  function handleSectionListChange(kind, newList) {
+    if (kind === 'project') setSortedProject(newList);
+    else if (kind === 'studio') setSortedStudio(newList);
+    else setSortedPersonal(newList);
+  }
+
+  // Debounced search
   useEffect(() => {
     const q = searchQuery.trim();
     if (!q) { setSearchResults(null); setSearching(false); return; }
@@ -346,11 +508,9 @@ export default function Collections() {
   }, [searchQuery]);
 
   const isSearchMode = searchQuery.trim().length > 0;
-
   const activeCollections = collections.filter(c => !c.archived);
   const archivedCollections = collections.filter(c => c.archived);
 
-  // Client-side filter for instant visual feedback while typing
   const searchFilteredCollections = isSearchMode
     ? collections.filter(c => {
         if (c.archived) return false;
@@ -359,10 +519,7 @@ export default function Collections() {
       })
     : [];
 
-  const activeProject = activeCollections.filter(c => c.project_id !== null);
-  const activeOther = activeCollections.filter(c => c.project_id === null);
-  const archivedProject = archivedCollections.filter(c => c.project_id !== null);
-  const archivedOther = archivedCollections.filter(c => c.project_id === null);
+  const archivedByKind = kind => archivedCollections.filter(c => c.kind === kind);
 
   async function handleCreated(coll) {
     setShowNewModal(false);
@@ -391,55 +548,27 @@ export default function Collections() {
     } catch (err) { alert(err.message || 'Failed to update'); }
   }
 
-  function TileGrid({ list }) {
-    return (
-      <div style={TILE_GRID}>
-        {list.map(c => (
-          <CollectionTile
-            key={c.id}
-            collection={c}
-            onEdit={coll => setEditingColl(coll)}
-            onDelete={handleDelete}
-            onArchive={handleArchive}
-            onClick={() => navigate(`/collections/${c.id}`)}
-          />
-        ))}
-      </div>
-    );
-  }
-
-  function CollectionSection({ label, list, emptyMsg }) {
-    return (
-      <section style={{ marginBottom: '32px' }}>
-        <h2 style={SECTION_LABEL}>{label}</h2>
-        {list.length === 0
-          ? <div className="card" style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>{emptyMsg}</div>
-          : <TileGrid list={list} />}
-      </section>
-    );
-  }
-
   if (loading) return (
     <div className="page-header">
       <h1 className="page-title">Collections</h1>
     </div>
   );
 
+  const totalActive = activeCollections.length;
+  const totalArchived = archivedCollections.length;
+
   return (
     <div>
       <div className="page-header">
         <h1 className="page-title">Collections</h1>
         <button className="btn btn-primary" onClick={() => setShowNewModal(true)}>
-          <Plus size={16} style={{ marginRight: 6 }} /> New Collection
+          <Plus size={16} /> New Collection
         </button>
       </div>
 
       {/* Search bar */}
       <div style={{ position: 'relative', marginBottom: '24px' }}>
-        <Search
-          size={15}
-          style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }}
-        />
+        <Search size={15} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
         <input
           className="input"
           value={searchQuery}
@@ -457,10 +586,9 @@ export default function Collections() {
         )}
       </div>
 
-      {/* ── Search results view ── */}
+      {/* ── Search results ── */}
       {isSearchMode ? (
         <div>
-          {/* Matching collections (client-side instant filter) */}
           <section style={{ marginBottom: '32px' }}>
             <h2 style={SECTION_LABEL}>
               Matching Collections{searchFilteredCollections.length > 0 ? ` (${searchFilteredCollections.length})` : ''}
@@ -470,11 +598,14 @@ export default function Collections() {
                 No collections match "{searchQuery}"
               </div>
             ) : (
-              <TileGrid list={searchFilteredCollections} />
+              <div style={TILE_GRID}>
+                {searchFilteredCollections.map(c => (
+                  <CollectionTile key={c.id} collection={c} onEdit={setEditingColl} onDelete={handleDelete} onArchive={handleArchive} onClick={() => navigate(`/collections/${c.id}`)} />
+                ))}
+              </div>
             )}
           </section>
 
-          {/* Matching cards (API search) */}
           <section>
             <h2 style={SECTION_LABEL}>
               Matching Cards{searchResults && searchResults.cards.length > 0 ? ` (${searchResults.cards.length})` : ''}
@@ -518,7 +649,7 @@ export default function Collections() {
         </div>
       ) : (
         <>
-          {/* ── Normal tabs + collections view ── */}
+          {/* Tabs */}
           <div style={{ display: 'flex', gap: '4px', marginBottom: '28px', borderBottom: '1px solid var(--border)', paddingBottom: '0' }}>
             {['active', 'archived'].map(tab => (
               <button
@@ -533,14 +664,14 @@ export default function Collections() {
                 }}
               >
                 {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                {tab === 'active' && activeCollections.length > 0 && (
+                {tab === 'active' && totalActive > 0 && (
                   <span style={{ marginLeft: '6px', fontSize: '11px', background: 'var(--accent)', color: '#000', borderRadius: '10px', padding: '1px 6px', fontWeight: 700 }}>
-                    {activeCollections.length}
+                    {totalActive}
                   </span>
                 )}
-                {tab === 'archived' && archivedCollections.length > 0 && (
+                {tab === 'archived' && totalArchived > 0 && (
                   <span style={{ marginLeft: '6px', fontSize: '11px', background: '#333', color: '#888', borderRadius: '10px', padding: '1px 6px', fontWeight: 700 }}>
-                    {archivedCollections.length}
+                    {totalArchived}
                   </span>
                 )}
               </button>
@@ -549,20 +680,21 @@ export default function Collections() {
 
           {activeTab === 'active' && (
             <>
-              {activeProject.length === 0 && activeOther.length === 0 ? (
+              {totalActive === 0 ? (
                 <div className="card" style={{ padding: '48px 20px', textAlign: 'center' }}>
                   <Library size={32} color="var(--text-muted)" style={{ margin: '0 auto 12px', display: 'block' }} />
                   <p style={{ color: 'var(--text-secondary)', fontSize: '14px', marginBottom: '16px' }}>
                     No collections yet. Create one to start saving references and inspiration.
                   </p>
                   <button className="btn btn-primary" onClick={() => setShowNewModal(true)}>
-                    <Plus size={15} style={{ marginRight: 6 }} /> Create your first collection
+                    <Plus size={15} /> Create your first collection
                   </button>
                 </div>
               ) : (
                 <>
-                  <CollectionSection label="Project Collections" list={activeProject} emptyMsg="No project collections yet." />
-                  <CollectionSection label="Other Collections" list={activeOther} emptyMsg="No other collections yet." />
+                  <SortableSection kind="project" list={sortedProject} onListChange={handleSectionListChange} onEdit={setEditingColl} onDelete={handleDelete} onArchive={handleArchive} navigate={navigate} />
+                  <SortableSection kind="studio"  list={sortedStudio}  onListChange={handleSectionListChange} onEdit={setEditingColl} onDelete={handleDelete} onArchive={handleArchive} navigate={navigate} />
+                  <SortableSection kind="personal" list={sortedPersonal} onListChange={handleSectionListChange} onEdit={setEditingColl} onDelete={handleDelete} onArchive={handleArchive} navigate={navigate} />
                 </>
               )}
             </>
@@ -570,14 +702,30 @@ export default function Collections() {
 
           {activeTab === 'archived' && (
             <>
-              {archivedProject.length === 0 && archivedOther.length === 0 ? (
+              {totalArchived === 0 ? (
                 <div className="card" style={{ padding: '32px 20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
                   No archived collections.
                 </div>
               ) : (
                 <>
-                  {archivedProject.length > 0 && <CollectionSection label="Project Collections (Archived)" list={archivedProject} emptyMsg="" />}
-                  {archivedOther.length > 0 && <CollectionSection label="Other Collections (Archived)" list={archivedOther} emptyMsg="" />}
+                  {archivedByKind('project').length > 0 && (
+                    <section style={{ marginBottom: '32px' }}>
+                      <h2 style={SECTION_LABEL}>Project Collections — Archived</h2>
+                      <StaticTileGrid list={archivedByKind('project')} onEdit={setEditingColl} onDelete={handleDelete} onArchive={handleArchive} navigate={navigate} />
+                    </section>
+                  )}
+                  {archivedByKind('studio').length > 0 && (
+                    <section style={{ marginBottom: '32px' }}>
+                      <h2 style={SECTION_LABEL}>Studio — Archived</h2>
+                      <StaticTileGrid list={archivedByKind('studio')} onEdit={setEditingColl} onDelete={handleDelete} onArchive={handleArchive} navigate={navigate} />
+                    </section>
+                  )}
+                  {archivedByKind('personal').length > 0 && (
+                    <section style={{ marginBottom: '32px' }}>
+                      <h2 style={SECTION_LABEL}>Personal — Archived</h2>
+                      <StaticTileGrid list={archivedByKind('personal')} onEdit={setEditingColl} onDelete={handleDelete} onArchive={handleArchive} navigate={navigate} />
+                    </section>
+                  )}
                 </>
               )}
             </>
@@ -586,19 +734,10 @@ export default function Collections() {
       )}
 
       {showNewModal && (
-        <NewCollectionModal
-          projects={projects}
-          onClose={() => setShowNewModal(false)}
-          onCreated={handleCreated}
-        />
+        <NewCollectionModal projects={projects} onClose={() => setShowNewModal(false)} onCreated={handleCreated} />
       )}
-
       {editingColl && (
-        <EditModal
-          collection={editingColl}
-          onSave={handleEdit}
-          onClose={() => setEditingColl(null)}
-        />
+        <EditModal collection={editingColl} onSave={handleEdit} onClose={() => setEditingColl(null)} />
       )}
     </div>
   );

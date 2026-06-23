@@ -469,7 +469,38 @@ function initDb() {
     'ALTER TABLE projects ADD COLUMN shoot_start_time TEXT',
     'ALTER TABLE projects ADD COLUMN shoot_end_time TEXT',
     'ALTER TABLE collections ADD COLUMN archived INTEGER DEFAULT 0',
+    'ALTER TABLE collections ADD COLUMN kind TEXT NULL',
+    'ALTER TABLE collections ADD COLUMN sort_order INTEGER NULL',
+    'ALTER TABLE collection_cards ADD COLUMN sort_order INTEGER NULL',
   ].forEach(sql => { try { db.exec(sql); } catch (_) {} });
+
+  // collection_share_links table
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS collection_share_links (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        collection_id INTEGER NOT NULL,
+        token TEXT NOT NULL UNIQUE,
+        enabled INTEGER DEFAULT 1,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_share_links_token ON collection_share_links(token);
+      CREATE INDEX IF NOT EXISTS idx_share_links_collection ON collection_share_links(collection_id);
+    `);
+  } catch (_) {}
+
+  // Backfill kind for collections (runs every boot; WHERE kind IS NULL makes it a no-op after first run)
+  try {
+    db.exec("UPDATE collections SET kind = 'project' WHERE project_id IS NOT NULL AND kind IS NULL");
+    db.exec("UPDATE collections SET kind = 'studio' WHERE project_id IS NULL AND kind IS NULL");
+  } catch (_) {}
+
+  // Backfill sort_order (runs every boot; WHERE IS NULL makes it a no-op after first run)
+  try {
+    db.exec('UPDATE collections SET sort_order = id WHERE sort_order IS NULL');
+    db.exec('UPDATE collection_cards SET sort_order = id WHERE sort_order IS NULL');
+  } catch (_) {}
 
   // Clean up empty auto-created project collections (project_id set, 0 cards)
   try {

@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const crypto = require('crypto');
 const { db } = require('../db/database');
 
 // ── Link preview helpers ──────────────────────────────────────────────────────
@@ -55,7 +56,6 @@ async function parseOgTags(html, baseUrl) {
       $('title').first().text().trim() ||
       null;
   } catch (_) {
-    // Regex fallback when cheerio unavailable
     const imgM =
       html.match(/property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
       html.match(/content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
@@ -67,7 +67,6 @@ async function parseOgTags(html, baseUrl) {
     title = ttlM ? ttlM[1].trim() : null;
   }
 
-  // Resolve relative thumbnail URLs
   if (thumbnail_url && !thumbnail_url.startsWith('http')) {
     try {
       const base = new URL(baseUrl);
@@ -98,7 +97,6 @@ async function fetchLinkPreview(rawUrl) {
   try {
     const url = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
 
-    // YouTube
     const ytMatch = url.match(
       /(?:youtube\.com\/(?:watch\?(?:[^#&?]*&)*v=|shorts\/|embed\/|v\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/
     );
@@ -121,7 +119,6 @@ async function fetchLinkPreview(rawUrl) {
       return { title: null, thumbnail_url: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`, source: 'youtube' };
     }
 
-    // Vimeo
     const vimeoMatch = url.match(/vimeo\.com\/(?:video\/)?(\d+)/);
     if (vimeoMatch) {
       try {
@@ -137,7 +134,6 @@ async function fetchLinkPreview(rawUrl) {
       return { title: null, thumbnail_url: null, source: 'vimeo' };
     }
 
-    // General (Pinterest, Behance, any site)
     const source = detectSource(url);
     const html = await fetchHtml(url);
     if (!html) return { title: null, thumbnail_url: null, source };
@@ -160,7 +156,7 @@ router.get('/', (req, res) => {
   try {
     const { archived } = req.query;
     let sql = `
-      SELECT c.id, c.name, c.project_id, c.description, c.archived, c.created_at,
+      SELECT c.id, c.name, c.project_id, c.kind, c.description, c.archived, c.sort_order, c.created_at,
              p.title as project_title,
              (SELECT COUNT(*) FROM collection_cards cc WHERE cc.collection_id = c.id) as card_count,
              (SELECT thumbnail_url FROM collection_cards
@@ -174,7 +170,7 @@ router.get('/', (req, res) => {
       sql += ' WHERE c.archived = ?';
       params.push(Number(archived));
     }
-    sql += ' ORDER BY c.project_id IS NULL ASC, c.created_at DESC';
+    sql += ' ORDER BY c.sort_order ASC, c.created_at DESC';
     const collections = db.prepare(sql).all(...params);
     res.json(collections);
   } catch (err) {
@@ -189,7 +185,7 @@ router.get('/search', (req, res) => {
     if (q.length < 1) return res.json({ collections: [], cards: [] });
     const like = `%${q}%`;
     const collections = db.prepare(`
-      SELECT c.id, c.name, c.description, c.project_id, c.archived, c.created_at,
+      SELECT c.id, c.name, c.description, c.project_id, c.kind, c.archived, c.sort_order, c.created_at,
              p.title as project_title,
              (SELECT COUNT(*) FROM collection_cards cc WHERE cc.collection_id = c.id) as card_count,
              (SELECT thumbnail_url FROM collection_cards
@@ -198,7 +194,7 @@ router.get('/search', (req, res) => {
       FROM collections c
       LEFT JOIN projects p ON p.id = c.project_id
       WHERE c.archived = 0 AND (c.name LIKE ? OR c.description LIKE ?)
-      ORDER BY c.created_at DESC LIMIT 20
+      ORDER BY c.sort_order ASC, c.created_at DESC LIMIT 20
     `).all(like, like);
     const cards = db.prepare(`
       SELECT cc.id, cc.collection_id, cc.type, cc.title, cc.url, cc.source,
@@ -209,9 +205,25 @@ router.get('/search', (req, res) => {
       WHERE col.archived = 0
         AND (cc.title LIKE ? OR cc.note_text LIKE ? OR cc.url LIKE ?
              OR cc.source LIKE ? OR cc.tags LIKE ?)
-      ORDER BY cc.created_at DESC LIMIT 30
+      ORDER BY cc.sort_order ASC, cc.created_at DESC LIMIT 30
     `).all(like, like, like, like, like);
     res.json({ collections, cards });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/collections/reorder — must be BEFORE /:id to avoid route conflict
+router.put('/reorder', (req, res) => {
+  try {
+    const { orderedIds } = req.body;
+    if (!Array.isArray(orderedIds)) return res.status(400).json({ error: 'orderedIds array required' });
+    const update = db.prepare('UPDATE collections SET sort_order = ? WHERE id = ?');
+    const tx = db.transaction(() => {
+      orderedIds.forEach((id, index) => update.run(index, id));
+    });
+    tx();
+    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -221,7 +233,7 @@ router.get('/search', (req, res) => {
 router.get('/:id', (req, res) => {
   try {
     const coll = db.prepare(`
-      SELECT c.id, c.name, c.project_id, c.description, c.archived, c.created_at,
+      SELECT c.id, c.name, c.project_id, c.kind, c.description, c.archived, c.sort_order, c.created_at,
              p.title as project_title,
              (SELECT COUNT(*) FROM collection_cards cc WHERE cc.collection_id = c.id) as card_count
       FROM collections c
@@ -231,7 +243,7 @@ router.get('/:id', (req, res) => {
     if (!coll) return res.status(404).json({ error: 'Collection not found' });
 
     const cards = db.prepare(
-      'SELECT * FROM collection_cards WHERE collection_id = ? ORDER BY created_at DESC'
+      'SELECT * FROM collection_cards WHERE collection_id = ? ORDER BY sort_order ASC, created_at DESC'
     ).all(req.params.id);
 
     res.json({ ...coll, cards });
@@ -242,16 +254,20 @@ router.get('/:id', (req, res) => {
 
 // POST /api/collections
 router.post('/', (req, res) => {
-  const { name, description, project_id } = req.body;
+  const { name, description, project_id, kind: rawKind } = req.body;
   if (!name || !name.trim()) return res.status(400).json({ error: 'Name required' });
 
   try {
+    // Compute next sort_order
+    const maxRes = db.prepare('SELECT MAX(sort_order) as m FROM collections').get();
+    const sortOrder = (maxRes.m === null || maxRes.m === undefined) ? 0 : maxRes.m + 1;
+
     if (project_id) {
       const project = db.prepare('SELECT id FROM projects WHERE id = ?').get(project_id);
       if (!project) return res.status(400).json({ error: 'Project not found' });
 
       const existing = db.prepare(`
-        SELECT c.id, c.name, c.project_id, c.description, c.archived, c.created_at,
+        SELECT c.id, c.name, c.project_id, c.kind, c.description, c.archived, c.sort_order, c.created_at,
                p.title as project_title,
                (SELECT COUNT(*) FROM collection_cards cc WHERE cc.collection_id = c.id) as card_count
         FROM collections c LEFT JOIN projects p ON p.id = c.project_id
@@ -260,8 +276,8 @@ router.post('/', (req, res) => {
       if (existing) return res.json({ ...existing, alreadyExisted: true });
 
       const result = db.prepare(
-        'INSERT INTO collections (name, description, project_id) VALUES (?, ?, ?)'
-      ).run(name.trim(), description ? description.trim() : null, project_id);
+        'INSERT INTO collections (name, description, project_id, kind, sort_order) VALUES (?, ?, ?, ?, ?)'
+      ).run(name.trim(), description ? description.trim() : null, project_id, 'project', sortOrder);
 
       const created = db.prepare(`
         SELECT c.*, p.title as project_title,
@@ -271,9 +287,10 @@ router.post('/', (req, res) => {
       return res.json(created);
     }
 
+    const kind = ['studio', 'personal'].includes(rawKind) ? rawKind : 'studio';
     const result = db.prepare(
-      'INSERT INTO collections (name, description, project_id) VALUES (?, ?, NULL)'
-    ).run(name.trim(), description ? description.trim() : null);
+      'INSERT INTO collections (name, description, project_id, kind, sort_order) VALUES (?, ?, NULL, ?, ?)'
+    ).run(name.trim(), description ? description.trim() : null, kind, sortOrder);
 
     const created = db.prepare(`
       SELECT c.*, NULL as project_title,
@@ -315,6 +332,54 @@ router.delete('/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Share links ───────────────────────────────────────────────────────────────
+
+// POST /api/collections/:id/share — create or return existing share link
+router.post('/:id/share', (req, res) => {
+  try {
+    const coll = db.prepare('SELECT id FROM collections WHERE id = ?').get(req.params.id);
+    if (!coll) return res.status(404).json({ error: 'Collection not found' });
+
+    const existing = db.prepare('SELECT * FROM collection_share_links WHERE collection_id = ?').get(req.params.id);
+    if (existing) {
+      if (!existing.enabled) {
+        db.prepare('UPDATE collection_share_links SET enabled = 1 WHERE id = ?').run(existing.id);
+      }
+      return res.json({ token: existing.token, enabled: 1 });
+    }
+
+    const token = crypto.randomBytes(32).toString('hex');
+    db.prepare('INSERT INTO collection_share_links (collection_id, token) VALUES (?, ?)').run(req.params.id, token);
+    res.json({ token, enabled: 1 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/collections/:id/share — get current share link status
+router.get('/:id/share', (req, res) => {
+  try {
+    const link = db.prepare('SELECT token, enabled FROM collection_share_links WHERE collection_id = ?').get(req.params.id);
+    if (!link) return res.json({ has_link: false });
+    res.json({ has_link: true, token: link.token, enabled: link.enabled });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/collections/:id/share — enable or disable share link
+router.put('/:id/share', (req, res) => {
+  try {
+    const { enabled } = req.body;
+    const link = db.prepare('SELECT id FROM collection_share_links WHERE collection_id = ?').get(req.params.id);
+    if (!link) return res.status(404).json({ error: 'No share link found' });
+    db.prepare('UPDATE collection_share_links SET enabled = ? WHERE id = ?').run(enabled ? 1 : 0, link.id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Card CRUD ─────────────────────────────────────────────────────────────────
 
 // POST /api/collections/:id/cards
@@ -328,18 +393,21 @@ router.post('/:id/cards', async (req, res) => {
       return res.status(400).json({ error: 'type must be "link" or "note"' });
     }
 
+    // Compute next sort_order for this collection's cards
+    const maxRes = db.prepare('SELECT MAX(sort_order) as m FROM collection_cards WHERE collection_id = ?').get(req.params.id);
+    const sortOrder = (maxRes.m === null || maxRes.m === undefined) ? 0 : maxRes.m + 1;
+
     if (type === 'note') {
       if (!note_text || !note_text.trim()) {
         return res.status(400).json({ error: 'note_text is required' });
       }
       const result = db.prepare(
-        'INSERT INTO collection_cards (collection_id, type, title, note_text, tags) VALUES (?, ?, ?, ?, ?)'
-      ).run(req.params.id, 'note', title ? title.trim() : null, note_text.trim(), tags || null);
+        'INSERT INTO collection_cards (collection_id, type, title, note_text, tags, sort_order) VALUES (?, ?, ?, ?, ?, ?)'
+      ).run(req.params.id, 'note', title ? title.trim() : null, note_text.trim(), tags || null, sortOrder);
       const card = db.prepare('SELECT * FROM collection_cards WHERE id = ?').get(result.lastInsertRowid);
       return res.json(card);
     }
 
-    // Link card
     if (!url || !url.trim()) return res.status(400).json({ error: 'url is required' });
     const normalUrl = normalizeUrl(url);
 
@@ -349,16 +417,33 @@ router.post('/:id/cards', async (req, res) => {
     } catch (_) {}
 
     const result = db.prepare(
-      'INSERT INTO collection_cards (collection_id, type, url, title, thumbnail_url, source, tags) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO collection_cards (collection_id, type, url, title, thumbnail_url, source, tags, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
     ).run(
       req.params.id, 'link', normalUrl,
       preview.title || (title ? title.trim() : null),
       preview.thumbnail_url || null,
       preview.source || 'web',
-      tags || null
+      tags || null,
+      sortOrder
     );
     const card = db.prepare('SELECT * FROM collection_cards WHERE id = ?').get(result.lastInsertRowid);
     res.json(card);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/collections/:id/cards/reorder — must be BEFORE /:id/cards/:cardId
+router.put('/:id/cards/reorder', (req, res) => {
+  try {
+    const { orderedIds } = req.body;
+    if (!Array.isArray(orderedIds)) return res.status(400).json({ error: 'orderedIds array required' });
+    const update = db.prepare('UPDATE collection_cards SET sort_order = ? WHERE id = ? AND collection_id = ?');
+    const tx = db.transaction(() => {
+      orderedIds.forEach((cardId, index) => update.run(index, cardId, req.params.id));
+    });
+    tx();
+    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -386,7 +471,6 @@ router.put('/:id/cards/:cardId', async (req, res) => {
         card.id
       );
     } else {
-      // Link card
       const newUrl = url && url.trim() ? normalizeUrl(url.trim()) : null;
       const urlChanged = newUrl && newUrl !== card.url;
 

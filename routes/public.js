@@ -93,4 +93,28 @@ router.get('/expense-categories', (req, res) => {
   res.json(cats.map(c => c.name));
 });
 
+// GET /api/public/collection/:token — read-only shared collection view
+router.get('/collection/:token', (req, res) => {
+  try {
+    const link = db.prepare('SELECT * FROM collection_share_links WHERE token = ?').get(req.params.token);
+    if (!link) return res.json({ valid: false, reason: 'invalid' });
+    if (!link.enabled) return res.json({ valid: false, reason: 'revoked' });
+
+    const coll = db.prepare(
+      'SELECT id, name, description FROM collections WHERE id = ? AND archived = 0'
+    ).get(link.collection_id);
+    if (!coll) return res.json({ valid: false, reason: 'invalid' });
+
+    const cards = db.prepare(
+      `SELECT id, type, url, title, note_text, thumbnail_url, source, tags
+       FROM collection_cards WHERE collection_id = ?
+       ORDER BY sort_order ASC, created_at DESC`
+    ).all(coll.id);
+
+    res.json({ valid: true, collection: coll, cards });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
