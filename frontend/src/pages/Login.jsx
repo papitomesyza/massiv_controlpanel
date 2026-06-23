@@ -8,7 +8,7 @@ export default function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const { name: agencyName, tagline } = useAgency();
+  const { name: agencyName, tagline, logo } = useAgency();
 
   async function handleLogin() {
     if (!password) return;
@@ -38,23 +38,37 @@ export default function Login() {
     }}>
       <div style={{ width: '100%', maxWidth: '380px' }}>
         <div style={{ textAlign: 'center', marginBottom: '40px' }}>
-          <div style={{
-            width: '60px',
-            height: '60px',
-            borderRadius: '18px',
-            background: 'linear-gradient(135deg, #FF902F 0%, #4C11CE 100%)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            margin: '0 auto 20px',
-            boxShadow: '0 8px 32px rgba(114,60,235,0.35)',
-            fontSize: '24px',
-            fontWeight: 800,
-            color: 'white',
-            letterSpacing: '-1px',
-          }}>
-            {(agencyName || 'M').charAt(0).toUpperCase()}
-          </div>
+          {logo ? (
+            <img
+              src={logo}
+              alt={agencyName}
+              style={{
+                maxHeight: '64px',
+                width: 'auto',
+                display: 'block',
+                margin: '0 auto 20px',
+                objectFit: 'contain',
+              }}
+            />
+          ) : (
+            <div style={{
+              width: '60px',
+              height: '60px',
+              borderRadius: '18px',
+              background: 'linear-gradient(135deg, #FF902F 0%, #4C11CE 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 20px',
+              boxShadow: '0 8px 32px rgba(114,60,235,0.35)',
+              fontSize: '24px',
+              fontWeight: 800,
+              color: 'white',
+              letterSpacing: '-1px',
+            }}>
+              {(agencyName || 'M').charAt(0).toUpperCase()}
+            </div>
+          )}
           <h1 style={{ fontSize: '32px', fontWeight: 700, letterSpacing: '-0.5px', marginBottom: '8px', color: '#ffffff' }}>
             {agencyName}
           </h1>
