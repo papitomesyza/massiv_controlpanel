@@ -268,7 +268,7 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
       {/* Top bar */}
       <div className="inv-topbar">
         <div className="inv-topbar-left">
-          <FileText size={18} style={{ color: '#723CEB' }} />
+          <FileText size={18} style={{ color: 'var(--accent)' }} />
           <span style={{ fontWeight: 700, fontSize: '16px' }}>
             {isEditing ? (invoice.invoice_number ? `Invoice ${invoice.invoice_number}` : 'Edit Draft') : 'New Invoice'}
           </span>
@@ -716,7 +716,7 @@ function StatusBadge({ status, dueDate }) {
     </span>
   );
   if (status === 'issued') return (
-    <span className="badge" style={{ background: 'rgba(255,144,47,0.15)', color: '#FF902F', fontSize: '11px' }}>
+    <span className="badge" style={{ background: 'rgba(199,255,46,0.12)', color: 'var(--accent)', fontSize: '11px' }}>
       Issued
     </span>
   );
@@ -805,13 +805,13 @@ function ServicePickerModal({ services, onSelect, onClose }) {
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                   color: '#fff', borderBottom: '1px solid rgba(255,255,255,0.04)',
                 }}
-                onMouseEnter={e => e.currentTarget.style.background = 'rgba(114,60,235,0.12)'}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(199,255,46,0.08)'}
                 onMouseLeave={e => e.currentTarget.style.background = 'none'}
               >
                 <div>
                   <div>
                     {s.code && (
-                      <span style={{ fontSize: '11px', color: '#723CEB', marginRight: '8px', fontWeight: 700 }}>
+                      <span style={{ fontSize: '11px', color: 'var(--accent)', marginRight: '8px', fontWeight: 700 }}>
                         {s.code}
                       </span>
                     )}
@@ -819,7 +819,7 @@ function ServicePickerModal({ services, onSelect, onClose }) {
                   </div>
                   <div style={{ fontSize: '11px', color: '#666', marginTop: '2px' }}>{s.unit}</div>
                 </div>
-                <span style={{ fontSize: '13px', color: '#FF902F', fontWeight: 600, whiteSpace: 'nowrap', marginLeft: '16px' }}>
+                <span style={{ fontSize: '13px', color: 'var(--accent)', fontWeight: 600, whiteSpace: 'nowrap', marginLeft: '16px' }}>
                   {fmt(s.default_price)}
                 </span>
               </button>

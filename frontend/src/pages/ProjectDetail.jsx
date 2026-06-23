@@ -427,7 +427,7 @@ export default function ProjectDetail() {
 
             {(pendingExpenses || []).length > 0 && (
               <div style={{ marginBottom: '14px', paddingBottom: '4px', borderBottom: '1px solid var(--border)' }}>
-                <div className="text-sm" style={{ color: '#FF902F', fontWeight: 700, marginBottom: '8px' }}>
+                <div className="text-sm" style={{ color: 'var(--warning)', fontWeight: 700, marginBottom: '8px' }}>
                   Pending review ({pendingExpenses.length})
                 </div>
                 {pendingExpenses.map(pe => (
@@ -663,7 +663,7 @@ function PhaseBlock({ phase, expanded, onToggle, onComplete, onReactivate, onAdd
               }}
               style={{
                 opacity: dragId === task.id ? 0.5 : 1,
-                borderTop: dragOverId === task.id && dragId !== task.id ? '2px solid #723CEB' : '2px solid transparent',
+                borderTop: dragOverId === task.id && dragId !== task.id ? '2px solid var(--accent)' : '2px solid transparent',
               }}
             >
               {task.is_locked ? (

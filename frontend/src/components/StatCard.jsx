@@ -41,7 +41,7 @@ function RingGauge({ percent, color }) {
       <circle cx={size/2} cy={size/2} r={r} fill="none"
         stroke="rgba(255,255,255,0.08)" strokeWidth={sw} />
       <circle cx={size/2} cy={size/2} r={r} fill="none"
-        stroke={color || '#723CEB'} strokeWidth={sw}
+        stroke={color || '#C7FF2E'} strokeWidth={sw}
         strokeDasharray={`${filled} ${circ - filled}`}
         strokeLinecap="round"
         transform={`rotate(-90 ${size/2} ${size/2})`}
@@ -58,10 +58,10 @@ export default function StatCard({
   iconTint,
 }) {
   const uid = useId().replace(/[^a-z0-9]/gi, '');
-  const valueStyle = warn && !danger ? { color: '#FF902F' } : undefined;
+  const valueStyle = warn && !danger ? { color: 'var(--warning)' } : undefined;
   const sparkColor = gradient
     ? 'rgba(255,255,255,0.75)'
-    : (danger ? '#FF4444' : '#723CEB');
+    : (danger ? '#FF4444' : '#C7FF2E');
 
   return (
     <div
@@ -76,7 +76,7 @@ export default function StatCard({
       )}
       {ring !== undefined && (
         <div style={{ position: 'absolute', top: '18px', right: '18px' }}>
-          <RingGauge percent={ring} color={ringColor || '#723CEB'} />
+          <RingGauge percent={ring} color={ringColor || '#C7FF2E'} />
         </div>
       )}
       <div className="stat-label">{label}</div>

@@ -194,7 +194,7 @@ export default function Crew() {
                           <div className="flex-center gap-1">
                             <button
                               className="btn btn-ghost btn-sm"
-                              style={{ fontSize: '11px', borderRadius: '50px', color: '#FF902F', padding: '3px 8px' }}
+                              style={{ fontSize: '11px', borderRadius: '50px', color: 'var(--accent)', padding: '3px 8px' }}
                               onClick={() => setQuickDebtMember(member)}
                               title="Add Transaction"
                             >
@@ -441,7 +441,7 @@ function CrewDetailSheet({ member, debtAmount, onClose, onEdit, onTxn, onArchive
         <div style={{ display: 'flex', gap: '8px', marginTop: '16px', flexWrap: 'wrap' }}>
           <button
             className="btn btn-ghost btn-sm"
-            style={{ color: '#FF902F', borderColor: 'rgba(255,144,47,0.3)', flex: 1 }}
+            style={{ color: 'var(--accent)', borderColor: 'rgba(199,255,46,0.25)', flex: 1 }}
             onClick={() => onTxn(member)}
           >
             <Plus size={13} /> Txn

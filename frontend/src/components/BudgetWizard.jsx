@@ -713,7 +713,7 @@ function StepEquipmentAssets({ assetProviders, assetAllItems, lines, selectedKey
                 style={{
                   display: 'flex', alignItems: 'center', gap: '8px',
                   padding: '10px 12px', cursor: 'pointer',
-                  background: isExpanded ? 'rgba(114,60,235,0.1)' : 'rgba(255,255,255,0.03)',
+                  background: isExpanded ? 'rgba(199,255,46,0.08)' : 'rgba(255,255,255,0.03)',
                   userSelect: 'none',
                 }}
                 onClick={() => onToggleExpand(provider.id)}
@@ -741,18 +741,18 @@ function StepEquipmentAssets({ assetProviders, assetAllItems, lines, selectedKey
                           style={{
                             display: 'flex', alignItems: 'center', gap: '10px',
                             padding: '8px 12px', cursor: 'pointer',
-                            background: isSelected ? 'rgba(114,60,235,0.15)' : 'transparent',
+                            background: isSelected ? 'rgba(199,255,46,0.10)' : 'transparent',
                             borderBottom: '1px solid rgba(255,255,255,0.04)',
                           }}
                           onClick={() => onAddItem(item)}
                         >
                           <div style={{
                             width: '16px', height: '16px', borderRadius: '4px', flexShrink: 0,
-                            border: `1.5px solid ${isSelected ? 'var(--accent-purple)' : '#444'}`,
-                            background: isSelected ? 'var(--accent-purple)' : 'transparent',
+                            border: `1.5px solid ${isSelected ? 'var(--accent)' : '#444'}`,
+                            background: isSelected ? 'var(--accent)' : 'transparent',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                           }}>
-                            {isSelected && <Check size={10} color="#fff" />}
+                            {isSelected && <Check size={10} color="#0F0F0F" />}
                           </div>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: '12px', color: '#e0e0e0' }}>{item.item_name}</div>
@@ -942,7 +942,7 @@ function StepReview({
             onClick={() => f('show_providers', !info.show_providers)}
             style={{
               width: '38px', height: '22px', borderRadius: '50px', flexShrink: 0,
-              background: info.show_providers ? 'var(--accent-purple)' : '#333',
+              background: info.show_providers ? 'var(--accent)' : '#333',
               position: 'relative', cursor: 'pointer', transition: 'background 0.2s',
             }}
           >

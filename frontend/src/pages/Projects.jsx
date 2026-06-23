@@ -170,7 +170,7 @@ export default function Projects() {
             <button className={`view-toggle-btn${view === 'gantt' ? ' active' : ''}`} onClick={() => switchView('gantt')} title="Timeline view"><GanttChart size={15} /></button>
           </div>
           <button className="btn btn-ghost" onClick={() => setShowAddLead(true)}>
-            <Lightbulb size={15} style={{ color: '#FF902F' }} /> Add Lead
+            <Lightbulb size={15} style={{ color: 'var(--accent)' }} /> Add Lead
           </button>
           <button className="btn btn-primary" onClick={() => { setWizardPrefill(null); setShowWizard(true); }}>
             <Plus size={15} /> New Project
@@ -361,7 +361,7 @@ function LeadCard({ lead, onDismiss, onConvert, onEdit }) {
   return (
     <div className="lead-card lead-card-enter">
       <div className="lead-card-category">
-        <Lightbulb size={11} style={{ color: '#FF902F', flexShrink: 0 }} />
+        <Lightbulb size={11} style={{ color: 'var(--accent)', flexShrink: 0 }} />
         {lead.category_name || 'Uncategorized'}
       </div>
       <div className="lead-card-client">{lead.client_name || '—'}</div>
@@ -459,7 +459,7 @@ function GanttView({ projects }) {
             ? '#333333'
             : isOverdue
               ? 'rgba(255,68,68,0.55)'
-              : 'linear-gradient(135deg, #FF902F 0%, #723CEB 50%, #4C11CE 100%)';
+              : 'var(--gradient-card)';
           const opacity  = p.status === 'completed' ? 0.5 : 0.9;
           const left     = posPercent(start);
           const right    = posPercent(end);
@@ -483,7 +483,7 @@ function GanttView({ projects }) {
       </div>
 
       <div className="flex-center gap-2" style={{ marginTop: '16px', fontSize: '11px', color: '#888' }}>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '8px', background: 'linear-gradient(90deg, #FF902F, #723CEB)', borderRadius: '2px', display: 'inline-block' }} /> Active</span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '8px', background: 'var(--gradient-card)', borderRadius: '2px', display: 'inline-block' }} /> Active</span>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '8px', background: '#333333', borderRadius: '2px', display: 'inline-block' }} /> Completed</span>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '8px', background: 'rgba(255,68,68,0.55)', borderRadius: '2px', display: 'inline-block' }} /> Overdue</span>
       </div>

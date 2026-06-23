@@ -165,7 +165,7 @@ export default function Layout() {
               <div className="sidebar-upcoming-title">Upcoming</div>
               {upcoming.map(ev => (
                 <div key={ev.id} className="sidebar-upcoming-item">
-                  <span className="sidebar-upcoming-dot" style={{ background: ev.color || '#723CEB' }} />
+                  <span className="sidebar-upcoming-dot" style={{ background: ev.color || '#7BA01A' }} />
                   <div className="sidebar-upcoming-info">
                     <span className="sidebar-upcoming-name">{ev.title.length > 22 ? ev.title.slice(0, 22) + '…' : ev.title}</span>
                     <span className="sidebar-upcoming-date">{fmtShortDate(ev.start_date)}</span>

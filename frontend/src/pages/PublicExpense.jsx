@@ -137,8 +137,8 @@ export default function PublicExpense() {
 
   const gradientBtn = {
     width: '100%',
-    background: 'linear-gradient(135deg, #723CEB 0%, #9B5FFF 100%)',
-    color: '#fff',
+    background: 'var(--gradient-card)',
+    color: '#0F0F0F',
     border: 'none',
     borderRadius: '12px',
     padding: '16px',
@@ -330,12 +330,12 @@ export default function PublicExpense() {
                 onDragLeave={() => setDragOver(false)}
                 onDrop={e => { e.preventDefault(); setDragOver(false); handleFile(e.dataTransfer.files[0]); }}
                 style={{
-                  border: `2px dashed ${dragOver ? '#723CEB' : '#444'}`,
+                  border: `2px dashed ${dragOver ? 'var(--accent)' : '#444'}`,
                   borderRadius: '10px',
                   padding: '24px',
                   textAlign: 'center',
                   cursor: 'pointer',
-                  background: dragOver ? 'rgba(114,60,235,0.05)' : 'transparent',
+                  background: dragOver ? 'rgba(199,255,46,0.05)' : 'transparent',
                   transition: 'all 0.15s',
                 }}
               >

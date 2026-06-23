@@ -131,7 +131,7 @@ export default function Dashboard() {
     const isDragOver  = dragOverId === w.id;
     const wrapStyle = {
       opacity: isDragging ? 0.4 : 1,
-      borderTop: isDragOver && !isDragging ? '2px solid #723CEB' : '2px solid transparent',
+      borderTop: isDragOver && !isDragging ? '2px solid var(--accent)' : '2px solid transparent',
       transition: 'opacity 0.15s',
       position: 'relative',
     };
@@ -149,9 +149,9 @@ export default function Dashboard() {
           onDrop={() => onDrop(w.id)}
         >
           <div style={{
-            border: '1px dashed rgba(114,60,235,0.3)', borderRadius: '16px',
+            border: '1px dashed rgba(199,255,46,0.20)', borderRadius: '16px',
             padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '12px',
-            background: 'rgba(114,60,235,0.04)',
+            background: 'rgba(199,255,46,0.04)',
           }}>
             <GripHorizontal size={16} style={{ color: '#555' }} />
             <span style={{ color: '#555', fontSize: '13px', flex: 1 }}>
@@ -182,8 +182,8 @@ export default function Dashboard() {
           <div style={{
             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
             padding: '6px 12px', marginBottom: '6px',
-            background: 'rgba(114,60,235,0.08)',
-            border: '1px dashed rgba(114,60,235,0.4)',
+            background: 'rgba(199,255,46,0.06)',
+            border: '1px dashed rgba(199,255,46,0.30)',
             borderBottom: 'none',
             borderRadius: '12px 12px 0 0',
             cursor: 'grab',
@@ -195,7 +195,7 @@ export default function Dashboard() {
             </button>
           </div>
         )}
-        <div style={editMode ? { border: '1px dashed rgba(114,60,235,0.4)', borderTop: 'none', borderRadius: '0 0 12px 12px', padding: '12px 0' } : {}}>
+        <div style={editMode ? { border: '1px dashed rgba(199,255,46,0.30)', borderTop: 'none', borderRadius: '0 0 12px 12px', padding: '12px 0' } : {}}>
           <WidgetContent
             id={w.id}
             stats={stats}
@@ -409,13 +409,13 @@ function WidgetContent({ id, stats, projects, expenses, chartData, leads, setAct
               <AreaChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
                 <defs>
                   <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor="#723CEB" stopOpacity={0.25} />
-                    <stop offset="95%" stopColor="#723CEB" stopOpacity={0.01} />
+                    <stop offset="5%"  stopColor="#C7FF2E" stopOpacity={0.25} />
+                    <stop offset="95%" stopColor="#C7FF2E" stopOpacity={0.01} />
                   </linearGradient>
                 </defs>
                 <XAxis dataKey="month" tick={{ fontSize: 10, fill: '#666' }} axisLine={false} tickLine={false} />
                 <Tooltip content={<ChartTooltip labelFmt={v => fmt(v)} />} />
-                <Area type="monotone" dataKey="revenue" stroke="#723CEB" strokeWidth={2} fill="url(#revGrad)" dot={false} />
+                <Area type="monotone" dataKey="revenue" stroke="#C7FF2E" strokeWidth={2} fill="url(#revGrad)" dot={false} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -477,7 +477,7 @@ function LeadsBand({ leads }) {
 function DashLeadCard({ lead }) {
   return (
     <div className="dash-lead-card">
-      <div style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#FF902F' }}>
+      <div style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--accent)' }}>
         {lead.category_name || 'Uncategorized'}
       </div>
       <div style={{ fontWeight: 700, fontSize: '14px', color: '#fff' }}>

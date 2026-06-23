@@ -64,7 +64,7 @@ export default function AddLeadModal({ onClose, onSaved, lead: existingLead }) {
       <div className="modal-box" style={{ maxWidth: '480px' }}>
         <div className="modal-header">
           <span className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Lightbulb size={17} style={{ color: '#FF902F' }} /> {isEdit ? 'Edit Lead' : 'New Lead'}
+            <Lightbulb size={17} style={{ color: 'var(--accent)' }} /> {isEdit ? 'Edit Lead' : 'New Lead'}
           </span>
           <button className="modal-close" onClick={onClose}><X size={18} /></button>
         </div>

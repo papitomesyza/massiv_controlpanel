@@ -11,7 +11,7 @@ import { api, fmt, fmtDate } from '../api';
 import StatCard from '../components/StatCard';
 
 const MONTHS_LIST = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'));
-const PIE_COLORS = ['#FF902F', '#723CEB', '#4C11CE', '#a78bfa', '#FF4444', '#4CAF50', '#00BCD4', '#E91E63'];
+const PIE_COLORS = ['#C7FF2E', '#7BA01A', '#3B82F6', '#06B6D4', '#FF4444', '#4CAF50', '#00BCD4', '#E91E63'];
 const BUCKET_META = {
   current:  { label: 'Current (0–30d)',  color: '#4CAF50', bg: 'rgba(76,175,80,0.10)' },
   '31-60':  { label: '31–60 Days',       color: '#FF902F', bg: 'rgba(255,144,47,0.10)' },
@@ -144,7 +144,7 @@ function OverviewTab({ month, setMonth, filterCat, setFilterCat, filterClient, s
                   <Tooltip content={<CustomTooltip />} />
                   <Legend wrapperStyle={{ fontSize: '12px', color: '#888' }} />
                   <Bar dataKey="revenue" name="Revenue" fill="#ffffff" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="expenses" name="Expenses" fill="#723CEB" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="expenses" name="Expenses" fill="#C7FF2E" radius={[4, 4, 0, 0]} />
                   <Bar dataKey="crewCosts" name="Crew" fill="#FF902F" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -378,7 +378,7 @@ function PLTab() {
                         const isEmpty = m.revenue === 0 && m.expenses === 0 && m.crewCosts === 0;
                         const isSelected = viewMode === 'month' && m.month === selMonth;
                         return (
-                          <tr key={m.month} style={isSelected ? { background: 'rgba(114,60,235,0.10)' } : {}}>
+                          <tr key={m.month} style={isSelected ? { background: 'rgba(199,255,46,0.08)' } : {}}>
                             <td data-label="Month" style={{ color: isEmpty ? '#444' : '#fff', fontWeight: isSelected ? 700 : 400 }}>{m.label}</td>
                             <td data-label="Revenue" style={{ textAlign: 'right', color: isEmpty ? '#444' : '#fff' }}>{isEmpty ? '—' : fmt(m.revenue)}</td>
                             <td data-label="Crew" style={{ textAlign: 'right', color: isEmpty ? '#444' : '#aaa' }}>{isEmpty ? '—' : fmt(m.crewCosts)}</td>
@@ -469,7 +469,7 @@ function ReceivablesTab() {
       {/* ── A/R Aging Section ── */}
       <div style={{ marginBottom: '32px' }}>
         <div className="section-title" style={{ marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Clock size={15} style={{ color: '#FF902F' }} />
+          <Clock size={15} style={{ color: 'var(--accent)' }} />
           Accounts Receivable Aging
         </div>
 
@@ -487,7 +487,7 @@ function ReceivablesTab() {
         {arData?.total > 0 && (
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,144,47,0.06)', border: '1px solid rgba(255,144,47,0.15)', borderRadius: '12px', padding: '12px 20px', marginBottom: '16px' }}>
             <span style={{ color: '#888', fontSize: '13px' }}>Total Outstanding</span>
-            <span style={{ fontWeight: 700, fontSize: '18px', color: '#FF902F' }}>{fmt(arData.total)}</span>
+            <span style={{ fontWeight: 700, fontSize: '18px', color: 'var(--warning)' }}>{fmt(arData.total)}</span>
           </div>
         )}
 
@@ -518,7 +518,7 @@ function ReceivablesTab() {
                       <tr key={i}>
                         <td data-label="Client" className="text-bold text-sm">{row.client_name || '—'}</td>
                         <td data-label="Project" className="text-sm text-2">{row.project_title}</td>
-                        <td data-label="Amount" style={{ textAlign: 'right', fontWeight: 700, color: '#FF902F' }}>{fmt(row.amount)}</td>
+                        <td data-label="Amount" style={{ textAlign: 'right', fontWeight: 700, color: 'var(--warning)' }}>{fmt(row.amount)}</td>
                         <td data-label="Days" style={{ textAlign: 'right', fontWeight: 600, color: meta.color, fontSize: '13px' }}>{row.days_aged}d</td>
                         <td data-label="Bucket">
                           <span style={{ fontSize: '11px', fontWeight: 600, color: meta.color, background: meta.bg, borderRadius: '6px', padding: '2px 8px' }}>
@@ -553,7 +553,7 @@ function ReceivablesTab() {
       <div style={{ borderTop: '1px solid var(--border)', paddingTop: '28px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
           <div className="section-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <FileText size={15} style={{ color: '#723CEB' }} />
+            <FileText size={15} style={{ color: 'var(--accent)' }} />
             {taxLabel} Obligations
           </div>
           <div className="flex-center gap-2">
@@ -568,8 +568,8 @@ function ReceivablesTab() {
           <div className="card card-pad empty">Tax tracking is disabled. Enable it in Settings.</div>
         ) : taxRecords.length === 0 ? (
           <div className="card card-pad" style={{ textAlign: 'center', padding: '40px 24px' }}>
-            <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'rgba(114,60,235,0.10)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
-              <Receipt size={22} style={{ color: '#723CEB' }} />
+            <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'rgba(199,255,46,0.10)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+              <Receipt size={22} style={{ color: 'var(--accent)' }} />
             </div>
             <div style={{ fontWeight: 600, marginBottom: '6px' }}>No {taxLabel} records for {taxYear}</div>
             <div style={{ fontSize: '12px', color: '#666', maxWidth: '340px', margin: '0 auto' }}>
@@ -611,7 +611,7 @@ function ReceivablesTab() {
                         <td data-label="Invoice" className="text-sm">{r.invoice_number || `#${r.id}`}</td>
                         <td data-label="Total" style={{ textAlign: 'right' }}>{fmt(r.invoice_total)}</td>
                         <td data-label="Rate" style={{ textAlign: 'right', color: '#888' }}>{r.tax_rate_applied}%</td>
-                        <td data-label={taxLabel} style={{ textAlign: 'right', fontWeight: 600, color: r.tax_status === 'paid' ? '#4CAF50' : '#FF902F' }}>{fmt(r.tax_amount)}</td>
+                        <td data-label={taxLabel} style={{ textAlign: 'right', fontWeight: 600, color: r.tax_status === 'paid' ? '#4CAF50' : 'var(--warning)' }}>{fmt(r.tax_amount)}</td>
                         <td data-label="Status">
                           <span className={`badge badge-${r.tax_status === 'paid' ? 'paid' : 'unpaid'}`}>{r.tax_status}</span>
                         </td>

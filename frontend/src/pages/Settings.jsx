@@ -419,7 +419,7 @@ export default function Settings() {
                 type="checkbox"
                 checked={taxEnabled}
                 onChange={e => setTaxEnabled(e.target.checked)}
-                style={{ width: '16px', height: '16px', accentColor: '#723CEB' }}
+                style={{ width: '16px', height: '16px', accentColor: '#C7FF2E' }}
               />
               <span style={{ fontSize: '13px' }}>Enable tax tracking in Finances</span>
             </label>

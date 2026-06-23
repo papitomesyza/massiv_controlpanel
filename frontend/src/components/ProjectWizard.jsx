@@ -103,7 +103,7 @@ export function LocationPicker({ value, lat, lng, onChange }) {
                 padding: '10px 14px', cursor: 'pointer', fontSize: '12px', color: '#e0e0e0',
                 borderBottom: i < results.length - 1 ? '1px solid rgba(255,255,255,0.06)' : 'none',
               }}
-              onMouseEnter={e => e.currentTarget.style.background = 'rgba(114,60,235,0.12)'}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(199,255,46,0.08)'}
               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
             >
               {r.display_name}
@@ -710,7 +710,7 @@ function StepReview({ basicInfo, phaseTasks, clients, categories, skippedPhases 
             <div className="text-xs text-2" style={{ textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>{phase}</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
               {selected.map((t, i) => (
-                <span key={i} style={{ background: 'rgba(114,60,235,0.10)', border: '1px solid rgba(114,60,235,0.25)', borderRadius: '50px', padding: '3px 10px', fontSize: '11px', color: '#a78bfa' }}>{t.title}</span>
+                <span key={i} style={{ background: 'rgba(199,255,46,0.10)', border: '1px solid rgba(199,255,46,0.25)', borderRadius: '50px', padding: '3px 10px', fontSize: '11px', color: 'var(--accent)' }}>{t.title}</span>
               ))}
             </div>
           </div>

@@ -79,7 +79,7 @@ export default function Budgets() {
       <span className="badge" style={{ background: 'rgba(76,175,80,0.15)', color: '#4CAF50' }}>Finalized</span>
     );
     return (
-      <span className="badge" style={{ background: 'rgba(255,144,47,0.15)', color: '#FF902F' }}>Draft</span>
+      <span className="badge" style={{ background: 'rgba(199,255,46,0.12)', color: 'var(--accent)' }}>Draft</span>
     );
   }
 
@@ -150,7 +150,7 @@ export default function Budgets() {
                           title="Create Invoice from this estimate"
                           onClick={() => handleCreateInvoice(b)}
                           disabled={creatingInvoice === b.id}
-                          style={{ color: '#723CEB' }}
+                          style={{ color: 'var(--accent)' }}
                         >
                           <Receipt size={14} />
                         </button>

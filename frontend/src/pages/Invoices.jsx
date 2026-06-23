@@ -37,7 +37,7 @@ function StatusBadge({ status, dueDate }) {
     <span className="badge" style={{ background: 'rgba(76,175,80,0.15)', color: '#4CAF50' }}>Paid</span>
   );
   if (status === 'issued') return (
-    <span className="badge" style={{ background: 'rgba(255,144,47,0.15)', color: '#FF902F' }}>Issued</span>
+    <span className="badge" style={{ background: 'rgba(199,255,46,0.12)', color: 'var(--accent)' }}>Issued</span>
   );
   return (
     <span className="badge" style={{ background: 'rgba(255,255,255,0.08)', color: '#888' }}>Draft</span>
@@ -163,7 +163,7 @@ function InvoicesListTab({ onEdit, refresh }) {
                       <td data-label="Due" className="text-sm text-2" style={{ color: isOverdue ? '#FF4444' : undefined }}>
                         {fmtDate(inv.due_date) || '—'}
                       </td>
-                      <td data-label="Amount" style={{ textAlign: 'right', fontWeight: 700, color: '#FF902F' }}>
+                      <td data-label="Amount" style={{ textAlign: 'right', fontWeight: 700, color: 'var(--accent)' }}>
                         {fmt(inv.amount_due)}
                       </td>
                       <td data-label="Status">
@@ -181,7 +181,7 @@ function InvoicesListTab({ onEdit, refresh }) {
                           </button>
                           {inv.status === 'draft' && (
                             <button className="btn btn-ghost btn-sm" title="Issue"
-                              style={{ color: '#FF902F' }}
+                              style={{ color: 'var(--accent)' }}
                               onClick={() => handleIssue(inv)}>
                               <Send size={13} />
                             </button>
@@ -357,7 +357,7 @@ function InvoiceSetupTab() {
       {/* ── Billing Identity ───────────────────────────────────────────────── */}
       <div className="card card-pad">
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '18px' }}>
-          <Settings size={14} style={{ color: '#723CEB' }} />
+          <Settings size={14} style={{ color: 'var(--accent)' }} />
           <div className="section-title">Company Billing Identity</div>
         </div>
         <div className="form-grid">
@@ -403,7 +403,7 @@ function InvoiceSetupTab() {
       {/* ── Invoice Language ───────────────────────────────────────────────── */}
       <div className="card card-pad">
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
-          <FileText size={14} style={{ color: '#FF902F' }} />
+          <FileText size={14} style={{ color: 'var(--accent)' }} />
           <div className="section-title">Invoice Settings</div>
         </div>
         <div className="form-grid">
@@ -441,9 +441,9 @@ function InvoiceSetupTab() {
 
         {/* Tax enabled toggle */}
         {settings && (
-          <div style={{ marginTop: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(114,60,235,0.06)', borderRadius: '10px' }}>
+          <div style={{ marginTop: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(199,255,46,0.06)', borderRadius: '10px' }}>
             <div style={{ fontSize: '12px', color: '#888' }}>
-              <Receipt size={12} style={{ marginRight: '6px', verticalAlign: 'middle', color: '#723CEB' }} />
+              <Receipt size={12} style={{ marginRight: '6px', verticalAlign: 'middle', color: 'var(--accent)' }} />
               Tax: <strong style={{ color: '#fff' }}>{settings.tax_label} {settings.tax_rate}%</strong>
             </div>
             <button
@@ -460,7 +460,7 @@ function InvoiceSetupTab() {
       {/* ── Logo + Stamp Upload ─────────────────────────────────────────────── */}
       <div className="card card-pad">
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '18px' }}>
-          <ImageIcon size={14} style={{ color: '#FF902F' }} />
+          <ImageIcon size={14} style={{ color: 'var(--accent)' }} />
           <div className="section-title">Invoice Images</div>
         </div>
         <div className="form-grid" style={{ gap: '20px' }}>
@@ -517,7 +517,7 @@ function InvoiceSetupTab() {
       {/* ── Services Catalogue ─────────────────────────────────────────────── */}
       <div className="card card-pad">
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '18px' }}>
-          <Package size={14} style={{ color: '#723CEB' }} />
+          <Package size={14} style={{ color: 'var(--accent)' }} />
           <div className="section-title">Services Catalogue</div>
           <span style={{ fontSize: '11px', color: '#555', marginLeft: 'auto' }}>
             Used in invoice line items — auto-fills code, name, unit, price
@@ -580,11 +580,11 @@ function InvoiceSetupTab() {
               </thead>
               <tbody>
                 {services.map(s => (
-                  <tr key={s.id} style={editingSvc?.id === s.id ? { background: 'rgba(114,60,235,0.05)' } : {}}>
-                    <td className="text-sm" style={{ color: '#723CEB' }}>{s.code || '—'}</td>
+                  <tr key={s.id} style={editingSvc?.id === s.id ? { background: 'rgba(199,255,46,0.05)' } : {}}>
+                    <td className="text-sm" style={{ color: 'var(--accent)' }}>{s.code || '—'}</td>
                     <td className="text-sm text-bold">{s.name}</td>
                     <td className="text-sm text-2">{s.unit}</td>
-                    <td style={{ textAlign: 'right', color: '#FF902F', fontWeight: 600 }}>{fmt(s.default_price)}</td>
+                    <td style={{ textAlign: 'right', color: 'var(--accent)', fontWeight: 600 }}>{fmt(s.default_price)}</td>
                     <td>
                       <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
                         <button className="btn btn-ghost btn-sm" onClick={() => startEditSvc(s)}><Pencil size={12} /></button>
@@ -730,7 +730,7 @@ export default function Invoices() {
                       display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                       textAlign: 'left', color: '#fff', width: '100%',
                     }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(114,60,235,0.08)'}
+                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(199,255,46,0.06)'}
                     onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
                   >
                     <div>
@@ -739,7 +739,7 @@ export default function Invoices() {
                         {b.client_name || b.project_title || 'No client'} · {b.status}
                       </div>
                     </div>
-                    <div style={{ fontWeight: 700, color: '#FF902F', whiteSpace: 'nowrap', marginLeft: '16px' }}>
+                    <div style={{ fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap', marginLeft: '16px' }}>
                       {b.total != null ? `€${Number(b.total).toFixed(2)}` : '—'}
                     </div>
                   </button>

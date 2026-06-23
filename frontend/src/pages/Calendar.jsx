@@ -3,13 +3,13 @@ import { ChevronLeft, ChevronRight, Plus, X, Trash2, Edit2 } from 'lucide-react'
 import { api } from '../api';
 
 const EVENT_TYPE_COLORS = {
-  shoot: '#723CEB',
+  shoot: '#7BA01A',
   meeting: '#3B82F6',
   deadline: '#FF4444',
   other: '#888888',
 };
 
-const PRESET_COLORS = ['#723CEB', '#FF902F', '#4CAF50', '#FF4444', '#3B82F6', '#888888'];
+const PRESET_COLORS = ['#C7FF2E', '#7BA01A', '#4CAF50', '#FF4444', '#3B82F6', '#888888'];
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -223,7 +223,7 @@ function DayCell({ cell, onClickEmpty, onClickEvent }) {
       className="calendar-day-cell"
       style={{
         background: '#1e1e1e',
-        border: isToday ? '1px solid #723CEB' : '1px solid rgba(255,255,255,0.06)',
+        border: isToday ? '1px solid var(--accent)' : '1px solid rgba(255,255,255,0.06)',
         borderRadius: '8px',
         padding: '6px',
         cursor: 'pointer',
@@ -238,7 +238,7 @@ function DayCell({ cell, onClickEmpty, onClickEvent }) {
           key={ev.id}
           onClick={e => { e.stopPropagation(); onClickEvent(ev); }}
           style={{
-            background: ev.color || '#723CEB',
+            background: ev.color || '#7BA01A',
             borderRadius: '4px',
             padding: '1px 5px',
             fontSize: '11px',
@@ -275,7 +275,7 @@ function EventDetailModal({ event, onClose, onEdit, onDelete }) {
       <div className="modal-box" style={{ maxWidth: '480px' }}>
         <div className="modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: event.color || '#723CEB', flexShrink: 0 }} />
+            <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: event.color || '#7BA01A', flexShrink: 0 }} />
             <span className="modal-title">{event.title}</span>
           </div>
           <button className="modal-close" onClick={onClose}><X size={18} /></button>

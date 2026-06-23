@@ -23,7 +23,7 @@ function createProjectIcon() {
     className: '',
     html: `<div style="
       width:20px;height:20px;border-radius:50%;
-      background:linear-gradient(135deg,#FF902F,#723CEB);
+      background:linear-gradient(135deg,#C7FF2E,#7BA01A);
       border:2px solid #fff;
       box-shadow:0 2px 8px rgba(0,0,0,0.5);
     "></div>`,
@@ -195,7 +195,7 @@ export default function Map() {
                   className: '',
                   html: `<div style="
                     width:36px;height:36px;border-radius:50%;
-                    background:linear-gradient(135deg,#FF902F,#723CEB);
+                    background:linear-gradient(135deg,#C7FF2E,#7BA01A);
                     border:2px solid #fff;
                     box-shadow:0 2px 8px rgba(0,0,0,0.5);
                     display:flex;align-items:center;justify-content:center;
@@ -217,7 +217,7 @@ export default function Map() {
                         {p.client_name && <div style={{ color: '#888', fontSize: '12px', marginBottom: '4px' }}>{p.client_name}</div>}
                         <div style={{ display: 'flex', gap: '6px', marginBottom: '8px', flexWrap: 'wrap' }}>
                           {p.category_name && (
-                            <span style={{ background: 'rgba(114,60,235,0.2)', color: '#a78bfa', padding: '2px 8px', borderRadius: '50px', fontSize: '11px' }}>
+                            <span style={{ background: 'rgba(199,255,46,0.12)', color: 'var(--accent)', padding: '2px 8px', borderRadius: '50px', fontSize: '11px' }}>
                               {p.category_name}
                             </span>
                           )}
@@ -226,15 +226,15 @@ export default function Map() {
                           </span>
                         </div>
                         {p.agreed_budget > 0 && (
-                          <div style={{ color: '#FF902F', fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>
+                          <div style={{ color: 'var(--accent)', fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>
                             {fmt(p.agreed_budget)}
                           </div>
                         )}
                         <button
                           onClick={() => navigate(`/projects/${p.id}`)}
                           style={{
-                            background: 'linear-gradient(135deg,#FF902F,#723CEB)',
-                            color: '#fff', border: 'none', borderRadius: '8px',
+                            background: 'var(--gradient-card)',
+                            color: '#0F0F0F', border: 'none', borderRadius: '8px',
                             padding: '5px 12px', fontSize: '12px', cursor: 'pointer', fontWeight: 600,
                           }}
                         >

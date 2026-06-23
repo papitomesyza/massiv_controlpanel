@@ -337,7 +337,7 @@ export default function Assets() {
                               <span
                                 title="Tap to edit rate"
                                 onClick={() => setEditingRate({ id: item.id, value: String(item.daily_rate || 0) })}
-                                style={{ cursor: 'pointer', fontWeight: 700, fontSize: '13px', color: '#FF902F' }}
+                                style={{ cursor: 'pointer', fontWeight: 700, fontSize: '13px', color: 'var(--accent)' }}
                               >
                                 €{Number(item.daily_rate || 0).toFixed(0)}/day
                               </span>
@@ -394,8 +394,8 @@ function ProviderCard({ provider, isSelected, onSelect, onEdit, onArchive, onRes
     <div
       onClick={archived ? undefined : onSelect}
       style={{
-        background: isSelected ? 'rgba(114,60,235,0.12)' : 'rgba(255,255,255,0.03)',
-        border: `1px solid ${isSelected ? 'rgba(114,60,235,0.4)' : 'var(--border)'}`,
+        background: isSelected ? 'rgba(199,255,46,0.08)' : 'rgba(255,255,255,0.03)',
+        border: `1px solid ${isSelected ? 'rgba(199,255,46,0.35)' : 'var(--border)'}`,
         borderRadius: '12px',
         padding: '14px 16px',
         cursor: archived ? 'default' : 'pointer',
@@ -409,7 +409,7 @@ function ProviderCard({ provider, isSelected, onSelect, onEdit, onArchive, onRes
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
             <span style={{
               fontSize: '10px', fontWeight: 600, padding: '2px 8px', borderRadius: '20px',
-              background: 'rgba(114,60,235,0.15)', color: 'rgba(160,120,255,0.9)',
+              background: 'rgba(199,255,46,0.12)', color: 'var(--accent)',
               textTransform: 'uppercase', letterSpacing: '0.04em',
             }}>
               {provider.type || 'Rental House'}
@@ -618,7 +618,7 @@ function AddItemModal({ allItems, existingItemIds, onAdd, onCreate, onClose }) {
                 {showCreateOption && (
                   <div
                     onMouseDown={pickCreateNew}
-                    style={{ padding: '9px 14px', cursor: 'pointer', fontSize: '13px', color: 'var(--accent-purple)', display: 'flex', alignItems: 'center', gap: '6px' }}
+                    style={{ padding: '9px 14px', cursor: 'pointer', fontSize: '13px', color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '6px' }}
                   >
                     <Plus size={13} />
                     Create new: "{query.trim()}"
@@ -627,7 +627,7 @@ function AddItemModal({ allItems, existingItemIds, onAdd, onCreate, onClose }) {
               </div>
             )}
             {(selectedItem || createNew) && (
-              <div style={{ marginTop: '4px', fontSize: '11px', color: createNew ? '#FF902F' : '#4CAF50' }}>
+              <div style={{ marginTop: '4px', fontSize: '11px', color: createNew ? 'var(--accent)' : '#4CAF50' }}>
                 {createNew ? `Will create new item "${query.trim()}"` : 'Existing item selected'}
               </div>
             )}

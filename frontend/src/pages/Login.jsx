@@ -56,15 +56,15 @@ export default function Login() {
                 width: '60px',
                 height: '60px',
                 borderRadius: '18px',
-                background: 'linear-gradient(135deg, #FF902F 0%, #4C11CE 100%)',
+                background: 'var(--gradient-card)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 margin: '0 auto 20px',
-                boxShadow: '0 8px 32px rgba(114,60,235,0.35)',
+                boxShadow: '0 8px 32px rgba(199,255,46,0.25)',
                 fontSize: '24px',
                 fontWeight: 800,
-                color: 'white',
+                color: '#0F0F0F',
                 letterSpacing: '-1px',
               }}>
                 {(agencyName || 'M').charAt(0).toUpperCase()}
