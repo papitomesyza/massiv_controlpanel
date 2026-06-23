@@ -343,6 +343,34 @@ function initDb() {
   `);
 
   db.exec(`
+    CREATE TABLE IF NOT EXISTS collections (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      project_id INTEGER NULL,
+      description TEXT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS collection_cards (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      collection_id INTEGER NOT NULL,
+      type TEXT NOT NULL,
+      url TEXT NULL,
+      title TEXT NULL,
+      note_text TEXT NULL,
+      thumbnail_url TEXT NULL,
+      source TEXT NULL,
+      tags TEXT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_collections_project ON collections(project_id);
+    CREATE INDEX IF NOT EXISTS idx_collection_cards_collection ON collection_cards(collection_id);
+  `);
+
+  db.exec(`
     CREATE TABLE IF NOT EXISTS invoice_tax_records (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       invoice_id INTEGER,
@@ -463,6 +491,16 @@ function initDb() {
     CREATE INDEX IF NOT EXISTS idx_status_history_project ON project_status_history(project_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
   `);
+
+  // Auto-create project collections for existing projects without one
+  try {
+    const allProjects = db.prepare('SELECT id, title FROM projects').all();
+    const insertColl = db.prepare('INSERT INTO collections (name, project_id) VALUES (?, ?)');
+    allProjects.forEach(p => {
+      const existing = db.prepare('SELECT id FROM collections WHERE project_id = ?').get(p.id);
+      if (!existing) insertColl.run(p.title, p.id);
+    });
+  } catch (_) {}
 
   // Password migration — run once on boot
   migratePassword();

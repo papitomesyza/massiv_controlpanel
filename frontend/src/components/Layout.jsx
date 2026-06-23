@@ -3,7 +3,7 @@ import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, FolderKanban, Users, UserCog, Package,
   BarChart3, FileText, Settings, LogOut, CalendarDays, MapPin, Receipt,
-  Plus, X, Lightbulb, LayoutGrid,
+  Plus, X, Lightbulb, LayoutGrid, Library,
 } from 'lucide-react';
 import { useAgency } from '../context/AgencyContext';
 import { api } from '../api';
@@ -25,6 +25,10 @@ const DB_LINKS = [
   { to: '/assets',    icon: Package,         label: 'Assets'    },
 ];
 
+const MIND_LINKS = [
+  { to: '/collections', icon: Library, label: 'Collections' },
+];
+
 // All pages — used by the floating menu button for full-nav access
 const ALL_NAV_PAGES = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Home'      },
@@ -37,6 +41,7 @@ const ALL_NAV_PAGES = [
   { to: '/clients',   icon: Users,           label: 'Clients'   },
   { to: '/crew',      icon: UserCog,         label: 'Crew'      },
   { to: '/assets',    icon: Package,         label: 'Assets'    },
+  { to: '/collections', icon: Library,       label: 'Collections' },
   { to: '/settings',  icon: Settings,        label: 'Settings'  },
 ];
 
@@ -153,6 +158,18 @@ export default function Layout() {
               Database
             </div>
             {DB_LINKS.map(({ to, icon: Icon, label }) => (
+              <NavLink key={to} to={to} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
+                <div className="nav-icon"><Icon size={18} /></div>
+                {label}
+              </NavLink>
+            ))}
+
+            <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', margin: '8px 16px' }} />
+
+            <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#444', padding: '4px 16px 6px', userSelect: 'none' }}>
+              The Mind
+            </div>
+            {MIND_LINKS.map(({ to, icon: Icon, label }) => (
               <NavLink key={to} to={to} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
                 <div className="nav-icon"><Icon size={18} /></div>
                 {label}

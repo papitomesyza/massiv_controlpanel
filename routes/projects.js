@@ -204,6 +204,14 @@ router.post('/', (req, res) => {
 
     syncProjectCalendarEvent(projectId, title, shoot_date, effectiveLocation, shoot_start_time, shoot_end_time);
 
+    // Auto-create collection for new project
+    try {
+      const existingColl = db.prepare('SELECT id FROM collections WHERE project_id = ?').get(projectId);
+      if (!existingColl) {
+        db.prepare('INSERT INTO collections (name, project_id) VALUES (?, ?)').run(title, projectId);
+      }
+    } catch (_) {}
+
     const phases = db.prepare('SELECT * FROM project_phases WHERE project_id = ? ORDER BY order_index').all(projectId);
     res.json({ id: projectId, phases });
   } catch (err) {
@@ -264,6 +272,10 @@ router.put('/:id', (req, res) => {
     shoot_start_time || null, shoot_end_time || null, req.params.id);
   if (prev) recordStatusChange(req.params.id, prev.status, status);
   syncProjectCalendarEvent(req.params.id, title, shoot_date || null, effectiveLocation, shoot_start_time || null, shoot_end_time || null);
+  // Keep collection name in sync with project title
+  try {
+    db.prepare('UPDATE collections SET name = ? WHERE project_id = ?').run(title, req.params.id);
+  } catch (_) {}
   res.json({ ok: true });
 });
 

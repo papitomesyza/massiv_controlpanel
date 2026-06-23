@@ -17,6 +17,8 @@ import Calendar from './pages/Calendar';
 import Map from './pages/Map';
 import Invoices from './pages/Invoices';
 import PublicExpense from './pages/PublicExpense';
+import Collections from './pages/Collections';
+import CollectionDetail from './pages/CollectionDetail';
 import { AgencyProvider } from './context/AgencyContext';
 
 function applyFavicon() {
@@ -80,6 +82,8 @@ export default function App() {
           <Route path="calendar" element={<Calendar />} />
           <Route path="map" element={<Map />} />
           <Route path="invoices" element={<Invoices />} />
+          <Route path="collections" element={<Collections />} />
+          <Route path="collections/:id" element={<CollectionDetail />} />
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
