@@ -133,7 +133,7 @@ function InvoicesListTab({ onEdit, refresh }) {
         </div>
       ) : (
         <div className="card">
-          <div className="table-wrap">
+          <div className="table-wrap table-responsive">
             <table>
               <thead>
                 <tr>
@@ -153,37 +153,32 @@ function InvoicesListTab({ onEdit, refresh }) {
                     new Date(inv.due_date + 'T23:59:59') < now;
                   return (
                     <tr key={inv.id} style={isOverdue ? { background: 'rgba(255,68,68,0.04)' } : {}}>
-                      <td>
+                      <td data-label="Invoice">
                         <span style={{ fontWeight: 700, color: inv.invoice_number ? '#fff' : '#555' }}>
                           {inv.invoice_number || `Draft #${inv.id}`}
                         </span>
                       </td>
-                      <td className="text-sm">{inv.client_name || <span style={{ color: '#444' }}>—</span>}</td>
-                      <td className="text-sm text-2">{fmtDate(inv.issue_date)}</td>
-                      <td className="text-sm text-2" style={{ color: isOverdue ? '#FF4444' : undefined }}>
+                      <td data-label="Client" className="text-sm">{inv.client_name || <span style={{ color: '#444' }}>—</span>}</td>
+                      <td data-label="Issued" className="text-sm text-2">{fmtDate(inv.issue_date)}</td>
+                      <td data-label="Due" className="text-sm text-2" style={{ color: isOverdue ? '#FF4444' : undefined }}>
                         {fmtDate(inv.due_date) || '—'}
                       </td>
-                      <td style={{ textAlign: 'right', fontWeight: 700, color: '#FF902F' }}>
+                      <td data-label="Amount" style={{ textAlign: 'right', fontWeight: 700, color: '#FF902F' }}>
                         {fmt(inv.amount_due)}
                       </td>
-                      <td>
+                      <td data-label="Status">
                         <StatusBadge status={inv.status} dueDate={inv.due_date} />
                       </td>
-                      <td>
-                        <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
-                          {/* Edit */}
+                      <td className="mobile-actions">
+                        <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                           <button className="btn btn-ghost btn-sm" title="Edit"
                             onClick={() => onEdit(inv)}>
                             <Pencil size={13} />
                           </button>
-
-                          {/* PDF */}
                           <button className="btn btn-ghost btn-sm" title="Export PDF"
                             onClick={() => handlePdf(inv)}>
                             <Download size={13} />
                           </button>
-
-                          {/* Issue (draft only) */}
                           {inv.status === 'draft' && (
                             <button className="btn btn-ghost btn-sm" title="Issue"
                               style={{ color: '#FF902F' }}
@@ -191,8 +186,6 @@ function InvoicesListTab({ onEdit, refresh }) {
                               <Send size={13} />
                             </button>
                           )}
-
-                          {/* Mark Paid (issued only) */}
                           {inv.status === 'issued' && (
                             <button className="btn btn-ghost btn-sm" title="Mark Paid"
                               style={{ color: '#4CAF50' }}
@@ -200,8 +193,6 @@ function InvoicesListTab({ onEdit, refresh }) {
                               <Check size={13} />
                             </button>
                           )}
-
-                          {/* Mark Unpaid (paid only) */}
                           {inv.status === 'paid' && (
                             <button className="btn btn-ghost btn-sm" title="Mark Unpaid"
                               style={{ color: '#888', fontSize: '11px' }}
@@ -209,8 +200,6 @@ function InvoicesListTab({ onEdit, refresh }) {
                               Unpaid
                             </button>
                           )}
-
-                          {/* Delete */}
                           <button className="btn btn-ghost btn-sm" title="Delete"
                             onClick={() => handleDelete(inv)}>
                             <Trash2 size={13} style={{ color: '#FF4444' }} />
@@ -371,7 +360,7 @@ function InvoiceSetupTab() {
           <Settings size={14} style={{ color: '#723CEB' }} />
           <div className="section-title">Company Billing Identity</div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+        <div className="form-grid">
           {[
             { key: 'billing_name',        label: 'Company Name' },
             { key: 'billing_address',     label: 'Adresa (Address)' },
@@ -389,7 +378,7 @@ function InvoiceSetupTab() {
           ))}
         </div>
         {/* Bank dropdown */}
-        <div style={{ marginTop: '12px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+        <div className="form-grid" style={{ marginTop: '12px' }}>
           <div>
             <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '4px' }}>Bank</label>
             <select className="select" style={{ width: '100%' }}
@@ -417,7 +406,7 @@ function InvoiceSetupTab() {
           <FileText size={14} style={{ color: '#FF902F' }} />
           <div className="section-title">Invoice Settings</div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+        <div className="form-grid">
           <div>
             <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '4px' }}>Invoice Language</label>
             <select className="select" value={form.language}
@@ -474,7 +463,7 @@ function InvoiceSetupTab() {
           <ImageIcon size={14} style={{ color: '#FF902F' }} />
           <div className="section-title">Invoice Images</div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+        <div className="form-grid" style={{ gap: '20px' }}>
           {/* Invoice Logo */}
           <div>
             <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '8px' }}>
@@ -536,7 +525,7 @@ function InvoiceSetupTab() {
         </div>
 
         {/* Add / Edit form */}
-        <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 110px 90px auto', gap: '8px', marginBottom: '14px', alignItems: 'end' }}>
+        <div className="svc-form-grid">
           <div>
             <label style={{ fontSize: '10px', color: '#666', display: 'block', marginBottom: '4px' }}>Shifra</label>
             <input className="input" style={{ fontSize: '12px' }} placeholder="2001"

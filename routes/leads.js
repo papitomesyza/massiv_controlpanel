@@ -43,6 +43,34 @@ router.post('/', (req, res) => {
   res.json(lead);
 });
 
+// PUT /api/leads/:id — update editable fields
+router.put('/:id', (req, res) => {
+  const { client_id, client_name_manual, category_id, category_name_manual, note, contacted_at } = req.body;
+  const existing = db.prepare('SELECT id FROM leads WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ error: 'Lead not found' });
+  db.prepare(`
+    UPDATE leads SET client_id=?, client_name_manual=?, category_id=?, category_name_manual=?, note=?, contacted_at=? WHERE id=?
+  `).run(
+    client_id || null,
+    client_name_manual || null,
+    category_id || null,
+    category_name_manual || null,
+    note || null,
+    contacted_at || new Date().toISOString().split('T')[0],
+    req.params.id
+  );
+  const lead = db.prepare(`
+    SELECT l.*,
+      COALESCE(c.name, l.client_name_manual) AS client_name,
+      COALESCE(pc.name, l.category_name_manual) AS category_name
+    FROM leads l
+    LEFT JOIN clients c ON c.id = l.client_id
+    LEFT JOIN project_categories pc ON pc.id = l.category_id
+    WHERE l.id = ?
+  `).get(req.params.id);
+  res.json(lead);
+});
+
 // DELETE /api/leads/:id — hard delete
 router.delete('/:id', (req, res) => {
   db.prepare('DELETE FROM leads WHERE id = ?').run(req.params.id);

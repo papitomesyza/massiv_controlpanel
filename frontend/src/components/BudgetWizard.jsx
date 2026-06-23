@@ -990,7 +990,7 @@ function StepReview({
   return (
     <div>
       <div className="card card-pad" style={{ marginBottom: '20px', background: '#191919' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px' }}>
+        <div className="review-meta-grid">
           {[
             ['Title', info.title],
             ['Category', info.category],

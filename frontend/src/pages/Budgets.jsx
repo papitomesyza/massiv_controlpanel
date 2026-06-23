@@ -106,7 +106,7 @@ export default function Budgets() {
             <button className="btn btn-primary" onClick={handleNew}><Plus size={15} /> New Estimate</button>
           </div>
         ) : (
-          <div className="table-wrap">
+          <div className="table-wrap table-responsive">
             <table>
               <thead>
                 <tr>
@@ -123,7 +123,7 @@ export default function Budgets() {
               <tbody>
                 {budgets.map(b => (
                   <tr key={b.id}>
-                    <td>
+                    <td data-label="Title">
                       <button
                         onClick={() => handleEdit(b)}
                         style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#fff', fontWeight: 600, fontSize: '14px', padding: 0, textAlign: 'left' }}
@@ -131,13 +131,13 @@ export default function Budgets() {
                         {b.title}
                       </button>
                     </td>
-                    <td className="text-2">{b.project_title || <span style={{ color: '#444' }}>—</span>}</td>
-                    <td className="text-2" style={{ fontSize: '12px' }}>{b.category}</td>
-                    <td className="text-2">{b.client_name || <span style={{ color: '#444' }}>—</span>}</td>
-                    <td style={{ fontWeight: 600 }}>{fmt(b.total)}</td>
-                    <td>{statusBadge(b.status)}</td>
-                    <td className="text-2" style={{ fontSize: '12px' }}>{fmtDate(b.created_at?.split('T')[0] || b.created_at?.split(' ')[0])}</td>
-                    <td>
+                    <td data-label="Project" className="text-2">{b.project_title || <span style={{ color: '#444' }}>—</span>}</td>
+                    <td data-label="Category" className="text-2" style={{ fontSize: '12px' }}>{b.category}</td>
+                    <td data-label="Client" className="text-2">{b.client_name || <span style={{ color: '#444' }}>—</span>}</td>
+                    <td data-label="Total" style={{ fontWeight: 600 }}>{fmt(b.total)}</td>
+                    <td data-label="Status">{statusBadge(b.status)}</td>
+                    <td data-label="Date" className="text-2" style={{ fontSize: '12px' }}>{fmtDate(b.created_at?.split('T')[0] || b.created_at?.split(' ')[0])}</td>
+                    <td className="mobile-actions">
                       <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                         <button className="btn-icon" title="Edit" onClick={() => handleEdit(b)}>
                           <Pencil size={14} />

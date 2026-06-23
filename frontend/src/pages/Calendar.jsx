@@ -154,25 +154,27 @@ export default function Calendar() {
         </button>
       </div>
 
-      {/* Day headers */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', marginBottom: '4px' }}>
-        {DAYS.map(d => (
-          <div key={d} style={{ textAlign: 'center', fontSize: '10px', fontWeight: 700, color: '#888', textTransform: 'uppercase', padding: '4px 0' }}>
-            {d}
+      {/* Day headers + Grid — scrollable on mobile */}
+      <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+        <div style={{ minWidth: '380px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', marginBottom: '4px' }}>
+            {DAYS.map(d => (
+              <div key={d} style={{ textAlign: 'center', fontSize: '10px', fontWeight: 700, color: '#888', textTransform: 'uppercase', padding: '4px 0' }}>
+                {d}
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-
-      {/* Calendar grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px' }}>
-        {cells.map((cell, idx) => (
-          <DayCell
-            key={idx}
-            cell={cell}
-            onClickEmpty={() => setAddModal({ date: cell.ds })}
-            onClickEvent={ev => setDetailModal(ev)}
-          />
-        ))}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px' }}>
+            {cells.map((cell, idx) => (
+              <DayCell
+                key={idx}
+                cell={cell}
+                onClickEmpty={() => setAddModal({ date: cell.ds })}
+                onClickEvent={ev => setDetailModal(ev)}
+              />
+            ))}
+          </div>
+        </div>
       </div>
 
       <footer style={{ marginTop: '32px', textAlign: 'center', fontSize: '11px', color: '#444' }}>built by year28</footer>
@@ -251,7 +253,7 @@ function DayCell({ cell, onClickEmpty, onClickEvent }) {
             maxWidth: '100%',
           }}
         >
-          {ev.title}
+          {ev.start_time ? `${ev.start_time.slice(0, 5)} ` : ''}{ev.title}
         </div>
       ))}
       {overflow > 0 && (

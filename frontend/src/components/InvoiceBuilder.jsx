@@ -258,13 +258,8 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
       display: 'flex', flexDirection: 'column',
     }}>
       {/* Top bar */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '16px 24px', background: '#131313',
-        borderBottom: '1px solid rgba(255,255,255,0.08)',
-        flexShrink: 0,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <div className="inv-topbar">
+        <div className="inv-topbar-left">
           <FileText size={18} style={{ color: '#723CEB' }} />
           <span style={{ fontWeight: 700, fontSize: '16px' }}>
             {isEditing ? (invoice.invoice_number ? `Invoice ${invoice.invoice_number}` : 'Edit Draft') : 'New Invoice'}
@@ -273,7 +268,7 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
             <StatusBadge status={invoice.status} dueDate={invoice.due_date} />
           )}
         </div>
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+        <div className="inv-topbar-right">
           {err && <span style={{ color: '#FF4444', fontSize: '13px' }}>{err}</span>}
           {!isLocked && (
             <>
@@ -328,7 +323,7 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
         <div style={{ maxWidth: '920px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
           {/* ── Row 1: Client + Invoice Meta ───────────────────────────────── */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+          <div className="inv-grid-top">
             {/* Client block */}
             <div className="card card-pad">
               <div className="section-title" style={{ marginBottom: '14px', fontSize: '12px' }}>Client</div>
@@ -506,7 +501,7 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
           </div>
 
           {/* ── Bottom: Notes + Discount + Tax + Totals ─────────────────────── */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: '16px', alignItems: 'start' }}>
+          <div className="inv-grid-bottom">
             {/* Notes */}
             <div className="card card-pad">
               <div className="section-title" style={{ marginBottom: '10px', fontSize: '12px' }}>

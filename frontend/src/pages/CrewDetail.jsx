@@ -179,7 +179,7 @@ export default function CrewDetail() {
           </button>
         </div>
 
-        <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: '16px' }}>
+        <div className="stats-grid-3" style={{ marginBottom: '16px' }}>
           <StatCard label="Total Owed" value={fmt(unpaidTotal)} danger={unpaidTotal > 0} />
           <StatCard label="Total Paid" value={fmt(paidTotal)} />
           <StatCard label="Total Transactions" value={debts.length} />

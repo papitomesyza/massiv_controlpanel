@@ -176,16 +176,16 @@ function OverviewTab({ month, setMonth, filterCat, setFilterCat, filterClient, s
                 <div className="card card-pad empty">No client data yet</div>
               ) : (
                 <div className="card">
-                  <div className="table-wrap">
+                  <div className="table-wrap table-responsive">
                     <table>
                       <thead><tr><th>Client</th><th>Projects</th><th>Revenue</th><th>Margin</th></tr></thead>
                       <tbody>
                         {clientData.map((c, i) => (
                           <tr key={i}>
-                            <td><div className="text-bold text-sm">{c.name}</div><div className="text-xs text-2">{c.company || ''}</div></td>
-                            <td>{c.total_projects}</td>
-                            <td>{fmt(c.total_revenue)}</td>
-                            <td><span className={c.margin < 0 ? 'text-danger' : ''}>{c.margin}%</span></td>
+                            <td data-label="Client"><div className="text-bold text-sm">{c.name}</div><div className="text-xs text-2">{c.company || ''}</div></td>
+                            <td data-label="Projects">{c.total_projects}</td>
+                            <td data-label="Revenue">{fmt(c.total_revenue)}</td>
+                            <td data-label="Margin"><span className={c.margin < 0 ? 'text-danger' : ''}>{c.margin}%</span></td>
                           </tr>
                         ))}
                       </tbody>
@@ -200,16 +200,16 @@ function OverviewTab({ month, setMonth, filterCat, setFilterCat, filterClient, s
                 <div className="card card-pad empty">No category data yet</div>
               ) : (
                 <div className="card">
-                  <div className="table-wrap">
+                  <div className="table-wrap table-responsive">
                     <table>
                       <thead><tr><th>Category</th><th>Projects</th><th>Revenue</th><th>Margin</th></tr></thead>
                       <tbody>
                         {catData.map((c, i) => (
                           <tr key={i}>
-                            <td><div className="text-sm">{c.name}</div><div className="text-xs text-2">{c.group_name}</div></td>
-                            <td>{c.total_projects}</td>
-                            <td>{fmt(c.total_revenue)}</td>
-                            <td><span className={c.margin < 0 ? 'text-danger' : ''}>{c.margin}%</span></td>
+                            <td data-label="Category"><div className="text-sm">{c.name}</div><div className="text-xs text-2">{c.group_name}</div></td>
+                            <td data-label="Projects">{c.total_projects}</td>
+                            <td data-label="Revenue">{fmt(c.total_revenue)}</td>
+                            <td data-label="Margin"><span className={c.margin < 0 ? 'text-danger' : ''}>{c.margin}%</span></td>
                           </tr>
                         ))}
                       </tbody>
@@ -362,7 +362,7 @@ function PLTab() {
               <div className="card card-pad empty">No data</div>
             ) : (
               <div className="card">
-                <div className="table-wrap">
+                <div className="table-wrap table-responsive">
                   <table>
                     <thead>
                       <tr>
@@ -379,22 +379,22 @@ function PLTab() {
                         const isSelected = viewMode === 'month' && m.month === selMonth;
                         return (
                           <tr key={m.month} style={isSelected ? { background: 'rgba(114,60,235,0.10)' } : {}}>
-                            <td style={{ color: isEmpty ? '#444' : '#fff', fontWeight: isSelected ? 700 : 400 }}>{m.label}</td>
-                            <td style={{ textAlign: 'right', color: isEmpty ? '#444' : '#fff' }}>{isEmpty ? '—' : fmt(m.revenue)}</td>
-                            <td style={{ textAlign: 'right', color: isEmpty ? '#444' : '#aaa' }}>{isEmpty ? '—' : fmt(m.crewCosts)}</td>
-                            <td style={{ textAlign: 'right', color: isEmpty ? '#444' : '#aaa' }}>{isEmpty ? '—' : fmt(m.expenses)}</td>
-                            <td style={{ textAlign: 'right', fontWeight: 600, color: isEmpty ? '#444' : m.netProfit < 0 ? '#FF4444' : '#4CAF50' }}>
+                            <td data-label="Month" style={{ color: isEmpty ? '#444' : '#fff', fontWeight: isSelected ? 700 : 400 }}>{m.label}</td>
+                            <td data-label="Revenue" style={{ textAlign: 'right', color: isEmpty ? '#444' : '#fff' }}>{isEmpty ? '—' : fmt(m.revenue)}</td>
+                            <td data-label="Crew" style={{ textAlign: 'right', color: isEmpty ? '#444' : '#aaa' }}>{isEmpty ? '—' : fmt(m.crewCosts)}</td>
+                            <td data-label="Expenses" style={{ textAlign: 'right', color: isEmpty ? '#444' : '#aaa' }}>{isEmpty ? '—' : fmt(m.expenses)}</td>
+                            <td data-label="Net" style={{ textAlign: 'right', fontWeight: 600, color: isEmpty ? '#444' : m.netProfit < 0 ? '#FF4444' : '#4CAF50' }}>
                               {isEmpty ? '—' : fmt(m.netProfit)}
                             </td>
                           </tr>
                         );
                       })}
                       <tr style={{ borderTop: '2px solid var(--border)', fontWeight: 700 }}>
-                        <td>TOTAL</td>
-                        <td style={{ textAlign: 'right' }}>{fmt(plData.totals.revenue)}</td>
-                        <td style={{ textAlign: 'right', color: '#aaa' }}>{fmt(plData.totals.crewCosts)}</td>
-                        <td style={{ textAlign: 'right', color: '#aaa' }}>{fmt(plData.totals.expenses)}</td>
-                        <td style={{ textAlign: 'right', fontWeight: 700, color: plData.totals.netProfit < 0 ? '#FF4444' : '#4CAF50' }}>{fmt(plData.totals.netProfit)}</td>
+                        <td data-label="Month">TOTAL</td>
+                        <td data-label="Revenue" style={{ textAlign: 'right' }}>{fmt(plData.totals.revenue)}</td>
+                        <td data-label="Crew" style={{ textAlign: 'right', color: '#aaa' }}>{fmt(plData.totals.crewCosts)}</td>
+                        <td data-label="Expenses" style={{ textAlign: 'right', color: '#aaa' }}>{fmt(plData.totals.expenses)}</td>
+                        <td data-label="Net" style={{ textAlign: 'right', fontWeight: 700, color: plData.totals.netProfit < 0 ? '#FF4444' : '#4CAF50' }}>{fmt(plData.totals.netProfit)}</td>
                       </tr>
                     </tbody>
                   </table>
@@ -474,7 +474,7 @@ function ReceivablesTab() {
         </div>
 
         {/* Bucket summary cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
+        <div className="ar-buckets-grid">
           {Object.entries(BUCKET_META).map(([key, meta]) => (
             <div key={key} className="card card-pad" style={{ borderTop: `3px solid ${meta.color}`, textAlign: 'center' }}>
               <div style={{ fontSize: '11px', color: '#888', marginBottom: '6px' }}>{meta.label}</div>
@@ -498,7 +498,7 @@ function ReceivablesTab() {
           </div>
         ) : (
           <div className="card">
-            <div className="table-wrap">
+            <div className="table-wrap table-responsive">
               <table>
                 <thead>
                   <tr>
@@ -516,17 +516,17 @@ function ReceivablesTab() {
                     const meta = BUCKET_META[row.bucket];
                     return (
                       <tr key={i}>
-                        <td className="text-bold text-sm">{row.client_name || '—'}</td>
-                        <td className="text-sm text-2">{row.project_title}</td>
-                        <td style={{ textAlign: 'right', fontWeight: 700, color: '#FF902F' }}>{fmt(row.amount)}</td>
-                        <td style={{ textAlign: 'right', fontWeight: 600, color: meta.color, fontSize: '13px' }}>{row.days_aged}d</td>
-                        <td>
+                        <td data-label="Client" className="text-bold text-sm">{row.client_name || '—'}</td>
+                        <td data-label="Project" className="text-sm text-2">{row.project_title}</td>
+                        <td data-label="Amount" style={{ textAlign: 'right', fontWeight: 700, color: '#FF902F' }}>{fmt(row.amount)}</td>
+                        <td data-label="Days" style={{ textAlign: 'right', fontWeight: 600, color: meta.color, fontSize: '13px' }}>{row.days_aged}d</td>
+                        <td data-label="Bucket">
                           <span style={{ fontSize: '11px', fontWeight: 600, color: meta.color, background: meta.bg, borderRadius: '6px', padding: '2px 8px' }}>
                             {meta.label}
                           </span>
                         </td>
-                        <td className="text-xs text-2">{row.source === 'payment' ? 'Payment' : 'Balance'}</td>
-                        <td>
+                        <td data-label="Type" className="text-xs text-2">{row.source === 'payment' ? 'Payment' : 'Balance'}</td>
+                        <td className="mobile-actions">
                           {row.source === 'payment' ? (
                             <button
                               className="btn btn-ghost btn-sm"
@@ -592,7 +592,7 @@ function ReceivablesTab() {
 
             {/* Tax records table */}
             <div className="card">
-              <div className="table-wrap">
+              <div className="table-wrap table-responsive">
                 <table>
                   <thead>
                     <tr>
@@ -608,15 +608,15 @@ function ReceivablesTab() {
                   <tbody>
                     {taxRecords.map(r => (
                       <tr key={r.id}>
-                        <td className="text-sm">{r.invoice_number || `#${r.id}`}</td>
-                        <td style={{ textAlign: 'right' }}>{fmt(r.invoice_total)}</td>
-                        <td style={{ textAlign: 'right', color: '#888' }}>{r.tax_rate_applied}%</td>
-                        <td style={{ textAlign: 'right', fontWeight: 600, color: r.tax_status === 'paid' ? '#4CAF50' : '#FF902F' }}>{fmt(r.tax_amount)}</td>
-                        <td>
+                        <td data-label="Invoice" className="text-sm">{r.invoice_number || `#${r.id}`}</td>
+                        <td data-label="Total" style={{ textAlign: 'right' }}>{fmt(r.invoice_total)}</td>
+                        <td data-label="Rate" style={{ textAlign: 'right', color: '#888' }}>{r.tax_rate_applied}%</td>
+                        <td data-label={taxLabel} style={{ textAlign: 'right', fontWeight: 600, color: r.tax_status === 'paid' ? '#4CAF50' : '#FF902F' }}>{fmt(r.tax_amount)}</td>
+                        <td data-label="Status">
                           <span className={`badge badge-${r.tax_status === 'paid' ? 'paid' : 'unpaid'}`}>{r.tax_status}</span>
                         </td>
-                        <td className="text-xs text-2">{r.paid_date ? fmtDate(r.paid_date) : '—'}</td>
-                        <td>
+                        <td data-label="Paid" className="text-xs text-2">{r.paid_date ? fmtDate(r.paid_date) : '—'}</td>
+                        <td className="mobile-actions">
                           {r.tax_status === 'unpaid' ? (
                             <button className="btn btn-ghost btn-sm" style={{ fontSize: '11px', color: '#4CAF50', borderRadius: '50px', border: '1px solid rgba(76,175,80,0.3)' }} onClick={() => markTaxPaid(r.id)}>
                               Mark Paid

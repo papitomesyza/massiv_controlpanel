@@ -338,7 +338,7 @@ function WidgetContent({ id, stats, projects, expenses, chartData, leads, setAct
 
     case 'metric_cards':
       return (
-        <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+        <div className="stats-grid-3">
           <StatCard
             label="Completed This Month"
             value={stats?.completedThisMonth ?? 0}

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Plus, List, GanttChart, Lightbulb, ChevronDown, ChevronUp,
-  ArrowRight, X, CalendarDays,
+  ArrowRight, X, CalendarDays, Edit2,
 } from 'lucide-react';
 import { api, fmt, fmtDate } from '../api';
 import ProjectWizard from '../components/ProjectWizard';
@@ -55,6 +55,7 @@ export default function Projects() {
   const [view, setView]               = useState(() => localStorage.getItem('massiv_projects_view') || 'list');
   const [showWizard, setShowWizard]   = useState(false);
   const [showAddLead, setShowAddLead] = useState(false);
+  const [editingLead, setEditingLead] = useState(null);
   const [leadsOpen, setLeadsOpen]     = useState(true);
   const [wizardPrefill, setWizardPrefill] = useState(null);
   const navigate = useNavigate();
@@ -120,6 +121,11 @@ export default function Projects() {
     setLeads(prev => [lead, ...prev]);
     setLeadsOpen(true);
     setShowAddLead(false);
+  }
+
+  function handleLeadUpdated(lead) {
+    setLeads(prev => prev.map(l => l.id === lead.id ? lead : l));
+    setEditingLead(null);
   }
 
   function handleLeadDismissed(id) {
@@ -212,6 +218,7 @@ export default function Projects() {
                     lead={lead}
                     onDismiss={handleLeadDismissed}
                     onConvert={handleConvertLead}
+                    onEdit={setEditingLead}
                   />
                 ))}
               </div>
@@ -266,6 +273,7 @@ export default function Projects() {
         />
       )}
       {showAddLead && <AddLeadModal onClose={() => setShowAddLead(false)} onSaved={handleLeadSaved} />}
+      {editingLead && <AddLeadModal lead={editingLead} onClose={() => setEditingLead(null)} onSaved={handleLeadUpdated} />}
     </div>
   );
 }
@@ -334,7 +342,7 @@ function ProjectRowCard({ p }) {
 }
 
 /* ─── Lead card (Projects page collapsible strip) ─── */
-function LeadCard({ lead, onDismiss, onConvert }) {
+function LeadCard({ lead, onDismiss, onConvert, onEdit }) {
   const [confirming, setConfirming] = useState(false);
   const [dismissing, setDismissing] = useState(false);
   const [visible, setVisible]       = useState(true);
@@ -370,6 +378,9 @@ function LeadCard({ lead, onDismiss, onConvert }) {
           <div className="flex-center gap-1">
             <button className="btn btn-primary btn-sm lead-btn-convert" onClick={() => onConvert(lead)}>
               <ArrowRight size={12} /> Convert
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={() => onEdit(lead)} title="Edit lead">
+              <Edit2 size={12} />
             </button>
             <button className="btn btn-ghost btn-sm lead-btn-dismiss" onClick={() => setConfirming(true)}>
               <X size={12} />

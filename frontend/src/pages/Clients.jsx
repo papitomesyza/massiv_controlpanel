@@ -79,7 +79,7 @@ export default function Clients() {
         <div className="card card-pad empty">No clients found</div>
       ) : (
         <div className="card">
-          <div className="table-wrap">
+          <div className="table-wrap table-responsive">
             <table>
               <thead>
                 <tr>
@@ -97,14 +97,14 @@ export default function Clients() {
                   const wa = waUrl(c.phone);
                   return (
                     <tr key={c.id}>
-                      <td style={{ width: '28px', paddingRight: 0 }}>
+                      <td data-label="">
                         {c.company
                           ? <Building2 size={14} style={{ color: '#888' }} />
                           : <User size={14} style={{ color: '#666' }} />}
                       </td>
-                      <td><Link to={`/clients/${c.id}`} className="link text-bold">{c.name}</Link></td>
-                      <td className="text-2">{c.company || '—'}</td>
-                      <td>
+                      <td data-label="Name"><Link to={`/clients/${c.id}`} className="link text-bold">{c.name}</Link></td>
+                      <td data-label="Company" className="text-2">{c.company || '—'}</td>
+                      <td data-label="Phone">
                         <div className="flex-center gap-1">
                           <span className="text-2 text-sm">{c.phone || '—'}</span>
                           {wa && (
@@ -114,9 +114,9 @@ export default function Clients() {
                           )}
                         </div>
                       </td>
-                      <td className="text-2 text-sm">{c.email || '—'}</td>
-                      <td>{c.total_projects}</td>
-                      <td>{fmt(c.total_revenue)}</td>
+                      <td data-label="Email" className="text-2 text-sm">{c.email || '—'}</td>
+                      <td data-label="Projects">{c.total_projects}</td>
+                      <td data-label="Revenue">{fmt(c.total_revenue)}</td>
                     </tr>
                   );
                 })}

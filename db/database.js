@@ -438,6 +438,8 @@ function initDb() {
     "ALTER TABLE expenses ADD COLUMN source TEXT DEFAULT 'admin'",
     "ALTER TABLE expenses ADD COLUMN status TEXT DEFAULT 'confirmed'",
     'ALTER TABLE expenses ADD COLUMN category_text TEXT',
+    'ALTER TABLE projects ADD COLUMN shoot_start_time TEXT',
+    'ALTER TABLE projects ADD COLUMN shoot_end_time TEXT',
   ].forEach(sql => { try { db.exec(sql); } catch (_) {} });
 
   // Backfill: any existing expense with no status gets confirmed

@@ -5,7 +5,7 @@ function SparkLine({ data, dataKey, color, uid }) {
   if (!data || data.length < 2) return null;
   const gradId = `sg${uid}${dataKey}`;
   return (
-    <div style={{ height: 44, marginTop: 8, marginLeft: -4, marginRight: -4 }}>
+    <div className="stat-sparkline-wrap" style={{ height: 44, marginLeft: -4, marginRight: -4 }}>
       <ResponsiveContainer width="100%" height={44}>
         <AreaChart data={data} margin={{ top: 2, right: 4, bottom: 0, left: 4 }}>
           <defs>

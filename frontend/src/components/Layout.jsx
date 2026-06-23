@@ -27,6 +27,14 @@ const DB_LINKS = [
 
 const ALL_LINKS = [...OPS_LINKS, ...DB_LINKS, { to: '/settings', icon: Settings, label: 'Settings' }];
 
+const MOBILE_NAV_LINKS = [
+  { to: '/dashboard', icon: LayoutDashboard, label: 'Home' },
+  { to: '/projects',  icon: FolderKanban,   label: 'Projects' },
+  { to: '/finances',  icon: BarChart3,       label: 'Finances' },
+  { to: '/invoices',  icon: Receipt,         label: 'Invoices' },
+  { to: '/settings',  icon: Settings,        label: 'Settings' },
+];
+
 const FAB_ACTIONS = [
   { label: 'New Project',  icon: FolderKanban, to: '/projects?new=1' },
   { label: 'New Estimate', icon: FileText,     to: '/budgets' },
@@ -106,44 +114,46 @@ export default function Layout() {
           )}
         </div>
 
-        <nav className="sidebar-nav">
-          <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#444', padding: '4px 16px 6px', userSelect: 'none' }}>
-            Operations
-          </div>
-          {OPS_LINKS.map(({ to, icon: Icon, label }) => (
-            <NavLink key={to} to={to} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-              <div className="nav-icon"><Icon size={18} /></div>
-              {label}
-            </NavLink>
-          ))}
-
-          <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', margin: '8px 16px' }} />
-
-          <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#444', padding: '4px 16px 6px', userSelect: 'none' }}>
-            Database
-          </div>
-          {DB_LINKS.map(({ to, icon: Icon, label }) => (
-            <NavLink key={to} to={to} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-              <div className="nav-icon"><Icon size={18} /></div>
-              {label}
-            </NavLink>
-          ))}
-        </nav>
-
-        {upcoming.length > 0 && (
-          <div className="sidebar-upcoming" onClick={() => navigate('/calendar')} style={{ cursor: 'pointer' }}>
-            <div className="sidebar-upcoming-title">Upcoming</div>
-            {upcoming.map(ev => (
-              <div key={ev.id} className="sidebar-upcoming-item">
-                <span className="sidebar-upcoming-dot" style={{ background: ev.color || '#723CEB' }} />
-                <div className="sidebar-upcoming-info">
-                  <span className="sidebar-upcoming-name">{ev.title.length > 22 ? ev.title.slice(0, 22) + '…' : ev.title}</span>
-                  <span className="sidebar-upcoming-date">{fmtShortDate(ev.start_date)}</span>
-                </div>
-              </div>
+        <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+          <nav className="sidebar-nav">
+            <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#444', padding: '4px 16px 6px', userSelect: 'none' }}>
+              Operations
+            </div>
+            {OPS_LINKS.map(({ to, icon: Icon, label }) => (
+              <NavLink key={to} to={to} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
+                <div className="nav-icon"><Icon size={18} /></div>
+                {label}
+              </NavLink>
             ))}
-          </div>
-        )}
+
+            <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', margin: '8px 16px' }} />
+
+            <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#444', padding: '4px 16px 6px', userSelect: 'none' }}>
+              Database
+            </div>
+            {DB_LINKS.map(({ to, icon: Icon, label }) => (
+              <NavLink key={to} to={to} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
+                <div className="nav-icon"><Icon size={18} /></div>
+                {label}
+              </NavLink>
+            ))}
+          </nav>
+
+          {upcoming.length > 0 && (
+            <div className="sidebar-upcoming" onClick={() => navigate('/calendar')} style={{ cursor: 'pointer' }}>
+              <div className="sidebar-upcoming-title">Upcoming</div>
+              {upcoming.map(ev => (
+                <div key={ev.id} className="sidebar-upcoming-item">
+                  <span className="sidebar-upcoming-dot" style={{ background: ev.color || '#723CEB' }} />
+                  <div className="sidebar-upcoming-info">
+                    <span className="sidebar-upcoming-name">{ev.title.length > 22 ? ev.title.slice(0, 22) + '…' : ev.title}</span>
+                    <span className="sidebar-upcoming-date">{fmtShortDate(ev.start_date)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         <div className="sidebar-footer">
           <NavLink to="/settings" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
@@ -184,7 +194,7 @@ export default function Layout() {
 
       <nav className="bottom-nav">
         <div className="bottom-nav-inner">
-          {ALL_LINKS.map(({ to, icon: Icon, label }) => (
+          {MOBILE_NAV_LINKS.map(({ to, icon: Icon, label }) => (
             <NavLink key={to} to={to} className={({ isActive }) => `bottom-nav-item${isActive ? ' active' : ''}`}>
               <Icon size={20} />
               {label}

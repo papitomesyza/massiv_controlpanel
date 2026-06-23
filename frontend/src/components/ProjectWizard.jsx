@@ -155,6 +155,7 @@ export default function ProjectWizard({ onClose, onCreated, prefill }) {
     category_id: prefill?.category_id ? String(prefill.category_id) : '',
     client_budget: '', agreed_budget: '',
     shoot_date: '', shoot_days: '1',
+    shoot_start_time: '', shoot_end_time: '',
     location_name: '', location_lat: null, location_lng: null,
     notes: prefill?.note || '',
   });
@@ -276,6 +277,8 @@ export default function ProjectWizard({ onClose, onCreated, prefill }) {
         notes: basicInfo.notes || null,
         shoot_date: basicInfo.shoot_date || null,
         shoot_days: parseInt(basicInfo.shoot_days) || 1,
+        shoot_start_time: basicInfo.shoot_start_time || null,
+        shoot_end_time: basicInfo.shoot_end_time || null,
         location_name: basicInfo.location_name || null,
         location_lat: basicInfo.location_lat || null,
         location_lng: basicInfo.location_lng || null,
@@ -502,6 +505,16 @@ function StepBasicInfo({ form, setForm, clients, grouped, onAddClient, profile }
         <div className="form-row">
           <label className="form-label">Shoot Days</label>
           <input type="number" min="1" max="30" className="input" value={form.shoot_days} onChange={e => setForm('shoot_days', e.target.value)} />
+        </div>
+      </div>
+      <div className="form-grid">
+        <div className="form-row">
+          <label className="form-label">Shoot Start Time</label>
+          <input type="time" className="input" value={form.shoot_start_time} onChange={e => setForm('shoot_start_time', e.target.value)} />
+        </div>
+        <div className="form-row">
+          <label className="form-label">Shoot End Time</label>
+          <input type="time" className="input" value={form.shoot_end_time} onChange={e => setForm('shoot_end_time', e.target.value)} />
         </div>
       </div>
       <div className="form-row">

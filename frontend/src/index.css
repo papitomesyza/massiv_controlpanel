@@ -65,7 +65,6 @@ body {
 
 .sidebar {
   width: var(--sidebar-w);
-  min-height: 100vh;
   background: var(--bg-primary);
   border-right: 1px solid var(--border-subtle);
   display: flex;
@@ -73,6 +72,7 @@ body {
   position: fixed;
   top: 0; left: 0; bottom: 0;
   z-index: 100;
+  overflow: hidden;
 }
 
 .sidebar-logo {
@@ -87,7 +87,7 @@ body {
   gap: 10px;
 }
 
-.sidebar-nav { flex: 1; padding: 12px 0; }
+.sidebar-nav { padding: 12px 0; }
 
 .nav-link {
   display: flex;
@@ -1653,4 +1653,100 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: #723CEB; curso
   .setup-wizard-box { border-radius: 16px; max-height: 95vh; }
   .setup-wizard-header, .setup-wizard-content, .setup-wizard-footer { padding-left: 16px; padding-right: 16px; }
   .setup-wizard-steps { padding-left: 16px; padding-right: 16px; }
+}
+
+/* ===== RESPONSIVE GRID HELPERS ===== */
+.stats-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
+.ar-buckets-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+.svc-form-grid { display: grid; grid-template-columns: 80px 1fr 110px 90px auto; gap: 8px; margin-bottom: 14px; align-items: end; }
+.review-meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; }
+
+/* ===== INVOICE BUILDER RESPONSIVE ===== */
+.inv-grid-top { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.inv-grid-bottom { display: grid; grid-template-columns: 1fr 320px; gap: 16px; align-items: start; }
+.inv-topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 24px; background: #131313;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  flex-shrink: 0; flex-wrap: wrap; gap: 8px;
+}
+.inv-topbar-left { display: flex; align-items: center; gap: 12px; flex-shrink: 0; flex-wrap: wrap; }
+.inv-topbar-right { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+/* ===== SPARKLINE WRAPPER ===== */
+.stat-sparkline-wrap { margin-top: 8px; }
+
+/* ===== COMPACT STAT CARDS + RESPONSIVE ADDITIONS ===== */
+@media (max-width: 768px) {
+  /* Stat cards */
+  .stat-card { padding: 16px; }
+  .stat-sparkline-wrap { margin-top: 4px; }
+  .stat-icon-wrap { top: 16px; right: 16px; width: 30px; height: 30px; border-radius: 8px; }
+  .stat-label { margin-bottom: 6px; padding-right: 38px; }
+  .stat-value { font-size: 22px; }
+
+  /* Grid helpers */
+  .stats-grid-3 { grid-template-columns: 1fr 1fr; }
+  .ar-buckets-grid { grid-template-columns: repeat(2, 1fr); }
+  .svc-form-grid { grid-template-columns: 1fr 1fr; }
+  .review-meta-grid { grid-template-columns: 1fr; }
+
+  /* Invoice builder */
+  .inv-grid-top { grid-template-columns: 1fr; }
+  .inv-grid-bottom { grid-template-columns: 1fr; }
+  .inv-topbar { padding: 12px 16px; }
+
+  /* Page header wrap */
+  .page-header { flex-wrap: wrap; gap: 10px; }
+
+  /* TABLE → CARDS */
+  .table-responsive table { display: block; }
+  .table-responsive thead { display: none; }
+  .table-responsive tbody { display: block; }
+  .table-responsive tr {
+    display: block;
+    padding: 12px 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.06) !important;
+    background: none !important;
+  }
+  .table-responsive tr:last-child { border-bottom: none !important; }
+  .table-responsive td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0 !important;
+    border: none !important;
+    font-size: 13px;
+    text-align: left !important;
+    flex-wrap: wrap;
+    gap: 4px;
+    min-height: 0;
+  }
+  .table-responsive td[data-label]::before {
+    content: attr(data-label);
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: #555;
+    flex-shrink: 0;
+    margin-right: 10px;
+    min-width: 60px;
+  }
+  /* Hide cells with no label (icon columns, etc.) */
+  .table-responsive td[data-label=""] { display: none; }
+  /* Action cells: right-aligned, no label prefix */
+  .table-responsive td.mobile-actions {
+    justify-content: flex-end;
+    padding-top: 8px !important;
+    border-top: 1px solid rgba(255,255,255,0.04) !important;
+  }
+  .table-responsive td.mobile-actions::before { display: none; }
+}
+
+@media (max-width: 480px) {
+  .stats-grid-3 { grid-template-columns: 1fr; }
+  .svc-form-grid { grid-template-columns: 1fr; }
+  .filter-bar .input { min-width: 0; width: 100%; }
+  .filter-bar .select { min-width: 120px; }
 }

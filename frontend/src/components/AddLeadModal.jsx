@@ -1,18 +1,21 @@
 import React, { useEffect, useState } from 'react';
-import { X, Lightbulb, Plus } from 'lucide-react';
+import { X, Lightbulb } from 'lucide-react';
 import { api } from '../api';
 
-export default function AddLeadModal({ onClose, onSaved }) {
+export default function AddLeadModal({ onClose, onSaved, lead: existingLead }) {
+  const isEdit = !!existingLead;
   const [clients, setClients] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [useManualClient, setUseManualClient] = useState(false);
+  const [useManualClient, setUseManualClient] = useState(
+    isEdit ? !!existingLead.client_name_manual && !existingLead.client_id : false
+  );
   const [form, setForm] = useState({
-    client_id: '',
-    client_name_manual: '',
-    category_id: '',
-    category_name_manual: '',
-    note: '',
-    contacted_at: new Date().toISOString().split('T')[0],
+    client_id: isEdit ? (existingLead.client_id ? String(existingLead.client_id) : '') : '',
+    client_name_manual: isEdit ? (existingLead.client_name_manual || '') : '',
+    category_id: isEdit ? (existingLead.category_id ? String(existingLead.category_id) : '') : '',
+    category_name_manual: isEdit ? (existingLead.category_name_manual || '') : '',
+    note: isEdit ? (existingLead.note || '') : '',
+    contacted_at: isEdit ? (existingLead.contacted_at || new Date().toISOString().split('T')[0]) : new Date().toISOString().split('T')[0],
   });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
@@ -40,7 +43,9 @@ export default function AddLeadModal({ onClose, onSaved }) {
         note: form.note || null,
         contacted_at: form.contacted_at,
       };
-      const lead = await api.post('/leads', payload);
+      const lead = isEdit
+        ? await api.put(`/leads/${existingLead.id}`, payload)
+        : await api.post('/leads', payload);
       onSaved(lead);
     } catch (e) {
       setErr(e.message);
@@ -59,7 +64,7 @@ export default function AddLeadModal({ onClose, onSaved }) {
       <div className="modal-box" style={{ maxWidth: '480px' }}>
         <div className="modal-header">
           <span className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Lightbulb size={17} style={{ color: '#FF902F' }} /> New Lead
+            <Lightbulb size={17} style={{ color: '#FF902F' }} /> {isEdit ? 'Edit Lead' : 'New Lead'}
           </span>
           <button className="modal-close" onClick={onClose}><X size={18} /></button>
         </div>
@@ -128,7 +133,7 @@ export default function AddLeadModal({ onClose, onSaved }) {
         <div className="modal-footer">
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" onClick={save} disabled={saving}>
-            {saving ? 'Saving...' : 'Save Lead'}
+            {saving ? 'Saving...' : isEdit ? 'Save' : 'Save Lead'}
           </button>
         </div>
       </div>

@@ -315,7 +315,15 @@ export default function ProjectDetail() {
           <div className="card card-pad" style={{ marginBottom: '16px' }}>
             <div className="section-title" style={{ marginBottom: '12px' }}>Agreed Budget</div>
             <div style={{ fontSize: '28px', fontWeight: 800 }}>{fmt(project.agreed_budget)}</div>
-            {project.shoot_date && <div className="text-2 text-sm mt-1">Shoot: {fmtDate(project.shoot_date)} · {project.shoot_days}d{project.shoot_location ? ` · ${project.shoot_location}` : ''}</div>}
+            {project.shoot_date && (
+              <div className="text-2 text-sm mt-1">
+                {'Shoot: '}
+                {fmtDate(project.shoot_date)}
+                {project.shoot_start_time ? `, ${project.shoot_start_time.slice(0, 5)}${project.shoot_end_time ? `–${project.shoot_end_time.slice(0, 5)}` : ''}` : ''}
+                {` · ${project.shoot_days}d`}
+                {project.shoot_location ? ` · ${project.shoot_location}` : ''}
+              </div>
+            )}
           </div>
 
           <div className="card card-pad" style={{ marginBottom: '16px' }}>
@@ -1220,6 +1228,8 @@ function EditProjectModal({ project, projectId, onClose, onSaved }) {
     agreed_budget: project.agreed_budget || '',
     shoot_date: project.shoot_date || '',
     shoot_days: project.shoot_days || 1,
+    shoot_start_time: project.shoot_start_time || '',
+    shoot_end_time: project.shoot_end_time || '',
     location_name: project.location_name || project.shoot_location || '',
     location_lat: project.location_lat || null,
     location_lng: project.location_lng || null,
@@ -1250,6 +1260,8 @@ function EditProjectModal({ project, projectId, onClose, onSaved }) {
         client_budget: parseFloat(form.client_budget) || 0,
         agreed_budget: parseFloat(form.agreed_budget) || 0,
         shoot_days: parseInt(form.shoot_days) || 1,
+        shoot_start_time: form.shoot_start_time || null,
+        shoot_end_time: form.shoot_end_time || null,
         location_name: form.location_name || null,
         location_lat: form.location_lat || null,
         location_lng: form.location_lng || null,
@@ -1324,6 +1336,16 @@ function EditProjectModal({ project, projectId, onClose, onSaved }) {
           <div className="form-row">
             <label className="form-label">Shoot Days</label>
             <input type="number" min="1" max="30" className="input" value={form.shoot_days} onChange={e => f('shoot_days', e.target.value)} />
+          </div>
+        </div>
+        <div className="form-grid">
+          <div className="form-row">
+            <label className="form-label">Shoot Start Time</label>
+            <input type="time" className="input" value={form.shoot_start_time} onChange={e => f('shoot_start_time', e.target.value)} />
+          </div>
+          <div className="form-row">
+            <label className="form-label">Shoot End Time</label>
+            <input type="time" className="input" value={form.shoot_end_time} onChange={e => f('shoot_end_time', e.target.value)} />
           </div>
         </div>
         <div className="form-row">

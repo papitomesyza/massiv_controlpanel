@@ -160,25 +160,24 @@ router.get('/', (req, res) => {
   res.json(projects);
 });
 
-function syncProjectCalendarEvent(projectId, title, shootDate, shootLocation) {
+function syncProjectCalendarEvent(projectId, title, shootDate, shootLocation, shootStartTime, shootEndTime) {
   if (!shootDate) {
-    // Clear shoot event when shoot_date is cleared
     db.prepare("DELETE FROM calendar_events WHERE project_id = ? AND event_type = 'shoot'").run(projectId);
     return;
   }
   const existing = db.prepare("SELECT id FROM calendar_events WHERE project_id = ? AND event_type = 'shoot'").get(projectId);
   if (existing) {
-    db.prepare('UPDATE calendar_events SET title=?, start_date=?, location=? WHERE id=?')
-      .run(title, shootDate, shootLocation || null, existing.id);
+    db.prepare('UPDATE calendar_events SET title=?, start_date=?, location=?, start_time=?, end_time=? WHERE id=?')
+      .run(title, shootDate, shootLocation || null, shootStartTime || null, shootEndTime || null, existing.id);
   } else {
-    db.prepare(`INSERT INTO calendar_events (project_id, title, event_type, start_date, location, color) VALUES (?, ?, 'shoot', ?, ?, '#723CEB')`)
-      .run(projectId, title, shootDate, shootLocation || null);
+    db.prepare(`INSERT INTO calendar_events (project_id, title, event_type, start_date, location, start_time, end_time, color) VALUES (?, ?, 'shoot', ?, ?, ?, ?, '#723CEB')`)
+      .run(projectId, title, shootDate, shootLocation || null, shootStartTime || null, shootEndTime || null);
   }
 }
 
 // Create project
 router.post('/', (req, res) => {
-  const { client_id, title, category_id, client_budget, agreed_budget, notes, shoot_date, shoot_days, shoot_location, location_name, location_lat, location_lng, phases: requestedPhases } = req.body;
+  const { client_id, title, category_id, client_budget, agreed_budget, notes, shoot_date, shoot_days, shoot_location, location_name, location_lat, location_lng, shoot_start_time, shoot_end_time, phases: requestedPhases } = req.body;
   if (!title) return res.status(400).json({ error: 'Title required' });
 
   const errCB = validateMoney(client_budget || 0, 'client_budget');
@@ -196,14 +195,14 @@ router.post('/', (req, res) => {
   try {
     const effectiveLocation = location_name || shoot_location || null;
     const result = db.prepare(
-      'INSERT INTO projects (client_id, title, category_id, client_budget, agreed_budget, notes, shoot_date, shoot_days, shoot_location, location_name, location_lat, location_lng, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-    ).run(client_id || null, title, category_id || null, client_budget || 0, agreed_budget || 0, notes || null, shoot_date || null, shoot_days || 1, effectiveLocation, location_name || null, location_lat || null, location_lng || null, initialStatus);
+      'INSERT INTO projects (client_id, title, category_id, client_budget, agreed_budget, notes, shoot_date, shoot_days, shoot_location, location_name, location_lat, location_lng, shoot_start_time, shoot_end_time, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(client_id || null, title, category_id || null, client_budget || 0, agreed_budget || 0, notes || null, shoot_date || null, shoot_days || 1, effectiveLocation, location_name || null, location_lat || null, location_lng || null, shoot_start_time || null, shoot_end_time || null, initialStatus);
 
     const projectId = result.lastInsertRowid;
     const insertPhase = db.prepare('INSERT INTO project_phases (project_id, phase_name, order_index, status) VALUES (?, ?, ?, ?)');
     phasesToCreate.forEach((name, i) => insertPhase.run(projectId, name, i, i === 0 ? 'active' : 'pending'));
 
-    syncProjectCalendarEvent(projectId, title, shoot_date, effectiveLocation);
+    syncProjectCalendarEvent(projectId, title, shoot_date, effectiveLocation, shoot_start_time, shoot_end_time);
 
     const phases = db.prepare('SELECT * FROM project_phases WHERE project_id = ? ORDER BY order_index').all(projectId);
     res.json({ id: projectId, phases });
@@ -246,7 +245,7 @@ router.get('/:id', (req, res) => {
 
 // Update project
 router.put('/:id', (req, res) => {
-  const { client_id, title, category_id, status, client_budget, agreed_budget, notes, shoot_date, shoot_days, shoot_location, location_name, location_lat, location_lng } = req.body;
+  const { client_id, title, category_id, status, client_budget, agreed_budget, notes, shoot_date, shoot_days, shoot_location, location_name, location_lat, location_lng, shoot_start_time, shoot_end_time } = req.body;
 
   const errCB = validateMoney(client_budget || 0, 'client_budget');
   if (errCB) return res.status(400).json({ error: errCB });
@@ -258,13 +257,13 @@ router.put('/:id', (req, res) => {
   db.prepare(`
     UPDATE projects SET client_id=?, title=?, category_id=?, status=?, client_budget=?,
       agreed_budget=?, notes=?, shoot_date=?, shoot_days=?, shoot_location=?,
-      location_name=?, location_lat=?, location_lng=? WHERE id=?
+      location_name=?, location_lat=?, location_lng=?, shoot_start_time=?, shoot_end_time=? WHERE id=?
   `).run(client_id || null, title, category_id || null, status, client_budget || 0, agreed_budget || 0,
     notes || null, shoot_date || null, shoot_days || 1, effectiveLocation,
-    location_name || null, location_lat || null, location_lng || null, req.params.id);
+    location_name || null, location_lat || null, location_lng || null,
+    shoot_start_time || null, shoot_end_time || null, req.params.id);
   if (prev) recordStatusChange(req.params.id, prev.status, status);
-  // Pass shoot_date (may be null/empty) to handle calendar event deletion
-  syncProjectCalendarEvent(req.params.id, title, shoot_date || null, effectiveLocation);
+  syncProjectCalendarEvent(req.params.id, title, shoot_date || null, effectiveLocation, shoot_start_time || null, shoot_end_time || null);
   res.json({ ok: true });
 });
 
@@ -331,11 +330,12 @@ router.post('/:id/duplicate', (req, res) => {
     : 'development';
 
   const result = db.prepare(
-    'INSERT INTO projects (client_id, title, category_id, client_budget, agreed_budget, notes, shoot_date, shoot_days, shoot_location, location_name, location_lat, location_lng, status, duplicated_from) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO projects (client_id, title, category_id, client_budget, agreed_budget, notes, shoot_date, shoot_days, shoot_location, location_name, location_lat, location_lng, shoot_start_time, shoot_end_time, status, duplicated_from) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(
     original.client_id, title.trim(), original.category_id, original.client_budget,
     original.agreed_budget, original.notes, original.shoot_date, original.shoot_days,
     original.shoot_location, original.location_name, original.location_lat, original.location_lng,
+    original.shoot_start_time || null, original.shoot_end_time || null,
     initialStatus, original.id
   );
 
