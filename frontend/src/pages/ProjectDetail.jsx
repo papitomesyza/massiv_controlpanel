@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { Plus, Check, Trash2, Edit2, ChevronDown, ChevronRight, FileDown, ArrowLeft, Lock, X, Copy, ArrowRight, Clock, GripVertical, Link2, Link2Off, ExternalLink, Image, Download, FileText } from 'lucide-react';
+import { Plus, Check, Trash2, Edit2, ChevronDown, ChevronRight, FileDown, ArrowLeft, Lock, X, Copy, ArrowRight, Clock, GripVertical, Link2, Link2Off, ExternalLink, Image, Download, FileText, Library } from 'lucide-react';
 import { api, fmt, fmtDate } from '../api';
 import Modal from '../components/Modal';
 import { PhaseTaskStep, InlineCrewModal, LocationPicker } from '../components/ProjectWizard';
@@ -36,6 +36,8 @@ export default function ProjectDetail() {
   const [copied, setCopied] = useState(false);
   const [invoiceBlobUrls, setInvoiceBlobUrls] = useState({});
   const blobUrlsRef = useRef({});
+  const [projectCollection, setProjectCollection] = useState(null);
+  const [collLoading, setCollLoading] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -57,7 +59,15 @@ export default function ProjectDetail() {
     setLoading(false);
   }, [id, navigate]);
 
-  useEffect(() => { load(); }, [load]);
+  const loadCollection = useCallback(async () => {
+    try {
+      const colls = await api.get('/collections');
+      const found = (Array.isArray(colls) ? colls : []).find(c => String(c.project_id) === String(id));
+      setProjectCollection(found || null);
+    } catch (_) { setProjectCollection(null); }
+  }, [id]);
+
+  useEffect(() => { load(); loadCollection(); }, [load, loadCollection]);
 
   useEffect(() => {
     if (!data) return;
@@ -166,6 +176,26 @@ export default function ProjectDetail() {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
+  }
+
+  async function openOrCreateReferences() {
+    if (projectCollection) {
+      navigate(`/collections/${projectCollection.id}`);
+      return;
+    }
+    setCollLoading(true);
+    try {
+      const res = await api.post('/collections', {
+        name: project.title,
+        project_id: Number(id),
+      });
+      await loadCollection();
+      navigate(`/collections/${res.id}`);
+    } catch (err) {
+      alert(err.message || 'Failed to create references collection');
+    } finally {
+      setCollLoading(false);
+    }
   }
 
   const postProdPhase = phases.find(p => p.phase_name === 'Post-Production');
@@ -512,6 +542,44 @@ export default function ProjectDetail() {
             <div className="fin-row total" style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid var(--border)' }}>
               <span>Total Expenses</span><span>{fmt(pnl.totalExpenses)}</span>
             </div>
+          </div>
+
+          <div className="card card-pad" style={{ marginBottom: '16px' }}>
+            <div className="section-header">
+              <span className="section-title" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Library size={13} color="var(--accent)" /> References
+              </span>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={openOrCreateReferences}
+                disabled={collLoading}
+                style={{ display: 'flex', alignItems: 'center', gap: '5px' }}
+              >
+                {collLoading
+                  ? '…'
+                  : projectCollection
+                    ? <><ExternalLink size={12} /> Open</>
+                    : <><Plus size={12} /> Create</>
+                }
+              </button>
+            </div>
+            {projectCollection ? (
+              <div
+                className="list-item"
+                style={{ cursor: 'pointer' }}
+                onClick={openOrCreateReferences}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Library size={14} color="var(--accent)" />
+                  <span className="text-sm">{projectCollection.name}</span>
+                </div>
+                <span className="text-xs text-2">{projectCollection.card_count} {projectCollection.card_count === 1 ? 'card' : 'cards'}</span>
+              </div>
+            ) : (
+              <div className="empty" style={{ padding: '10px 0', textAlign: 'left', fontSize: '12px' }}>
+                No references collection yet. Click Create to start one.
+              </div>
+            )}
           </div>
 
           <div className="card card-pad">

@@ -468,7 +468,17 @@ function initDb() {
     'ALTER TABLE expenses ADD COLUMN category_text TEXT',
     'ALTER TABLE projects ADD COLUMN shoot_start_time TEXT',
     'ALTER TABLE projects ADD COLUMN shoot_end_time TEXT',
+    'ALTER TABLE collections ADD COLUMN archived INTEGER DEFAULT 0',
   ].forEach(sql => { try { db.exec(sql); } catch (_) {} });
+
+  // Clean up empty auto-created project collections (project_id set, 0 cards)
+  try {
+    db.exec(`
+      DELETE FROM collections
+      WHERE project_id IS NOT NULL
+        AND (SELECT COUNT(*) FROM collection_cards WHERE collection_id = collections.id) = 0
+    `);
+  } catch (_) {}
 
   // Backfill: any existing expense with no status gets confirmed
   try {
@@ -491,16 +501,6 @@ function initDb() {
     CREATE INDEX IF NOT EXISTS idx_status_history_project ON project_status_history(project_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
   `);
-
-  // Auto-create project collections for existing projects without one
-  try {
-    const allProjects = db.prepare('SELECT id, title FROM projects').all();
-    const insertColl = db.prepare('INSERT INTO collections (name, project_id) VALUES (?, ?)');
-    allProjects.forEach(p => {
-      const existing = db.prepare('SELECT id FROM collections WHERE project_id = ?').get(p.id);
-      if (!existing) insertColl.run(p.title, p.id);
-    });
-  } catch (_) {}
 
   // Password migration — run once on boot
   migratePassword();

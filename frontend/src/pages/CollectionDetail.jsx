@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ChevronLeft, Library, FolderKanban } from 'lucide-react';
+import { ChevronLeft, Library, FolderKanban, Archive } from 'lucide-react';
 import { api } from '../api';
 
 export default function CollectionDetail() {
@@ -11,12 +11,8 @@ export default function CollectionDetail() {
   const [notFound, setNotFound] = useState(false);
 
   useEffect(() => {
-    api.get('/collections')
-      .then(data => {
-        const found = data.find(c => String(c.id) === String(id));
-        if (found) setCollection(found);
-        else setNotFound(true);
-      })
+    api.get(`/collections/${id}`)
+      .then(data => setCollection(data))
       .catch(() => setNotFound(true))
       .finally(() => setLoading(false));
   }, [id]);
@@ -52,6 +48,12 @@ export default function CollectionDetail() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
                 <FolderKanban size={12} color="var(--text-muted)" />
                 <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{collection.project_title}</span>
+              </div>
+            )}
+            {collection.archived === 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '4px' }}>
+                <Archive size={12} color="var(--text-muted)" />
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Archived</span>
               </div>
             )}
           </div>
