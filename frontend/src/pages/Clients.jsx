@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, MessageCircle, User, Building2 } from 'lucide-react';
+import { Plus, MessageCircle, User, Building2, X, ChevronRight } from 'lucide-react';
 import { api, fmt } from '../api';
 import Modal from '../components/Modal';
 
@@ -19,6 +19,7 @@ export default function Clients() {
   const [err, setErr] = useState('');
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState('newest');
+  const [detailClient, setDetailClient] = useState(null);
 
   async function load() {
     const params = new URLSearchParams();
@@ -78,52 +79,84 @@ export default function Clients() {
       {clients.length === 0 ? (
         <div className="card card-pad empty">No clients found</div>
       ) : (
-        <div className="card">
-          <div className="table-wrap table-responsive">
-            <table>
-              <thead>
-                <tr>
-                  <th></th>
-                  <th>Name</th>
-                  <th>Company</th>
-                  <th>Phone</th>
-                  <th>Email</th>
-                  <th>Projects</th>
-                  <th>Revenue</th>
-                </tr>
-              </thead>
-              <tbody>
-                {clients.map(c => {
-                  const wa = waUrl(c.phone);
-                  return (
-                    <tr key={c.id}>
-                      <td data-label="">
-                        {c.company
-                          ? <Building2 size={14} style={{ color: '#888' }} />
-                          : <User size={14} style={{ color: '#666' }} />}
-                      </td>
-                      <td data-label="Name"><Link to={`/clients/${c.id}`} className="link text-bold">{c.name}</Link></td>
-                      <td data-label="Company" className="text-2">{c.company || '—'}</td>
-                      <td data-label="Phone">
-                        <div className="flex-center gap-1">
-                          <span className="text-2 text-sm">{c.phone || '—'}</span>
-                          {wa && (
-                            <a href={wa} target="_blank" rel="noopener noreferrer" className="wa-btn" title="WhatsApp">
-                              <MessageCircle size={14} />
-                            </a>
-                          )}
-                        </div>
-                      </td>
-                      <td data-label="Email" className="text-2 text-sm">{c.email || '—'}</td>
-                      <td data-label="Projects">{c.total_projects}</td>
-                      <td data-label="Revenue">{fmt(c.total_revenue)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+        <>
+          {/* Desktop table */}
+          <div className="card desktop-table-only">
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th></th>
+                    <th>Name</th>
+                    <th>Company</th>
+                    <th>Phone</th>
+                    <th>Email</th>
+                    <th>Projects</th>
+                    <th>Revenue</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {clients.map(c => {
+                    const wa = waUrl(c.phone);
+                    return (
+                      <tr key={c.id}>
+                        <td>
+                          {c.company
+                            ? <Building2 size={14} style={{ color: '#888' }} />
+                            : <User size={14} style={{ color: '#666' }} />}
+                        </td>
+                        <td><Link to={`/clients/${c.id}`} className="link text-bold">{c.name}</Link></td>
+                        <td className="text-2">{c.company || '—'}</td>
+                        <td>
+                          <div className="flex-center gap-1">
+                            <span className="text-2 text-sm">{c.phone || '—'}</span>
+                            {wa && (
+                              <a href={wa} target="_blank" rel="noopener noreferrer" className="wa-btn" title="WhatsApp">
+                                <MessageCircle size={14} />
+                              </a>
+                            )}
+                          </div>
+                        </td>
+                        <td className="text-2 text-sm">{c.email || '—'}</td>
+                        <td>{c.total_projects}</td>
+                        <td>{fmt(c.total_revenue)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+
+          {/* Mobile compact 2-per-row grid */}
+          <div className="card mobile-people-grid-wrap">
+            <div className="mobile-people-grid">
+              {clients.map(c => (
+                <button
+                  key={c.id}
+                  className="people-mini-card"
+                  onClick={() => setDetailClient(c)}
+                >
+                  <div className="people-mini-name">
+                    {c.company
+                      ? <Building2 size={11} style={{ color: '#888', flexShrink: 0 }} />
+                      : <User size={11} style={{ color: '#666', flexShrink: 0 }} />}
+                    {c.name}
+                  </div>
+                  {c.company && <div className="people-mini-sub">{c.company}</div>}
+                  {!c.company && c.total_projects > 0 && (
+                    <div className="people-mini-sub">{c.total_projects} project{c.total_projects !== 1 ? 's' : ''}</div>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Client detail sheet (mobile) */}
+      {detailClient && (
+        <ClientDetailSheet client={detailClient} onClose={() => setDetailClient(null)} />
       )}
 
       {showModal && (
@@ -164,6 +197,64 @@ export default function Clients() {
           {err && <div className="error-msg">{err}</div>}
         </Modal>
       )}
+    </div>
+  );
+}
+
+function ClientDetailSheet({ client, onClose }) {
+  const wa = waUrl(client.phone);
+  return (
+    <div className="detail-sheet-overlay" onClick={onClose}>
+      <div className="detail-sheet-box" onClick={e => e.stopPropagation()}>
+        <div className="detail-sheet-header">
+          <div>
+            <div style={{ fontWeight: 700, fontSize: '18px', color: '#fff', lineHeight: 1.2 }}>{client.name}</div>
+            {client.company && <div style={{ fontSize: '13px', color: '#888', marginTop: '3px' }}>{client.company}</div>}
+          </div>
+          <button className="modal-close" onClick={onClose}><X size={18} /></button>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
+          {client.phone && (
+            <div className="fin-row" style={{ padding: '10px 0' }}>
+              <span className="text-2" style={{ fontSize: '12px' }}>Phone</span>
+              <div className="flex-center gap-1">
+                <span style={{ fontSize: '13px' }}>{client.phone}</span>
+                {wa && (
+                  <a href={wa} target="_blank" rel="noopener noreferrer" className="wa-btn">
+                    <MessageCircle size={12} /> WA
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
+          {client.email && (
+            <div className="fin-row" style={{ padding: '10px 0' }}>
+              <span className="text-2" style={{ fontSize: '12px' }}>Email</span>
+              <span style={{ fontSize: '13px' }}>{client.email}</span>
+            </div>
+          )}
+          <div className="fin-row" style={{ padding: '10px 0' }}>
+            <span className="text-2" style={{ fontSize: '12px' }}>Projects</span>
+            <span style={{ fontSize: '13px' }}>{client.total_projects}</span>
+          </div>
+          <div className="fin-row" style={{ padding: '10px 0', borderBottom: 'none' }}>
+            <span className="text-2" style={{ fontSize: '12px' }}>Revenue</span>
+            <span style={{ fontSize: '13px', fontWeight: 700, color: '#fff' }}>{fmt(client.total_revenue)}</span>
+          </div>
+        </div>
+
+        <div style={{ marginTop: '16px' }}>
+          <Link
+            to={`/clients/${client.id}`}
+            className="btn btn-primary"
+            style={{ width: '100%', justifyContent: 'center' }}
+            onClick={onClose}
+          >
+            View Full Profile <ChevronRight size={15} />
+          </Link>
+        </div>
+      </div>
     </div>
   );
 }

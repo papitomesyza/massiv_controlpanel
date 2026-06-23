@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, FolderKanban, Users, UserCog, Package,
   BarChart3, FileText, Settings, LogOut, CalendarDays, MapPin, Receipt,
-  Plus, X, Lightbulb,
+  Plus, X, Lightbulb, LayoutGrid,
 } from 'lucide-react';
 import { useAgency } from '../context/AgencyContext';
 import { api } from '../api';
@@ -25,14 +25,19 @@ const DB_LINKS = [
   { to: '/assets',    icon: Package,         label: 'Assets'    },
 ];
 
-const ALL_LINKS = [...OPS_LINKS, ...DB_LINKS, { to: '/settings', icon: Settings, label: 'Settings' }];
-
-const MOBILE_NAV_LINKS = [
-  { to: '/dashboard', icon: LayoutDashboard, label: 'Home' },
-  { to: '/projects',  icon: FolderKanban,   label: 'Projects' },
-  { to: '/finances',  icon: BarChart3,       label: 'Finances' },
-  { to: '/invoices',  icon: Receipt,         label: 'Invoices' },
-  { to: '/settings',  icon: Settings,        label: 'Settings' },
+// All pages — used by the floating menu button for full-nav access
+const ALL_NAV_PAGES = [
+  { to: '/dashboard', icon: LayoutDashboard, label: 'Home'      },
+  { to: '/projects',  icon: FolderKanban,    label: 'Projects'  },
+  { to: '/calendar',  icon: CalendarDays,    label: 'Calendar'  },
+  { to: '/finances',  icon: BarChart3,       label: 'Finances'  },
+  { to: '/invoices',  icon: Receipt,         label: 'Invoices'  },
+  { to: '/map',       icon: MapPin,          label: 'Map'       },
+  { to: '/budgets',   icon: FileText,        label: 'Estimates' },
+  { to: '/clients',   icon: Users,           label: 'Clients'   },
+  { to: '/crew',      icon: UserCog,         label: 'Crew'      },
+  { to: '/assets',    icon: Package,         label: 'Assets'    },
+  { to: '/settings',  icon: Settings,        label: 'Settings'  },
 ];
 
 const FAB_ACTIONS = [
@@ -53,9 +58,11 @@ function fmtShortDate(d) {
 
 export default function Layout() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { name, tagline, logo } = useAgency();
   const [upcoming, setUpcoming] = useState([]);
   const [fabOpen, setFabOpen] = useState(false);
+  const [floatMenuOpen, setFloatMenuOpen] = useState(false);
   const fabRef = useRef(null);
   const [showSetupWizard, setShowSetupWizard] = useState(false);
 
@@ -81,6 +88,11 @@ export default function Layout() {
     return () => document.removeEventListener('mousedown', handleClick);
   }, [fabOpen]);
 
+  // Close all launchers on navigation
+  useEffect(() => {
+    setFloatMenuOpen(false);
+  }, [location.pathname]);
+
   async function logout() {
     try { await api.post('/auth/logout', {}); } catch (_) {}
     localStorage.removeItem('massiv_auth');
@@ -94,6 +106,15 @@ export default function Layout() {
 
   return (
     <div className="app-shell">
+      {/* Mobile top branding header — hidden on desktop */}
+      <header className="mobile-header">
+        {logo ? (
+          <img src={logo} alt={name || 'Agency'} className="mobile-header-logo" />
+        ) : (
+          <span className="mobile-header-name">{name || 'MASSIV'}</span>
+        )}
+      </header>
+
       <aside className="sidebar">
         <div className="sidebar-logo">
           {logo ? (
@@ -175,7 +196,7 @@ export default function Layout() {
         <footer className="page-footer">built by year28</footer>
       </div>
 
-      {/* Sticky FAB */}
+      {/* Sticky FAB — menu button on top, + FAB below */}
       <div className="fab-wrap" ref={fabRef}>
         {fabOpen && (
           <div className="fab-menu">
@@ -187,21 +208,44 @@ export default function Layout() {
             ))}
           </div>
         )}
-        <button className="fab-btn" onClick={() => setFabOpen(o => !o)} aria-label="Quick actions">
+        {/* Floating nav menu button — mobile: primary navigation; desktop: hidden */}
+        <button
+          className={`fab-nav-btn${floatMenuOpen ? ' active' : ''}`}
+          onClick={() => { setFabOpen(false); setFloatMenuOpen(o => !o); }}
+          aria-label="All pages"
+        >
+          <LayoutGrid size={18} />
+        </button>
+        <button className="fab-btn" onClick={() => { setFloatMenuOpen(false); setFabOpen(o => !o); }} aria-label="Quick actions">
           {fabOpen ? <X size={20} /> : <Plus size={20} />}
         </button>
       </div>
 
-      <nav className="bottom-nav">
-        <div className="bottom-nav-inner">
-          {MOBILE_NAV_LINKS.map(({ to, icon: Icon, label }) => (
-            <NavLink key={to} to={to} className={({ isActive }) => `bottom-nav-item${isActive ? ' active' : ''}`}>
-              <Icon size={20} />
-              {label}
-            </NavLink>
-          ))}
+      {/* Float-menu full-nav launcher — all pages */}
+      {floatMenuOpen && (
+        <div className="more-launcher-overlay" onClick={() => setFloatMenuOpen(false)}>
+          <div className="more-launcher-box" onClick={e => e.stopPropagation()}>
+            <div className="more-launcher-header">
+              <span className="more-launcher-title">Navigation</span>
+              <button className="modal-close" onClick={() => setFloatMenuOpen(false)}>
+                <X size={18} />
+              </button>
+            </div>
+            <div className="more-launcher-grid">
+              {ALL_NAV_PAGES.map(({ to, icon: Icon, label }) => (
+                <button
+                  key={to}
+                  className={`more-tile${location.pathname.startsWith(to) ? ' active' : ''}`}
+                  onClick={() => { navigate(to); setFloatMenuOpen(false); }}
+                >
+                  <div className="more-tile-icon"><Icon size={22} /></div>
+                  <span className="more-tile-label">{label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
-      </nav>
+      )}
 
       {showSetupWizard && (
         <SetupWizard

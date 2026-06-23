@@ -154,26 +154,24 @@ export default function Calendar() {
         </button>
       </div>
 
-      {/* Day headers + Grid — scrollable on mobile */}
-      <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-        <div style={{ minWidth: '380px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', marginBottom: '4px' }}>
-            {DAYS.map(d => (
-              <div key={d} style={{ textAlign: 'center', fontSize: '10px', fontWeight: 700, color: '#888', textTransform: 'uppercase', padding: '4px 0' }}>
-                {d}
-              </div>
-            ))}
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px' }}>
-            {cells.map((cell, idx) => (
-              <DayCell
-                key={idx}
-                cell={cell}
-                onClickEmpty={() => setAddModal({ date: cell.ds })}
-                onClickEvent={ev => setDetailModal(ev)}
-              />
-            ))}
-          </div>
+      {/* Day headers + Grid */}
+      <div className="calendar-grid-outer">
+        <div className="calendar-day-headers">
+          {DAYS.map(d => (
+            <div key={d} className="calendar-day-label">
+              {d}
+            </div>
+          ))}
+        </div>
+        <div className="calendar-day-grid">
+          {cells.map((cell, idx) => (
+            <DayCell
+              key={idx}
+              cell={cell}
+              onClickEmpty={() => setAddModal({ date: cell.ds })}
+              onClickEvent={ev => setDetailModal(ev)}
+            />
+          ))}
         </div>
       </div>
 
@@ -222,11 +220,11 @@ function DayCell({ cell, onClickEmpty, onClickEvent }) {
   return (
     <div
       onClick={() => onClickEmpty()}
+      className="calendar-day-cell"
       style={{
         background: '#1e1e1e',
         border: isToday ? '1px solid #723CEB' : '1px solid rgba(255,255,255,0.06)',
         borderRadius: '8px',
-        minHeight: '90px',
         padding: '6px',
         cursor: 'pointer',
         position: 'relative',

@@ -137,10 +137,10 @@ export default function Assets() {
         </button>
       </div>
 
-      <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+      <div className="assets-layout" style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
 
         {/* Left panel — Providers */}
-        <div style={{ width: '38%', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div className="assets-providers-panel" style={{ width: '38%', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {providers.length === 0 && archivedProviders.length === 0 && (
             <div className="card" style={{ padding: '48px 24px', textAlign: 'center' }}>
               <Package size={36} color="#333" style={{ margin: '0 auto 12px' }} />
@@ -225,8 +225,8 @@ export default function Assets() {
                 </div>
               </div>
 
-              {/* Items table */}
-              <div style={{ flex: 1, overflowY: 'auto' }}>
+              {/* Items — desktop table */}
+              <div className="assets-items-table-wrap" style={{ flex: 1, overflowY: 'auto' }}>
                 {filteredItems.length === 0 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px 24px', color: '#555' }}>
                     <div style={{ fontSize: '13px', marginBottom: '16px' }}>
@@ -300,6 +300,64 @@ export default function Assets() {
                       ))}
                     </tbody>
                   </table>
+                )}
+              </div>
+
+              {/* Items — mobile cards */}
+              <div className="assets-items-cards-wrap">
+                {filteredItems.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '32px 16px', color: '#555', fontSize: '13px' }}>
+                    {categoryFilter ? `No items in "${categoryFilter}"` : 'No items yet'}
+                  </div>
+                ) : (
+                  filteredItems.map(item => (
+                    <div key={item.id} className="assets-item-card">
+                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 700, fontSize: '14px', color: '#fff', marginBottom: '4px' }}>{item.item_name}</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            {item.category && (
+                              <span style={{ background: 'rgba(255,255,255,0.07)', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', color: '#aaa' }}>{item.category}</span>
+                            )}
+                            {editingRate?.id === item.id ? (
+                              <input
+                                type="number"
+                                className="input"
+                                style={{ width: '90px', padding: '3px 8px', fontSize: '13px', display: 'inline-block' }}
+                                value={editingRate.value}
+                                autoFocus
+                                onChange={e => setEditingRate(p => ({ ...p, value: e.target.value }))}
+                                onBlur={() => saveRate(item.id, editingRate.value)}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') saveRate(item.id, editingRate.value);
+                                  if (e.key === 'Escape') setEditingRate(null);
+                                }}
+                              />
+                            ) : (
+                              <span
+                                title="Tap to edit rate"
+                                onClick={() => setEditingRate({ id: item.id, value: String(item.daily_rate || 0) })}
+                                style={{ cursor: 'pointer', fontWeight: 700, fontSize: '13px', color: '#FF902F' }}
+                              >
+                                €{Number(item.daily_rate || 0).toFixed(0)}/day
+                              </span>
+                            )}
+                          </div>
+                          {item.notes && (
+                            <div style={{ fontSize: '12px', color: '#555', marginTop: '4px' }}>{item.notes}</div>
+                          )}
+                        </div>
+                        <button
+                          className="btn-icon"
+                          style={{ color: '#FF4444', flexShrink: 0 }}
+                          title="Remove from provider"
+                          onClick={() => deleteProviderItem(item.id)}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  ))
                 )}
               </div>
             </>

@@ -28,6 +28,7 @@ export default function Crew() {
   const [pdfLoading, setPdfLoading] = useState(false);
   const [debtSummary, setDebtSummary] = useState({});
   const [quickDebtMember, setQuickDebtMember] = useState(null);
+  const [detailMember, setDetailMember] = useState(null);
 
   async function load() {
     const params = new URLSearchParams();
@@ -147,67 +148,96 @@ export default function Crew() {
       {active.length === 0 ? (
         <div className="card card-pad empty">No crew members found</div>
       ) : (
-        <div className="card mb-4" style={{ marginBottom: '24px' }}>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr><th></th><th>Name</th><th>Role / Type</th><th>Location</th><th>Rate</th><th>Phone</th><th></th></tr>
-              </thead>
-              <tbody>
-                {active.map(member => {
-                  const wa = waUrl(member.phone);
-                  return (
-                    <tr key={member.id}>
-                      <td style={{ width: '32px', paddingRight: 0 }}>
-                        {member.is_company
-                          ? <Building2 size={14} style={{ color: '#888' }} />
-                          : <User size={14} style={{ color: '#666' }} />}
-                      </td>
-                      <td>
-                        <div className="flex-center gap-1">
-                          <Link to={`/crew/${member.id}`} className="link text-bold">{member.name}</Link>
-                          {debtSummary[member.id] > 0 && (
-                            <div
-                              style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#FF4444', flexShrink: 0 }}
-                              title={`€${Number(debtSummary[member.id]).toFixed(2)} in unpaid debts`}
-                            />
-                          )}
-                        </div>
-                      </td>
-                      <td className="text-2">{member.is_company ? (member.service_type || 'Company') : (member.role || '—')}</td>
-                      <td className="text-2 text-sm">{member.location || '—'}</td>
-                      <td>{fmt(member.day_rate)}</td>
-                      <td>
-                        <div className="flex-center gap-1">
-                          <span className="text-2 text-sm">{member.phone || '—'}</span>
-                          {wa && (
-                            <a href={wa} target="_blank" rel="noopener noreferrer" className="wa-btn" title="WhatsApp">
-                              <MessageCircle size={13} />
-                            </a>
-                          )}
-                        </div>
-                      </td>
-                      <td>
-                        <div className="flex-center gap-1">
-                          <button
-                            className="btn btn-ghost btn-sm"
-                            style={{ fontSize: '11px', borderRadius: '50px', color: '#FF902F', padding: '3px 8px' }}
-                            onClick={() => setQuickDebtMember(member)}
-                            title="Add Transaction"
-                          >
-                            <Plus size={11} /> Txn
-                          </button>
-                          <button className="btn btn-ghost btn-sm" onClick={() => openEdit(member)}><Edit2 size={13} /></button>
-                          <button className="btn btn-ghost btn-sm" onClick={() => toggleArchive(member)} title="Archive"><Archive size={13} /></button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+        <>
+          {/* Desktop table */}
+          <div className="card mb-4 desktop-table-only" style={{ marginBottom: '24px' }}>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr><th></th><th>Name</th><th>Role / Type</th><th>Location</th><th>Rate</th><th>Phone</th><th></th></tr>
+                </thead>
+                <tbody>
+                  {active.map(member => {
+                    const wa = waUrl(member.phone);
+                    return (
+                      <tr key={member.id}>
+                        <td style={{ width: '32px', paddingRight: 0 }}>
+                          {member.is_company
+                            ? <Building2 size={14} style={{ color: '#888' }} />
+                            : <User size={14} style={{ color: '#666' }} />}
+                        </td>
+                        <td>
+                          <div className="flex-center gap-1">
+                            <Link to={`/crew/${member.id}`} className="link text-bold">{member.name}</Link>
+                            {debtSummary[member.id] > 0 && (
+                              <div
+                                style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#FF4444', flexShrink: 0 }}
+                                title={`€${Number(debtSummary[member.id]).toFixed(2)} in unpaid debts`}
+                              />
+                            )}
+                          </div>
+                        </td>
+                        <td className="text-2">{member.is_company ? (member.service_type || 'Company') : (member.role || '—')}</td>
+                        <td className="text-2 text-sm">{member.location || '—'}</td>
+                        <td>{fmt(member.day_rate)}</td>
+                        <td>
+                          <div className="flex-center gap-1">
+                            <span className="text-2 text-sm">{member.phone || '—'}</span>
+                            {wa && (
+                              <a href={wa} target="_blank" rel="noopener noreferrer" className="wa-btn" title="WhatsApp">
+                                <MessageCircle size={13} />
+                              </a>
+                            )}
+                          </div>
+                        </td>
+                        <td>
+                          <div className="flex-center gap-1">
+                            <button
+                              className="btn btn-ghost btn-sm"
+                              style={{ fontSize: '11px', borderRadius: '50px', color: '#FF902F', padding: '3px 8px' }}
+                              onClick={() => setQuickDebtMember(member)}
+                              title="Add Transaction"
+                            >
+                              <Plus size={11} /> Txn
+                            </button>
+                            <button className="btn btn-ghost btn-sm" onClick={() => openEdit(member)}><Edit2 size={13} /></button>
+                            <button className="btn btn-ghost btn-sm" onClick={() => toggleArchive(member)} title="Archive"><Archive size={13} /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+
+          {/* Mobile compact 2-per-row grid */}
+          <div className="card mobile-people-grid-wrap" style={{ marginBottom: '24px' }}>
+            <div className="mobile-people-grid">
+              {active.map(member => (
+                <button
+                  key={member.id}
+                  className="people-mini-card"
+                  onClick={() => setDetailMember(member)}
+                >
+                  <div className="people-mini-name">
+                    {member.is_company
+                      ? <Building2 size={11} style={{ color: '#888', flexShrink: 0 }} />
+                      : <User size={11} style={{ color: '#666', flexShrink: 0 }} />}
+                    {member.name}
+                    {debtSummary[member.id] > 0 && (
+                      <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#FF4444', flexShrink: 0, display: 'inline-block', marginLeft: 'auto' }} />
+                    )}
+                  </div>
+                  <div className="people-mini-sub">
+                    {member.is_company ? (member.service_type || 'Company') : (member.role || '—')}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
       )}
 
       {archived.length > 0 && (
@@ -261,6 +291,18 @@ export default function Crew() {
           <button className="btn btn-ghost btn-sm" onClick={addRole}><Plus size={13} /> Add</button>
         </div>
       </div>
+
+      {/* Crew detail sheet (mobile) */}
+      {detailMember && (
+        <CrewDetailSheet
+          member={detailMember}
+          debtAmount={debtSummary[detailMember.id]}
+          onClose={() => setDetailMember(null)}
+          onEdit={m => { setDetailMember(null); openEdit(m); }}
+          onTxn={m => { setDetailMember(null); setQuickDebtMember(m); }}
+          onArchive={m => { setDetailMember(null); toggleArchive(m); }}
+        />
+      )}
 
       {quickDebtMember && (
         <QuickDebtModal
@@ -336,6 +378,93 @@ export default function Crew() {
           {err && <div className="error-msg">{err}</div>}
         </Modal>
       )}
+    </div>
+  );
+}
+
+function CrewDetailSheet({ member, debtAmount, onClose, onEdit, onTxn, onArchive }) {
+  const wa = waUrl(member.phone);
+  return (
+    <div className="detail-sheet-overlay" onClick={onClose}>
+      <div className="detail-sheet-box" onClick={e => e.stopPropagation()}>
+        <div className="detail-sheet-header">
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontWeight: 700, fontSize: '18px', color: '#fff', lineHeight: 1.2 }}>{member.name}</span>
+              {debtAmount > 0 && (
+                <span style={{ background: 'rgba(255,68,68,0.15)', color: '#FF4444', fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '50px' }}>
+                  Unpaid
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: '13px', color: '#888', marginTop: '3px' }}>
+              {member.is_company ? (member.service_type || 'Company') : (member.role || 'No role')}
+            </div>
+          </div>
+          <button className="modal-close" onClick={onClose}><X size={18} /></button>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          {member.location && (
+            <div className="fin-row" style={{ padding: '10px 0' }}>
+              <span className="text-2" style={{ fontSize: '12px' }}>Location</span>
+              <span style={{ fontSize: '13px' }}>{member.location}</span>
+            </div>
+          )}
+          {member.day_rate > 0 && (
+            <div className="fin-row" style={{ padding: '10px 0' }}>
+              <span className="text-2" style={{ fontSize: '12px' }}>Day Rate</span>
+              <span style={{ fontSize: '13px', fontWeight: 700 }}>{fmt(member.day_rate)}</span>
+            </div>
+          )}
+          {member.phone && (
+            <div className="fin-row" style={{ padding: '10px 0' }}>
+              <span className="text-2" style={{ fontSize: '12px' }}>Phone</span>
+              <div className="flex-center gap-1">
+                <span style={{ fontSize: '13px' }}>{member.phone}</span>
+                {wa && (
+                  <a href={wa} target="_blank" rel="noopener noreferrer" className="wa-btn">
+                    <MessageCircle size={12} /> WA
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
+          {debtAmount > 0 && (
+            <div className="fin-row" style={{ padding: '10px 0' }}>
+              <span className="text-2" style={{ fontSize: '12px' }}>Outstanding</span>
+              <span style={{ fontSize: '13px', fontWeight: 700, color: '#FF4444' }}>€{Number(debtAmount).toFixed(2)}</span>
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', gap: '8px', marginTop: '16px', flexWrap: 'wrap' }}>
+          <button
+            className="btn btn-ghost btn-sm"
+            style={{ color: '#FF902F', borderColor: 'rgba(255,144,47,0.3)', flex: 1 }}
+            onClick={() => onTxn(member)}
+          >
+            <Plus size={13} /> Txn
+          </button>
+          <button className="btn btn-ghost btn-sm" style={{ flex: 1 }} onClick={() => onEdit(member)}>
+            <Edit2 size={13} /> Edit
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={() => onArchive(member)} title="Archive">
+            <Archive size={13} />
+          </button>
+        </div>
+
+        <div style={{ marginTop: '10px' }}>
+          <Link
+            to={`/crew/${member.id}`}
+            className="btn btn-primary"
+            style={{ width: '100%', justifyContent: 'center' }}
+            onClick={onClose}
+          >
+            View Full Profile <ChevronRight size={15} />
+          </Link>
+        </div>
+      </div>
     </div>
   );
 }

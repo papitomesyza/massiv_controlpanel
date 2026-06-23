@@ -56,6 +56,14 @@ function todayPlus30() {
 export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
   const isEditing = !!invoice;
 
+  // ── Responsive detection ────────────────────────────────────────────────────
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth <= 768);
+  useEffect(() => {
+    function onResize() { setIsMobile(window.innerWidth <= 768); }
+    window.addEventListener('resize', onResize, { passive: true });
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
   // ── Master data ─────────────────────────────────────────────────────────────
   const [clients, setClients] = useState([]);
   const [projects, setProjects] = useState([]);
@@ -82,7 +90,7 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [issuing, setIssuing] = useState(false);
   const [err, setErr] = useState('');
-  const [showServicePicker, setShowServicePicker] = useState(null); // line _id or null
+  const [showServicePicker, setShowServicePicker] = useState(null);
   const scrollRef = useRef(null);
 
   // ── Load data ─────────────────────────────────────────────────────────────
@@ -319,8 +327,8 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
       )}
 
       {/* Scrollable body */}
-      <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
-        <div style={{ maxWidth: '920px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '16px' : '24px' }}>
+        <div style={{ maxWidth: '920px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
           {/* ── Row 1: Client + Invoice Meta ───────────────────────────────── */}
           <div className="inv-grid-top">
@@ -391,113 +399,215 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
               padding: '14px 18px', borderBottom: '1px solid rgba(255,255,255,0.06)',
             }}>
               <div className="section-title" style={{ fontSize: '12px' }}>Line Items</div>
-              {!isLocked && (
+              {!isLocked && !isMobile && (
                 <button className="btn btn-ghost btn-sm" onClick={addLine} style={{ gap: '5px' }}>
                   <Plus size={13} /> Add Line
                 </button>
               )}
             </div>
 
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ background: 'rgba(255,255,255,0.03)' }}>
-                    {['Shifra', 'Emërtimi', 'Njësia', 'Sasia', 'Çmimi (€)', 'Rabat %', 'Vlera'].map(h => (
-                      <th key={h} style={{ padding: '8px 10px', fontSize: '11px', color: '#666',
-                        fontWeight: 600, textAlign: h === 'Vlera' || h === 'Sasia' || h === 'Çmimi (€)' || h === 'Rabat %' ? 'right' : 'left',
-                        whiteSpace: 'nowrap' }}>
-                        {h}
-                      </th>
-                    ))}
-                    {!isLocked && <th style={{ width: '32px' }}></th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {lines.map((line, idx) => (
-                    <tr key={line._id} style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
-                      {/* Code */}
-                      <td style={{ padding: '6px 8px', width: '80px' }}>
+            {isMobile ? (
+              /* ── Mobile: stacked cards ── */
+              <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {lines.map(line => (
+                  <div key={line._id} className="inv-line-card">
+                    {/* Code + Unit */}
+                    <div className="inv-line-row-2">
+                      <div>
+                        <label className="inv-line-label">Shifra</label>
                         <div style={{ display: 'flex', gap: '4px' }}>
-                          <input className="input" style={{ fontSize: '12px', padding: '5px 8px', width: '54px' }}
+                          <input className="input" style={{ fontSize: '13px', padding: '9px 10px', minWidth: 0 }}
                             placeholder="2001" value={line.code}
                             onChange={e => updateLine(line._id, 'code', e.target.value)}
                             disabled={isLocked} />
                           {!isLocked && services.length > 0 && (
-                            <button
-                              className="btn btn-ghost btn-sm"
-                              style={{ padding: '4px 6px' }}
-                              title="Pick from catalogue"
-                              onClick={() => setShowServicePicker(line._id)}
-                            >
-                              <ChevronDown size={12} />
+                            <button className="btn btn-ghost btn-sm"
+                              style={{ padding: '8px 10px', flexShrink: 0 }}
+                              onClick={() => setShowServicePicker(line._id)}>
+                              <ChevronDown size={13} />
                             </button>
                           )}
                         </div>
-                      </td>
-                      {/* Description */}
-                      <td style={{ padding: '6px 8px', minWidth: '180px' }}>
-                        <input className="input" style={{ fontSize: '12px', padding: '5px 8px', width: '100%' }}
-                          placeholder="Service description"
-                          value={line.description}
-                          onChange={e => updateLine(line._id, 'description', e.target.value)}
-                          disabled={isLocked} />
-                      </td>
-                      {/* Unit */}
-                      <td style={{ padding: '6px 8px', width: '90px' }}>
-                        <input className="input" style={{ fontSize: '12px', padding: '5px 8px', width: '80px' }}
-                          placeholder="Shërbim"
-                          value={line.unit}
+                      </div>
+                      <div>
+                        <label className="inv-line-label">Njësia</label>
+                        <input className="input" style={{ fontSize: '13px', padding: '9px 10px' }}
+                          placeholder="Shërbim" value={line.unit}
                           onChange={e => updateLine(line._id, 'unit', e.target.value)}
                           disabled={isLocked} />
-                      </td>
-                      {/* Qty */}
-                      <td style={{ padding: '6px 8px', width: '70px' }}>
-                        <input className="input" style={{ fontSize: '12px', padding: '5px 8px', width: '60px', textAlign: 'right' }}
-                          type="number" min="0" step="any"
-                          value={line.qty}
+                      </div>
+                    </div>
+
+                    {/* Description */}
+                    <div style={{ marginTop: '10px' }}>
+                      <label className="inv-line-label">Emërtimi</label>
+                      <input className="input" style={{ fontSize: '13px', padding: '9px 10px' }}
+                        placeholder="Service description" value={line.description}
+                        onChange={e => updateLine(line._id, 'description', e.target.value)}
+                        disabled={isLocked} />
+                    </div>
+
+                    {/* Qty + Price */}
+                    <div className="inv-line-row-2" style={{ marginTop: '10px' }}>
+                      <div>
+                        <label className="inv-line-label">Sasia</label>
+                        <input className="input" style={{ fontSize: '13px', padding: '9px 10px' }}
+                          type="number" min="0" step="any" value={line.qty}
                           onChange={e => updateLine(line._id, 'qty', e.target.value)}
                           disabled={isLocked} />
-                      </td>
-                      {/* Price */}
-                      <td style={{ padding: '6px 8px', width: '100px' }}>
-                        <input className="input" style={{ fontSize: '12px', padding: '5px 8px', width: '90px', textAlign: 'right' }}
-                          type="number" min="0" step="any"
-                          value={line.price}
+                      </div>
+                      <div>
+                        <label className="inv-line-label">Çmimi (€)</label>
+                        <input className="input" style={{ fontSize: '13px', padding: '9px 10px' }}
+                          type="number" min="0" step="any" value={line.price}
                           onChange={e => updateLine(line._id, 'price', e.target.value)}
                           disabled={isLocked} />
-                      </td>
-                      {/* Line discount % */}
-                      <td style={{ padding: '6px 8px', width: '70px' }}>
-                        <input className="input" style={{ fontSize: '12px', padding: '5px 8px', width: '60px', textAlign: 'right' }}
-                          type="number" min="0" max="100" step="any"
-                          value={line.line_discount_pct}
+                      </div>
+                    </div>
+
+                    {/* Discount + Amount + Delete */}
+                    <div style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      marginTop: '10px', paddingTop: '10px',
+                      borderTop: '1px solid rgba(255,255,255,0.06)',
+                      gap: '8px',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+                        <label className="inv-line-label" style={{ marginBottom: 0, whiteSpace: 'nowrap' }}>Rabat %</label>
+                        <input className="input" style={{ width: '70px', fontSize: '13px', padding: '9px 10px', flexShrink: 0 }}
+                          type="number" min="0" max="100" step="any" value={line.line_discount_pct}
                           onChange={e => updateLine(line._id, 'line_discount_pct', e.target.value)}
                           disabled={isLocked} />
-                      </td>
-                      {/* Amount */}
-                      <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: '#fff', whiteSpace: 'nowrap', fontSize: '13px' }}>
+                      </div>
+                      <span style={{ fontWeight: 700, fontSize: '16px', color: '#fff', whiteSpace: 'nowrap' }}>
                         {fmt(computeLineAmount(line))}
-                      </td>
+                      </span>
                       {!isLocked && (
-                        <td style={{ padding: '6px 8px' }}>
-                          <button className="btn btn-ghost btn-sm" style={{ padding: '4px' }}
-                            onClick={() => removeLine(line._id)}>
-                            <Trash2 size={13} style={{ color: '#FF4444' }} />
-                          </button>
-                        </td>
+                        <button className="btn btn-ghost btn-sm" style={{ padding: '8px', flexShrink: 0 }}
+                          onClick={() => removeLine(line._id)}>
+                          <Trash2 size={14} style={{ color: '#FF4444' }} />
+                        </button>
                       )}
+                    </div>
+                  </div>
+                ))}
+
+                {lines.length === 0 && (
+                  <div style={{ padding: '20px', textAlign: 'center', color: '#555', fontSize: '13px' }}>
+                    No line items yet — add one below
+                  </div>
+                )}
+
+                {!isLocked && (
+                  <button className="btn btn-ghost" onClick={addLine}
+                    style={{ justifyContent: 'center', gap: '6px', width: '100%' }}>
+                    <Plus size={14} /> Add Line
+                  </button>
+                )}
+              </div>
+            ) : (
+              /* ── Desktop: horizontal table ── */
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ background: 'rgba(255,255,255,0.03)' }}>
+                      {['Shifra', 'Emërtimi', 'Njësia', 'Sasia', 'Çmimi (€)', 'Rabat %', 'Vlera'].map(h => (
+                        <th key={h} style={{ padding: '8px 10px', fontSize: '11px', color: '#666',
+                          fontWeight: 600, textAlign: h === 'Vlera' || h === 'Sasia' || h === 'Çmimi (€)' || h === 'Rabat %' ? 'right' : 'left',
+                          whiteSpace: 'nowrap' }}>
+                          {h}
+                        </th>
+                      ))}
+                      {!isLocked && <th style={{ width: '32px' }}></th>}
                     </tr>
-                  ))}
-                  {lines.length === 0 && (
-                    <tr>
-                      <td colSpan={8} style={{ padding: '24px', textAlign: 'center', color: '#555', fontSize: '13px' }}>
-                        No line items yet — add one above
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {lines.map((line) => (
+                      <tr key={line._id} style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+                        {/* Code */}
+                        <td style={{ padding: '6px 8px', width: '80px' }}>
+                          <div style={{ display: 'flex', gap: '4px' }}>
+                            <input className="input" style={{ fontSize: '12px', padding: '5px 8px', width: '54px' }}
+                              placeholder="2001" value={line.code}
+                              onChange={e => updateLine(line._id, 'code', e.target.value)}
+                              disabled={isLocked} />
+                            {!isLocked && services.length > 0 && (
+                              <button
+                                className="btn btn-ghost btn-sm"
+                                style={{ padding: '4px 6px' }}
+                                title="Pick from catalogue"
+                                onClick={() => setShowServicePicker(line._id)}
+                              >
+                                <ChevronDown size={12} />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                        {/* Description */}
+                        <td style={{ padding: '6px 8px', minWidth: '180px' }}>
+                          <input className="input" style={{ fontSize: '12px', padding: '5px 8px', width: '100%' }}
+                            placeholder="Service description"
+                            value={line.description}
+                            onChange={e => updateLine(line._id, 'description', e.target.value)}
+                            disabled={isLocked} />
+                        </td>
+                        {/* Unit */}
+                        <td style={{ padding: '6px 8px', width: '90px' }}>
+                          <input className="input" style={{ fontSize: '12px', padding: '5px 8px', width: '80px' }}
+                            placeholder="Shërbim"
+                            value={line.unit}
+                            onChange={e => updateLine(line._id, 'unit', e.target.value)}
+                            disabled={isLocked} />
+                        </td>
+                        {/* Qty */}
+                        <td style={{ padding: '6px 8px', width: '70px' }}>
+                          <input className="input" style={{ fontSize: '12px', padding: '5px 8px', width: '60px', textAlign: 'right' }}
+                            type="number" min="0" step="any"
+                            value={line.qty}
+                            onChange={e => updateLine(line._id, 'qty', e.target.value)}
+                            disabled={isLocked} />
+                        </td>
+                        {/* Price */}
+                        <td style={{ padding: '6px 8px', width: '100px' }}>
+                          <input className="input" style={{ fontSize: '12px', padding: '5px 8px', width: '90px', textAlign: 'right' }}
+                            type="number" min="0" step="any"
+                            value={line.price}
+                            onChange={e => updateLine(line._id, 'price', e.target.value)}
+                            disabled={isLocked} />
+                        </td>
+                        {/* Line discount % */}
+                        <td style={{ padding: '6px 8px', width: '70px' }}>
+                          <input className="input" style={{ fontSize: '12px', padding: '5px 8px', width: '60px', textAlign: 'right' }}
+                            type="number" min="0" max="100" step="any"
+                            value={line.line_discount_pct}
+                            onChange={e => updateLine(line._id, 'line_discount_pct', e.target.value)}
+                            disabled={isLocked} />
+                        </td>
+                        {/* Amount */}
+                        <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: '#fff', whiteSpace: 'nowrap', fontSize: '13px' }}>
+                          {fmt(computeLineAmount(line))}
+                        </td>
+                        {!isLocked && (
+                          <td style={{ padding: '6px 8px' }}>
+                            <button className="btn btn-ghost btn-sm" style={{ padding: '4px' }}
+                              onClick={() => removeLine(line._id)}>
+                              <Trash2 size={13} style={{ color: '#FF4444' }} />
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                    {lines.length === 0 && (
+                      <tr>
+                        <td colSpan={8} style={{ padding: '24px', textAlign: 'center', color: '#555', fontSize: '13px' }}>
+                          No line items yet — add one above
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
           {/* ── Bottom: Notes + Discount + Tax + Totals ─────────────────────── */}
@@ -513,41 +623,41 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
             </div>
 
             {/* Discount + Tax + Totals */}
-            <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div className="card card-pad inv-totals-card" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div className="section-title" style={{ fontSize: '12px' }}>Totals</div>
 
               {/* Invoice-level discount */}
               <div>
-                <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '4px' }}>
+                <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '6px' }}>
                   Rabat-i (Invoice Discount)
                 </label>
-                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                <div className="inv-totals-disc-row" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                   <input className="input" type="number" min="0" step="any"
-                    style={{ flex: 1 }}
+                    style={{ flex: 1, minWidth: 0 }}
                     value={invoiceDiscount}
                     onChange={e => setInvoiceDiscount(e.target.value)}
                     disabled={isLocked} />
                   <button
                     className={`btn btn-sm ${discountType === 'amount' ? 'btn-primary' : 'btn-ghost'}`}
-                    style={{ borderRadius: '8px', padding: '6px 10px', fontSize: '12px' }}
+                    style={{ borderRadius: '10px', padding: '8px 14px', fontSize: '13px', flexShrink: 0 }}
                     onClick={() => !isLocked && setDiscountType('amount')}
                   >€</button>
                   <button
                     className={`btn btn-sm ${discountType === 'percent' ? 'btn-primary' : 'btn-ghost'}`}
-                    style={{ borderRadius: '8px', padding: '6px 10px', fontSize: '12px' }}
+                    style={{ borderRadius: '10px', padding: '8px 14px', fontSize: '13px', flexShrink: 0 }}
                     onClick={() => !isLocked && setDiscountType('percent')}
                   >%</button>
                 </div>
               </div>
 
               {/* Tax toggle */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ fontSize: '12px', color: '#888' }}>
+              <div className="inv-tax-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                <div style={{ fontSize: '13px', color: '#888', lineHeight: 1.3 }}>
                   Tax ({invSettings?.tax_label || 'Tax'}) {taxRate}%
                 </div>
                 <button
                   className={`btn btn-sm ${taxEnabled ? 'btn-primary' : 'btn-ghost'}`}
-                  style={{ borderRadius: '50px', padding: '4px 14px', fontSize: '12px' }}
+                  style={{ borderRadius: '50px', padding: '8px 18px', fontSize: '13px', flexShrink: 0 }}
                   onClick={() => !isLocked && setTaxEnabled(!taxEnabled)}
                 >
                   {taxEnabled ? 'On' : 'Off'}
