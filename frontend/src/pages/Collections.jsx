@@ -1,67 +1,83 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Edit2, Trash2, FolderKanban, Library, X, Archive, ArchiveRestore } from 'lucide-react';
+import {
+  Plus, Edit2, Trash2, FolderKanban, Library, X,
+  Archive, ArchiveRestore, Search, Link2, FileText,
+} from 'lucide-react';
 import { api } from '../api';
 
 function CollectionTile({ collection, onEdit, onDelete, onArchive, onClick }) {
   const isProject = collection.project_id !== null;
+  const [imgFailed, setImgFailed] = useState(false);
+  const hasCover = !!collection.cover_thumbnail && !imgFailed;
+
   return (
     <div
       className="card"
-      style={{ cursor: 'pointer', padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: '8px', position: 'relative', opacity: collection.archived ? 0.75 : 1 }}
+      style={{
+        cursor: 'pointer', overflow: 'hidden',
+        display: 'flex', flexDirection: 'column',
+        position: 'relative',
+        opacity: collection.archived ? 0.75 : 1,
+      }}
       onClick={onClick}
     >
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(199,255,46,0.10)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <Library size={16} color="var(--accent)" />
+      {/* Cover image / placeholder */}
+      <div style={{ width: '100%', height: '118px', background: 'rgba(255,255,255,0.02)', flexShrink: 0 }}>
+        {hasCover ? (
+          <img
+            src={collection.cover_thumbnail}
+            alt=""
+            onError={() => setImgFailed(true)}
+            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+            loading="lazy"
+          />
+        ) : (
+          <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Library size={28} color="var(--text-muted)" style={{ opacity: 0.28 }} />
           </div>
-          <span style={{ fontWeight: 600, fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        )}
+      </div>
+
+      {/* Content area */}
+      <div style={{ padding: '12px 14px 14px', display: 'flex', flexDirection: 'column', gap: '5px', flex: 1 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '6px' }}>
+          <span style={{ fontWeight: 600, fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
             {collection.name}
           </span>
-        </div>
-        <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-          {!isProject && !collection.archived && (
-            <button
-              className="btn-ghost"
-              style={{ padding: '4px 8px', fontSize: '12px' }}
-              title="Edit"
-              onClick={() => onEdit(collection)}
-            >
-              <Edit2 size={13} />
+          <div style={{ display: 'flex', gap: '2px', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+            {!isProject && !collection.archived && (
+              <button className="btn-ghost" style={{ padding: '3px 5px' }} title="Edit" onClick={() => onEdit(collection)}>
+                <Edit2 size={12} />
+              </button>
+            )}
+            <button className="btn-ghost" style={{ padding: '3px 5px' }} title={collection.archived ? 'Unarchive' : 'Archive'} onClick={() => onArchive(collection)}>
+              {collection.archived ? <ArchiveRestore size={12} /> : <Archive size={12} />}
             </button>
-          )}
-          <button
-            className="btn-ghost"
-            style={{ padding: '4px 8px', fontSize: '12px' }}
-            title={collection.archived ? 'Unarchive' : 'Archive'}
-            onClick={() => onArchive(collection)}
-          >
-            {collection.archived ? <ArchiveRestore size={13} /> : <Archive size={13} />}
-          </button>
-          <button
-            className="btn-ghost"
-            style={{ padding: '4px 8px', fontSize: '12px', color: 'var(--danger)' }}
-            title="Delete"
-            onClick={() => onDelete(collection)}
-          >
-            <Trash2 size={13} />
-          </button>
+            <button className="btn-ghost" style={{ padding: '3px 5px', color: 'var(--danger)' }} title="Delete" onClick={() => onDelete(collection)}>
+              <Trash2 size={12} />
+            </button>
+          </div>
         </div>
-      </div>
-      {collection.description && (
-        <p style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.4, margin: 0 }}>
-          {collection.description}
-        </p>
-      )}
-      {isProject && collection.project_title && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <FolderKanban size={12} color="var(--text-muted)" />
-          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{collection.project_title}</span>
-        </div>
-      )}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
-        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+
+        {collection.description && (
+          <p style={{
+            fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.4, margin: 0,
+            overflow: 'hidden', display: '-webkit-box',
+            WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+          }}>
+            {collection.description}
+          </p>
+        )}
+
+        {isProject && collection.project_title && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <FolderKanban size={11} color="var(--text-muted)" />
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{collection.project_title}</span>
+          </div>
+        )}
+
+        <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '1px' }}>
           {collection.card_count} {collection.card_count === 1 ? 'card' : 'cards'}
         </span>
       </div>
@@ -90,25 +106,25 @@ function EditModal({ collection, onSave, onClose }) {
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal-box" style={{ maxWidth: 480 }}>
         <div className="modal-header">
-          <h3 className="modal-title">Edit Collection</h3>
+          <span className="modal-title">Edit Collection</span>
           <button className="modal-close" onClick={onClose}><X size={18} /></button>
         </div>
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <div className="form-group">
+        <form onSubmit={handleSubmit}>
+          <div className="form-row">
             <label className="form-label">Name *</label>
-            <input className="form-input" value={name} onChange={e => setName(e.target.value)} autoFocus />
+            <input className="input" value={name} onChange={e => setName(e.target.value)} autoFocus />
           </div>
-          <div className="form-group">
+          <div className="form-row">
             <label className="form-label">Description</label>
-            <input className="form-input" value={description} onChange={e => setDescription(e.target.value)} placeholder="Optional description" />
+            <input className="input" value={description} onChange={e => setDescription(e.target.value)} placeholder="Optional description" />
           </div>
-          {error && <p style={{ color: 'var(--danger)', fontSize: '13px', margin: 0 }}>{error}</p>}
-          <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-            <button type="button" className="btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save Changes'}</button>
+          {error && <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 12px' }}>{error}</p>}
+          <div className="modal-footer">
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save Changes'}</button>
           </div>
         </form>
       </div>
@@ -117,40 +133,31 @@ function EditModal({ collection, onSave, onClose }) {
 }
 
 function NewCollectionModal({ projects, onClose, onCreated }) {
-  const [step, setStep] = useState('type'); // 'type' | 'project' | 'other'
-  const [collType, setCollType] = useState(null);
+  const [step, setStep] = useState('type');
 
-  // Project collection fields
   const [selectedProjectId, setSelectedProjectId] = useState('');
   const [projName, setProjName] = useState('');
   const [projDesc, setProjDesc] = useState('');
 
-  // Other collection fields
   const [otherName, setOtherName] = useState('');
   const [otherDesc, setOtherDesc] = useState('');
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  function pickType(type) {
-    setCollType(type);
-    setStep(type);
-    setError('');
-  }
+  function pickType(type) { setStep(type); setError(''); }
 
   function onProjectChange(pid) {
     setSelectedProjectId(pid);
     const proj = projects.find(p => String(p.id) === String(pid));
-    if (proj) setProjName(proj.title);
-    else setProjName('');
+    setProjName(proj ? proj.title : '');
   }
 
   async function handleCreateProject(e) {
     e.preventDefault();
     if (!selectedProjectId) { setError('Select a project'); return; }
     if (!projName.trim()) { setError('Name is required'); return; }
-    setSaving(true);
-    setError('');
+    setSaving(true); setError('');
     try {
       const res = await api.post('/collections', {
         name: projName.trim(),
@@ -167,8 +174,7 @@ function NewCollectionModal({ projects, onClose, onCreated }) {
   async function handleCreateOther(e) {
     e.preventDefault();
     if (!otherName.trim()) { setError('Name is required'); return; }
-    setSaving(true);
-    setError('');
+    setSaving(true); setError('');
     try {
       const res = await api.post('/collections', {
         name: otherName.trim(),
@@ -181,120 +187,107 @@ function NewCollectionModal({ projects, onClose, onCreated }) {
     }
   }
 
+  const typeCardBase = {
+    width: '100%', textAlign: 'left', cursor: 'pointer',
+    background: 'var(--bg-secondary)', border: '1px solid var(--border-default)',
+    borderRadius: 14, padding: '16px 18px',
+    color: 'var(--text-primary)', fontFamily: 'var(--font)',
+    transition: 'border-color 0.15s, background 0.15s',
+  };
+
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal-box" style={{ maxWidth: 480 }}>
         <div className="modal-header">
-          <h3 className="modal-title">New Collection</h3>
+          <span className="modal-title">New Collection</span>
           <button className="modal-close" onClick={onClose}><X size={18} /></button>
         </div>
 
         {step === 'type' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', paddingTop: '4px' }}>
-            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0 }}>What kind of collection do you want to create?</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '0 0 6px' }}>
+              What kind of collection?
+            </p>
+
             <button
-              className="card"
-              style={{ cursor: 'pointer', padding: '16px 18px', textAlign: 'left', border: '1px solid var(--border)', background: 'var(--card-bg)' }}
+              style={typeCardBase}
               onClick={() => pickType('project')}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = 'rgba(199,255,46,0.04)'; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-default)'; e.currentTarget.style.background = 'var(--bg-secondary)'; }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div style={{ width: 34, height: 34, borderRadius: 8, background: 'rgba(199,255,46,0.10)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <FolderKanban size={16} color="var(--accent)" />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '13px' }}>
+                <div style={{ width: 38, height: 38, borderRadius: 10, background: 'rgba(199,255,46,0.10)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <FolderKanban size={18} color="var(--accent)" />
                 </div>
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: '14px' }}>Project Collection</div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>Linked to a specific project. One per project.</div>
+                  <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: 3 }}>Project Collection</div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Linked to a specific project. One per project.</div>
                 </div>
               </div>
             </button>
+
             <button
-              className="card"
-              style={{ cursor: 'pointer', padding: '16px 18px', textAlign: 'left', border: '1px solid var(--border)', background: 'var(--card-bg)' }}
+              style={typeCardBase}
               onClick={() => pickType('other')}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = 'rgba(199,255,46,0.04)'; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-default)'; e.currentTarget.style.background = 'var(--bg-secondary)'; }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div style={{ width: 34, height: 34, borderRadius: 8, background: 'rgba(199,255,46,0.10)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <Library size={16} color="var(--accent)" />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '13px' }}>
+                <div style={{ width: 38, height: 38, borderRadius: 10, background: 'rgba(199,255,46,0.10)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Library size={18} color="var(--accent)" />
                 </div>
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: '14px' }}>Other Collection</div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>General-purpose inspiration board or reference.</div>
+                  <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: 3 }}>Other Collection</div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>General-purpose inspiration board or reference.</div>
                 </div>
               </div>
             </button>
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button type="button" className="btn-ghost" onClick={onClose}>Cancel</button>
+
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
             </div>
           </div>
         )}
 
         {step === 'project' && (
-          <form onSubmit={handleCreateProject} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div className="form-group">
+          <form onSubmit={handleCreateProject}>
+            <div className="form-row">
               <label className="form-label">Project *</label>
-              <select
-                className="form-input"
-                value={selectedProjectId}
-                onChange={e => onProjectChange(e.target.value)}
-                autoFocus
-              >
+              <select className="select" value={selectedProjectId} onChange={e => onProjectChange(e.target.value)} autoFocus>
                 <option value="">— select a project —</option>
-                {projects.map(p => (
-                  <option key={p.id} value={p.id}>{p.title}</option>
-                ))}
+                {projects.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
               </select>
             </div>
-            <div className="form-group">
+            <div className="form-row">
               <label className="form-label">Collection Name *</label>
-              <input
-                className="form-input"
-                value={projName}
-                onChange={e => setProjName(e.target.value)}
-                placeholder="Defaults to project title"
-              />
+              <input className="input" value={projName} onChange={e => setProjName(e.target.value)} placeholder="Defaults to project title" />
             </div>
-            <div className="form-group">
+            <div className="form-row">
               <label className="form-label">Description</label>
-              <input
-                className="form-input"
-                value={projDesc}
-                onChange={e => setProjDesc(e.target.value)}
-                placeholder="Optional description"
-              />
+              <input className="input" value={projDesc} onChange={e => setProjDesc(e.target.value)} placeholder="Optional description" />
             </div>
-            {error && <p style={{ color: 'var(--danger)', fontSize: '13px', margin: 0 }}>{error}</p>}
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <button type="button" className="btn-ghost" onClick={() => { setStep('type'); setError(''); }}>Back</button>
-              <button type="submit" className="btn-primary" disabled={saving}>{saving ? 'Creating…' : 'Create'}</button>
+            {error && <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 10px' }}>{error}</p>}
+            <div className="modal-footer">
+              <button type="button" className="btn btn-ghost" onClick={() => { setStep('type'); setError(''); }}>Back</button>
+              <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Creating…' : 'Create'}</button>
             </div>
           </form>
         )}
 
         {step === 'other' && (
-          <form onSubmit={handleCreateOther} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div className="form-group">
+          <form onSubmit={handleCreateOther}>
+            <div className="form-row">
               <label className="form-label">Name *</label>
-              <input
-                className="form-input"
-                value={otherName}
-                onChange={e => setOtherName(e.target.value)}
-                placeholder="e.g. UI/UX Inspiration"
-                autoFocus
-              />
+              <input className="input" value={otherName} onChange={e => setOtherName(e.target.value)} placeholder="e.g. UI/UX Inspiration" autoFocus />
             </div>
-            <div className="form-group">
+            <div className="form-row">
               <label className="form-label">Description</label>
-              <input
-                className="form-input"
-                value={otherDesc}
-                onChange={e => setOtherDesc(e.target.value)}
-                placeholder="Optional description"
-              />
+              <input className="input" value={otherDesc} onChange={e => setOtherDesc(e.target.value)} placeholder="Optional description" />
             </div>
-            {error && <p style={{ color: 'var(--danger)', fontSize: '13px', margin: 0 }}>{error}</p>}
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <button type="button" className="btn-ghost" onClick={() => { setStep('type'); setError(''); }}>Back</button>
-              <button type="submit" className="btn-primary" disabled={saving}>{saving ? 'Creating…' : 'Create'}</button>
+            {error && <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 10px' }}>{error}</p>}
+            <div className="modal-footer">
+              <button type="button" className="btn btn-ghost" onClick={() => { setStep('type'); setError(''); }}>Back</button>
+              <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Creating…' : 'Create'}</button>
             </div>
           </form>
         )}
@@ -309,7 +302,7 @@ const SECTION_LABEL = {
 };
 const TILE_GRID = {
   display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+  gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
   gap: '14px',
 };
 
@@ -321,13 +314,13 @@ export default function Collections() {
   const [activeTab, setActiveTab] = useState('active');
   const [showNewModal, setShowNewModal] = useState(false);
   const [editingColl, setEditingColl] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState(null);
+  const [searching, setSearching] = useState(false);
 
   async function loadData() {
     try {
-      const [colls, projs] = await Promise.all([
-        api.get('/collections'),
-        api.get('/projects'),
-      ]);
+      const [colls, projs] = await Promise.all([api.get('/collections'), api.get('/projects')]);
       setCollections(colls);
       setProjects(projs);
     } catch (_) {}
@@ -337,23 +330,44 @@ export default function Collections() {
     loadData().finally(() => setLoading(false));
   }, []);
 
+  // Debounced API card search
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!q) { setSearchResults(null); setSearching(false); return; }
+    setSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await api.get(`/collections/search?q=${encodeURIComponent(q)}`);
+        setSearchResults(res);
+      } catch (_) {}
+      setSearching(false);
+    }, 280);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  const isSearchMode = searchQuery.trim().length > 0;
+
   const activeCollections = collections.filter(c => !c.archived);
   const archivedCollections = collections.filter(c => c.archived);
+
+  // Client-side filter for instant visual feedback while typing
+  const searchFilteredCollections = isSearchMode
+    ? collections.filter(c => {
+        if (c.archived) return false;
+        const q = searchQuery.toLowerCase();
+        return c.name.toLowerCase().includes(q) || (c.description || '').toLowerCase().includes(q);
+      })
+    : [];
 
   const activeProject = activeCollections.filter(c => c.project_id !== null);
   const activeOther = activeCollections.filter(c => c.project_id === null);
   const archivedProject = archivedCollections.filter(c => c.project_id !== null);
   const archivedOther = archivedCollections.filter(c => c.project_id === null);
 
-  async function handleCreated(coll, alreadyExists = false) {
+  async function handleCreated(coll) {
     setShowNewModal(false);
-    if (alreadyExists) {
-      await loadData();
-      navigate(`/collections/${coll.id}`);
-    } else {
-      await loadData();
-      navigate(`/collections/${coll.id}`);
-    }
+    await loadData();
+    navigate(`/collections/${coll.id}`);
   }
 
   async function handleEdit(data) {
@@ -367,43 +381,40 @@ export default function Collections() {
     try {
       await api.del(`/collections/${coll.id}`);
       await loadData();
-    } catch (err) {
-      alert(err.message || 'Failed to delete');
-    }
+    } catch (err) { alert(err.message || 'Failed to delete'); }
   }
 
   async function handleArchive(coll) {
-    const newArchived = !coll.archived;
     try {
-      await api.patch(`/collections/${coll.id}/archive`, { archived: newArchived });
+      await api.patch(`/collections/${coll.id}/archive`, { archived: !coll.archived });
       await loadData();
-    } catch (err) {
-      alert(err.message || 'Failed to update');
-    }
+    } catch (err) { alert(err.message || 'Failed to update'); }
+  }
+
+  function TileGrid({ list }) {
+    return (
+      <div style={TILE_GRID}>
+        {list.map(c => (
+          <CollectionTile
+            key={c.id}
+            collection={c}
+            onEdit={coll => setEditingColl(coll)}
+            onDelete={handleDelete}
+            onArchive={handleArchive}
+            onClick={() => navigate(`/collections/${c.id}`)}
+          />
+        ))}
+      </div>
+    );
   }
 
   function CollectionSection({ label, list, emptyMsg }) {
     return (
       <section style={{ marginBottom: '32px' }}>
         <h2 style={SECTION_LABEL}>{label}</h2>
-        {list.length === 0 ? (
-          <div className="card" style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
-            {emptyMsg}
-          </div>
-        ) : (
-          <div style={TILE_GRID}>
-            {list.map(c => (
-              <CollectionTile
-                key={c.id}
-                collection={c}
-                onEdit={coll => setEditingColl(coll)}
-                onDelete={handleDelete}
-                onArchive={handleArchive}
-                onClick={() => navigate(`/collections/${c.id}`)}
-              />
-            ))}
-          </div>
-        )}
+        {list.length === 0
+          ? <div className="card" style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>{emptyMsg}</div>
+          : <TileGrid list={list} />}
       </section>
     );
   }
@@ -418,90 +429,156 @@ export default function Collections() {
     <div>
       <div className="page-header">
         <h1 className="page-title">Collections</h1>
-        <button className="btn-primary" onClick={() => setShowNewModal(true)}>
+        <button className="btn btn-primary" onClick={() => setShowNewModal(true)}>
           <Plus size={16} style={{ marginRight: 6 }} /> New Collection
         </button>
       </div>
 
-      {/* Active | Archived toggle */}
-      <div style={{ display: 'flex', gap: '4px', marginBottom: '28px', borderBottom: '1px solid var(--border)', paddingBottom: '0' }}>
-        {['active', 'archived'].map(tab => (
+      {/* Search bar */}
+      <div style={{ position: 'relative', marginBottom: '24px' }}>
+        <Search
+          size={15}
+          style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }}
+        />
+        <input
+          className="input"
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          placeholder="Search collections and cards…"
+          style={{ paddingLeft: 40, paddingRight: searchQuery ? 36 : 14 }}
+        />
+        {searchQuery && (
           <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              padding: '8px 16px', fontSize: '13px', fontWeight: 600,
-              color: activeTab === tab ? 'var(--accent)' : 'var(--text-muted)',
-              borderBottom: activeTab === tab ? '2px solid var(--accent)' : '2px solid transparent',
-              marginBottom: '-1px', textTransform: 'capitalize', transition: 'color 0.15s',
-            }}
+            onClick={() => setSearchQuery('')}
+            style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}
           >
-            {tab.charAt(0).toUpperCase() + tab.slice(1)}
-            {tab === 'active' && activeCollections.length > 0 && (
-              <span style={{ marginLeft: '6px', fontSize: '11px', background: 'var(--accent)', color: '#000', borderRadius: '10px', padding: '1px 6px', fontWeight: 700 }}>
-                {activeCollections.length}
-              </span>
-            )}
-            {tab === 'archived' && archivedCollections.length > 0 && (
-              <span style={{ marginLeft: '6px', fontSize: '11px', background: '#333', color: '#888', borderRadius: '10px', padding: '1px 6px', fontWeight: 700 }}>
-                {archivedCollections.length}
-              </span>
-            )}
+            <X size={14} />
           </button>
-        ))}
+        )}
       </div>
 
-      {activeTab === 'active' && (
+      {/* ── Search results view ── */}
+      {isSearchMode ? (
+        <div>
+          {/* Matching collections (client-side instant filter) */}
+          <section style={{ marginBottom: '32px' }}>
+            <h2 style={SECTION_LABEL}>
+              Matching Collections{searchFilteredCollections.length > 0 ? ` (${searchFilteredCollections.length})` : ''}
+            </h2>
+            {searchFilteredCollections.length === 0 ? (
+              <div className="card" style={{ padding: '14px 18px', color: 'var(--text-muted)', fontSize: '13px' }}>
+                No collections match "{searchQuery}"
+              </div>
+            ) : (
+              <TileGrid list={searchFilteredCollections} />
+            )}
+          </section>
+
+          {/* Matching cards (API search) */}
+          <section>
+            <h2 style={SECTION_LABEL}>
+              Matching Cards{searchResults && searchResults.cards.length > 0 ? ` (${searchResults.cards.length})` : ''}
+            </h2>
+            {searching ? (
+              <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Searching…</p>
+            ) : searchResults && searchResults.cards.length === 0 ? (
+              <div className="card" style={{ padding: '14px 18px', color: 'var(--text-muted)', fontSize: '13px' }}>
+                No cards match "{searchQuery}"
+              </div>
+            ) : searchResults ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {searchResults.cards.map(card => (
+                  <div
+                    key={card.id}
+                    className="card"
+                    style={{ padding: '11px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px' }}
+                    onClick={() => navigate(`/collections/${card.collection_id}`)}
+                  >
+                    <div style={{ flexShrink: 0, color: card.type === 'note' ? 'var(--accent)' : 'var(--text-muted)' }}>
+                      {card.type === 'note' ? <FileText size={14} /> : <Link2 size={14} />}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '13px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {card.title || card.url || 'Untitled'}
+                      </div>
+                      {card.note_text && (
+                        <div style={{ fontSize: '11px', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: '2px' }}>
+                          {card.note_text.slice(0, 120)}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ flexShrink: 0, fontSize: '11px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                      in {card.collection_name}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </section>
+        </div>
+      ) : (
         <>
-          {activeProject.length === 0 && activeOther.length === 0 ? (
-            <div className="card" style={{ padding: '48px 20px', textAlign: 'center' }}>
-              <Library size={32} color="var(--text-muted)" style={{ margin: '0 auto 12px' }} />
-              <p style={{ color: 'var(--text-secondary)', fontSize: '14px', marginBottom: '16px' }}>
-                No collections yet. Create one to start saving references and inspiration.
-              </p>
-              <button className="btn-primary" onClick={() => setShowNewModal(true)}>
-                <Plus size={15} style={{ marginRight: 6 }} /> Create your first collection
+          {/* ── Normal tabs + collections view ── */}
+          <div style={{ display: 'flex', gap: '4px', marginBottom: '28px', borderBottom: '1px solid var(--border)', paddingBottom: '0' }}>
+            {['active', 'archived'].map(tab => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  padding: '8px 16px', fontSize: '13px', fontWeight: 600,
+                  color: activeTab === tab ? 'var(--accent)' : 'var(--text-muted)',
+                  borderBottom: activeTab === tab ? '2px solid var(--accent)' : '2px solid transparent',
+                  marginBottom: '-1px', textTransform: 'capitalize', transition: 'color 0.15s',
+                }}
+              >
+                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                {tab === 'active' && activeCollections.length > 0 && (
+                  <span style={{ marginLeft: '6px', fontSize: '11px', background: 'var(--accent)', color: '#000', borderRadius: '10px', padding: '1px 6px', fontWeight: 700 }}>
+                    {activeCollections.length}
+                  </span>
+                )}
+                {tab === 'archived' && archivedCollections.length > 0 && (
+                  <span style={{ marginLeft: '6px', fontSize: '11px', background: '#333', color: '#888', borderRadius: '10px', padding: '1px 6px', fontWeight: 700 }}>
+                    {archivedCollections.length}
+                  </span>
+                )}
               </button>
-            </div>
-          ) : (
+            ))}
+          </div>
+
+          {activeTab === 'active' && (
             <>
-              <CollectionSection
-                label="Project Collections"
-                list={activeProject}
-                emptyMsg="No project collections yet. Create one from a project or here."
-              />
-              <CollectionSection
-                label="Other Collections"
-                list={activeOther}
-                emptyMsg="No other collections yet."
-              />
+              {activeProject.length === 0 && activeOther.length === 0 ? (
+                <div className="card" style={{ padding: '48px 20px', textAlign: 'center' }}>
+                  <Library size={32} color="var(--text-muted)" style={{ margin: '0 auto 12px', display: 'block' }} />
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '14px', marginBottom: '16px' }}>
+                    No collections yet. Create one to start saving references and inspiration.
+                  </p>
+                  <button className="btn btn-primary" onClick={() => setShowNewModal(true)}>
+                    <Plus size={15} style={{ marginRight: 6 }} /> Create your first collection
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <CollectionSection label="Project Collections" list={activeProject} emptyMsg="No project collections yet." />
+                  <CollectionSection label="Other Collections" list={activeOther} emptyMsg="No other collections yet." />
+                </>
+              )}
             </>
           )}
-        </>
-      )}
 
-      {activeTab === 'archived' && (
-        <>
-          {archivedProject.length === 0 && archivedOther.length === 0 ? (
-            <div className="card" style={{ padding: '32px 20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
-              No archived collections.
-            </div>
-          ) : (
+          {activeTab === 'archived' && (
             <>
-              {archivedProject.length > 0 && (
-                <CollectionSection
-                  label="Project Collections (Archived)"
-                  list={archivedProject}
-                  emptyMsg=""
-                />
-              )}
-              {archivedOther.length > 0 && (
-                <CollectionSection
-                  label="Other Collections (Archived)"
-                  list={archivedOther}
-                  emptyMsg=""
-                />
+              {archivedProject.length === 0 && archivedOther.length === 0 ? (
+                <div className="card" style={{ padding: '32px 20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
+                  No archived collections.
+                </div>
+              ) : (
+                <>
+                  {archivedProject.length > 0 && <CollectionSection label="Project Collections (Archived)" list={archivedProject} emptyMsg="" />}
+                  {archivedOther.length > 0 && <CollectionSection label="Other Collections (Archived)" list={archivedOther} emptyMsg="" />}
+                </>
               )}
             </>
           )}

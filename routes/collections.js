@@ -162,7 +162,10 @@ router.get('/', (req, res) => {
     let sql = `
       SELECT c.id, c.name, c.project_id, c.description, c.archived, c.created_at,
              p.title as project_title,
-             (SELECT COUNT(*) FROM collection_cards cc WHERE cc.collection_id = c.id) as card_count
+             (SELECT COUNT(*) FROM collection_cards cc WHERE cc.collection_id = c.id) as card_count,
+             (SELECT thumbnail_url FROM collection_cards
+              WHERE collection_id = c.id AND thumbnail_url IS NOT NULL
+              ORDER BY created_at DESC LIMIT 1) as cover_thumbnail
       FROM collections c
       LEFT JOIN projects p ON p.id = c.project_id
     `;
@@ -174,6 +177,41 @@ router.get('/', (req, res) => {
     sql += ' ORDER BY c.project_id IS NULL ASC, c.created_at DESC';
     const collections = db.prepare(sql).all(...params);
     res.json(collections);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/collections/search?q=...  — must be BEFORE /:id
+router.get('/search', (req, res) => {
+  try {
+    const q = (req.query.q || '').trim();
+    if (q.length < 1) return res.json({ collections: [], cards: [] });
+    const like = `%${q}%`;
+    const collections = db.prepare(`
+      SELECT c.id, c.name, c.description, c.project_id, c.archived, c.created_at,
+             p.title as project_title,
+             (SELECT COUNT(*) FROM collection_cards cc WHERE cc.collection_id = c.id) as card_count,
+             (SELECT thumbnail_url FROM collection_cards
+              WHERE collection_id = c.id AND thumbnail_url IS NOT NULL
+              ORDER BY created_at DESC LIMIT 1) as cover_thumbnail
+      FROM collections c
+      LEFT JOIN projects p ON p.id = c.project_id
+      WHERE c.archived = 0 AND (c.name LIKE ? OR c.description LIKE ?)
+      ORDER BY c.created_at DESC LIMIT 20
+    `).all(like, like);
+    const cards = db.prepare(`
+      SELECT cc.id, cc.collection_id, cc.type, cc.title, cc.url, cc.source,
+             cc.note_text, cc.tags, cc.thumbnail_url,
+             col.name as collection_name
+      FROM collection_cards cc
+      JOIN collections col ON col.id = cc.collection_id
+      WHERE col.archived = 0
+        AND (cc.title LIKE ? OR cc.note_text LIKE ? OR cc.url LIKE ?
+             OR cc.source LIKE ? OR cc.tags LIKE ?)
+      ORDER BY cc.created_at DESC LIMIT 30
+    `).all(like, like, like, like, like);
+    res.json({ collections, cards });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

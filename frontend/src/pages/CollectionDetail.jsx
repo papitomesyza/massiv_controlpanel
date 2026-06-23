@@ -1,13 +1,14 @@
 import React, { useEffect, useState, useRef } from 'react';
+import ReactDOM from 'react-dom';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ChevronLeft, Library, FolderKanban, Archive, ArchiveRestore, Trash2,
   Link2, FileText, MoreHorizontal, Edit2, Youtube, Play,
-  Globe, X, AlertCircle,
+  Globe, X, AlertCircle, Search,
 } from 'lucide-react';
 import { api } from '../api';
 
-// ── Source helpers ────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 const SOURCE_LABEL = {
   youtube: 'YouTube', vimeo: 'Vimeo', pinterest: 'Pinterest',
@@ -24,7 +25,30 @@ function getDomain(url) {
   try { return new URL(url).hostname.replace(/^www\./, ''); } catch (_) { return url; }
 }
 
-// ── Card thumbnail with source-icon fallback ──────────────────────────────────
+function parseTags(tags) {
+  if (!tags) return [];
+  return tags.split(',').map(t => t.trim()).filter(Boolean);
+}
+
+// ── Tag chip ──────────────────────────────────────────────────────────────────
+
+function TagChip({ tag, active, onClick }) {
+  return (
+    <button
+      onClick={e => { e.stopPropagation(); onClick(tag); }}
+      style={{
+        padding: '2px 9px', borderRadius: 50, fontSize: '11px', fontWeight: 600,
+        background: active ? 'var(--accent)' : 'rgba(199,255,46,0.08)',
+        color: active ? '#0F0F0F' : 'var(--accent)',
+        border: 'none', cursor: 'pointer', transition: 'all 0.15s', flexShrink: 0,
+      }}
+    >
+      {tag}
+    </button>
+  );
+}
+
+// ── Card thumbnail ────────────────────────────────────────────────────────────
 
 function CardThumbnail({ card }) {
   const [imgFailed, setImgFailed] = useState(false);
@@ -58,11 +82,7 @@ function CardThumbnail({ card }) {
           position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: 'rgba(0,0,0,0.22)',
         }}>
-          <div style={{
-            width: 46, height: 46, borderRadius: '50%',
-            background: 'rgba(0,0,0,0.72)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
+          <div style={{ width: 46, height: 46, borderRadius: '50%', background: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Play size={18} color="white" fill="white" style={{ marginLeft: 2 }} />
           </div>
         </div>
@@ -71,59 +91,75 @@ function CardThumbnail({ card }) {
   );
 }
 
-// ── Card dropdown menu ────────────────────────────────────────────────────────
+// ── Card dropdown menu — portal-based to escape overflow:hidden ───────────────
 
 function CardMenu({ isOpen, onToggle, onEdit, onDelete }) {
-  const ref = useRef();
+  const btnRef = useRef();
+  const menuRef = useRef();
+  const [menuPos, setMenuPos] = useState(null);
+
+  function handleToggle() {
+    if (!isOpen && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    }
+    onToggle();
+  }
+
+  // Close on outside click — check both the button and portal menu
   useEffect(() => {
     if (!isOpen) return;
     function handler(e) {
-      if (ref.current && !ref.current.contains(e.target)) onToggle();
+      const inBtn = btnRef.current && btnRef.current.contains(e.target);
+      const inMenu = menuRef.current && menuRef.current.contains(e.target);
+      if (!inBtn && !inMenu) onToggle();
     }
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [isOpen, onToggle]);
 
   return (
-    <div ref={ref} style={{ position: 'relative', flexShrink: 0 }}>
+    <div style={{ flexShrink: 0 }}>
       <button
+        ref={btnRef}
         className="btn-ghost"
-        onClick={e => { e.stopPropagation(); onToggle(); }}
+        onClick={e => { e.stopPropagation(); handleToggle(); }}
         style={{ padding: '3px 6px', opacity: 0.55, border: 'none' }}
         title="Options"
       >
         <MoreHorizontal size={14} />
       </button>
-      {isOpen && (
-        <div style={{
-          position: 'absolute', right: 0, top: '100%', zIndex: 60,
-          background: 'var(--bg-card)', border: '1px solid var(--border)',
-          borderRadius: '10px', minWidth: '130px', overflow: 'hidden',
-          boxShadow: '0 8px 28px rgba(0,0,0,0.55)',
-        }}>
+
+      {isOpen && menuPos && ReactDOM.createPortal(
+        <div
+          ref={menuRef}
+          style={{
+            position: 'fixed',
+            top: menuPos.top,
+            right: menuPos.right,
+            zIndex: 9999,
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-default)',
+            borderRadius: '10px',
+            minWidth: '130px',
+            overflow: 'hidden',
+            boxShadow: '0 8px 28px rgba(0,0,0,0.55)',
+          }}
+        >
           <button
-            style={{
-              display: 'flex', alignItems: 'center', gap: '8px',
-              width: '100%', padding: '10px 14px',
-              background: 'none', border: 'none', color: 'var(--text-primary)',
-              fontSize: '13px', cursor: 'pointer', textAlign: 'left',
-            }}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '10px 14px', background: 'none', border: 'none', color: 'var(--text-primary)', fontSize: '13px', cursor: 'pointer', textAlign: 'left' }}
             onClick={e => { e.stopPropagation(); onEdit(); onToggle(); }}
           >
             <Edit2 size={12} /> Edit
           </button>
           <button
-            style={{
-              display: 'flex', alignItems: 'center', gap: '8px',
-              width: '100%', padding: '10px 14px',
-              background: 'none', border: 'none', color: 'var(--danger)',
-              fontSize: '13px', cursor: 'pointer', textAlign: 'left',
-            }}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '10px 14px', background: 'none', border: 'none', color: 'var(--danger)', fontSize: '13px', cursor: 'pointer', textAlign: 'left' }}
             onClick={e => { e.stopPropagation(); onDelete(); onToggle(); }}
           >
             <Trash2 size={12} /> Delete
           </button>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -131,7 +167,9 @@ function CardMenu({ isOpen, onToggle, onEdit, onDelete }) {
 
 // ── Link card ─────────────────────────────────────────────────────────────────
 
-function LinkCard({ card, isMenuOpen, onMenuToggle, onEdit, onDelete }) {
+function LinkCard({ card, isMenuOpen, onMenuToggle, onEdit, onDelete, activeTag, onTagClick }) {
+  const tags = parseTags(card.tags);
+
   return (
     <div
       className="card"
@@ -161,6 +199,13 @@ function LinkCard({ card, isMenuOpen, onMenuToggle, onEdit, onDelete }) {
             {getDomain(card.url)}
           </span>
         </div>
+        {tags.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }} onClick={e => e.stopPropagation()}>
+            {tags.map(tag => (
+              <TagChip key={tag} tag={tag} active={activeTag === tag} onClick={onTagClick} />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -168,8 +213,9 @@ function LinkCard({ card, isMenuOpen, onMenuToggle, onEdit, onDelete }) {
 
 // ── Note card ─────────────────────────────────────────────────────────────────
 
-function NoteCard({ card, isMenuOpen, onMenuToggle, onEdit, onDelete, isExpanded, onToggleExpand }) {
+function NoteCard({ card, isMenuOpen, onMenuToggle, onEdit, onDelete, isExpanded, onToggleExpand, activeTag, onTagClick }) {
   const isLong = (card.note_text || '').length > 250;
+  const tags = parseTags(card.tags);
 
   return (
     <div
@@ -195,8 +241,7 @@ function NoteCard({ card, isMenuOpen, onMenuToggle, onEdit, onDelete, isExpanded
       <p
         style={{
           fontSize: '13px', lineHeight: 1.65, color: 'var(--text-secondary)', margin: 0,
-          whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-          overflow: 'hidden',
+          whiteSpace: 'pre-wrap', wordBreak: 'break-word', overflow: 'hidden',
           display: '-webkit-box',
           WebkitLineClamp: isExpanded ? 'unset' : 5,
           WebkitBoxOrient: 'vertical',
@@ -209,14 +254,17 @@ function NoteCard({ card, isMenuOpen, onMenuToggle, onEdit, onDelete, isExpanded
       {isLong && (
         <button
           onClick={onToggleExpand}
-          style={{
-            alignSelf: 'flex-start', fontSize: '11px', fontWeight: 700,
-            color: 'var(--accent)', background: 'none', border: 'none',
-            cursor: 'pointer', padding: 0,
-          }}
+          style={{ alignSelf: 'flex-start', fontSize: '11px', fontWeight: 700, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
         >
           {isExpanded ? 'Collapse ↑' : 'Read more ↓'}
         </button>
+      )}
+      {tags.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+          {tags.map(tag => (
+            <TagChip key={tag} tag={tag} active={activeTag === tag} onClick={onTagClick} />
+          ))}
+        </div>
       )}
     </div>
   );
@@ -224,10 +272,11 @@ function NoteCard({ card, isMenuOpen, onMenuToggle, onEdit, onDelete, isExpanded
 
 // ── Edit card modal ───────────────────────────────────────────────────────────
 
-function EditCardModal({ card, collectionId, onSave, onClose }) {
+function EditCardModal({ card, onSave, onClose }) {
   const [title, setTitle] = useState(card.title || '');
   const [noteText, setNoteText] = useState(card.note_text || '');
   const [url, setUrl] = useState(card.url || '');
+  const [tags, setTags] = useState(card.tags || '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -238,8 +287,8 @@ function EditCardModal({ card, collectionId, onSave, onClose }) {
     setSaving(true);
     try {
       await onSave(card.id, card.type === 'note'
-        ? { title: title.trim() || undefined, note_text: noteText }
-        : { title: title.trim() || undefined, url: url.trim() });
+        ? { title: title.trim() || undefined, note_text: noteText, tags: tags.trim() || null }
+        : { title: title.trim() || undefined, url: url.trim(), tags: tags.trim() || null });
       onClose();
     } catch (err) {
       setError(err.message || 'Failed to save');
@@ -249,32 +298,26 @@ function EditCardModal({ card, collectionId, onSave, onClose }) {
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal-box" style={{ maxWidth: 460 }}>
         <div className="modal-header">
-          <h3 className="modal-title">Edit {card.type === 'note' ? 'Note' : 'Link'}</h3>
+          <span className="modal-title">Edit {card.type === 'note' ? 'Note' : 'Link'}</span>
           <button className="modal-close" onClick={onClose}><X size={18} /></button>
         </div>
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <form onSubmit={handleSubmit}>
           {card.type === 'link' && (
-            <div className="form-group">
+            <div className="form-row">
               <label className="form-label">URL *</label>
-              <input
-                className="form-input"
-                value={url}
-                onChange={e => setUrl(e.target.value)}
-                placeholder="https://…"
-                autoFocus
-              />
-              <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', margin: '4px 0 0' }}>
+              <input className="input" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://…" autoFocus />
+              <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
                 Changing the URL re-fetches the thumbnail.
               </p>
             </div>
           )}
-          <div className="form-group">
+          <div className="form-row">
             <label className="form-label">Title {card.type === 'note' ? '(optional)' : '(optional override)'}</label>
             <input
-              className="form-input"
+              className="input"
               value={title}
               onChange={e => setTitle(e.target.value)}
               placeholder={card.type === 'note' ? 'Optional title' : 'Leave blank to use fetched title'}
@@ -282,27 +325,23 @@ function EditCardModal({ card, collectionId, onSave, onClose }) {
             />
           </div>
           {card.type === 'note' && (
-            <div className="form-group">
+            <div className="form-row">
               <label className="form-label">Note *</label>
-              <textarea
-                className="form-input"
-                value={noteText}
-                onChange={e => setNoteText(e.target.value)}
-                rows={5}
-                style={{ resize: 'vertical', minHeight: '80px' }}
-              />
+              <textarea className="input" value={noteText} onChange={e => setNoteText(e.target.value)} rows={5} style={{ resize: 'vertical', minHeight: '80px' }} />
             </div>
           )}
+          <div className="form-row">
+            <label className="form-label">Tags <span style={{ color: 'var(--text-muted)', textTransform: 'none', fontWeight: 400 }}>(comma-separated)</span></label>
+            <input className="input" value={tags} onChange={e => setTags(e.target.value)} placeholder="design, color, 3D" />
+          </div>
           {error && (
-            <p style={{ color: 'var(--danger)', fontSize: '13px', margin: 0, display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 12px', display: 'flex', alignItems: 'center', gap: '5px' }}>
               <AlertCircle size={13} /> {error}
             </p>
           )}
-          <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-            <button type="button" className="btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn-primary" disabled={saving}>
-              {saving ? 'Saving…' : 'Save'}
-            </button>
+          <div className="modal-footer">
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
           </div>
         </form>
       </div>
@@ -321,11 +360,13 @@ export default function CollectionDetail() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
-  // Add form
-  const [addMode, setAddMode] = useState(null); // null | 'link' | 'note'
+  // Add form state
+  const [addMode, setAddMode] = useState(null);
   const [linkUrl, setLinkUrl] = useState('');
+  const [linkTags, setLinkTags] = useState('');
   const [noteTitle, setNoteTitle] = useState('');
   const [noteText, setNoteText] = useState('');
+  const [noteTags, setNoteTags] = useState('');
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState('');
 
@@ -333,6 +374,10 @@ export default function CollectionDetail() {
   const [openMenuId, setOpenMenuId] = useState(null);
   const [editingCard, setEditingCard] = useState(null);
   const [expandedIds, setExpandedIds] = useState(new Set());
+
+  // Search + tag filter
+  const [cardSearch, setCardSearch] = useState('');
+  const [activeTag, setActiveTag] = useState(null);
 
   async function loadCollection() {
     try {
@@ -349,16 +394,27 @@ export default function CollectionDetail() {
     loadCollection().finally(() => setLoading(false));
   }, [id]);
 
+  // Filtered cards combining text search and active tag
+  const displayedCards = cards.filter(card => {
+    const q = cardSearch.trim().toLowerCase();
+    const matchSearch = !q || [card.title, card.note_text, card.url, card.source, card.tags]
+      .some(f => f && f.toLowerCase().includes(q));
+    const matchTag = !activeTag
+      || parseTags(card.tags).some(t => t.toLowerCase() === activeTag.toLowerCase());
+    return matchSearch && matchTag;
+  });
+
   async function handleAddLink(e) {
     e.preventDefault();
     if (!linkUrl.trim()) { setAddError('Please enter a URL'); return; }
-    setAdding(true);
-    setAddError('');
+    setAdding(true); setAddError('');
     try {
-      const card = await api.post(`/collections/${id}/cards`, { type: 'link', url: linkUrl.trim() });
+      const card = await api.post(`/collections/${id}/cards`, {
+        type: 'link', url: linkUrl.trim(),
+        tags: linkTags.trim() || undefined,
+      });
       setCards(prev => [card, ...prev]);
-      setLinkUrl('');
-      setAddMode(null);
+      setLinkUrl(''); setLinkTags(''); setAddMode(null);
     } catch (err) {
       setAddError(err.message || 'Failed to add link');
     } finally {
@@ -369,18 +425,16 @@ export default function CollectionDetail() {
   async function handleAddNote(e) {
     e.preventDefault();
     if (!noteText.trim()) { setAddError('Note text is required'); return; }
-    setAdding(true);
-    setAddError('');
+    setAdding(true); setAddError('');
     try {
       const card = await api.post(`/collections/${id}/cards`, {
         type: 'note',
         title: noteTitle.trim() || undefined,
         note_text: noteText.trim(),
+        tags: noteTags.trim() || undefined,
       });
       setCards(prev => [card, ...prev]);
-      setNoteTitle('');
-      setNoteText('');
-      setAddMode(null);
+      setNoteTitle(''); setNoteText(''); setNoteTags(''); setAddMode(null);
     } catch (err) {
       setAddError(err.message || 'Failed to add note');
     } finally {
@@ -408,9 +462,7 @@ export default function CollectionDetail() {
     try {
       await api.patch(`/collections/${id}/archive`, { archived: newArchived });
       setCollection(prev => ({ ...prev, archived: newArchived }));
-    } catch (err) {
-      alert(err.message || 'Failed');
-    }
+    } catch (err) { alert(err.message || 'Failed'); }
   }
 
   async function handleDeleteCollection() {
@@ -418,16 +470,13 @@ export default function CollectionDetail() {
     try {
       await api.del(`/collections/${id}`);
       navigate('/collections');
-    } catch (err) {
-      alert(err.message || 'Failed to delete');
-    }
+    } catch (err) { alert(err.message || 'Failed to delete'); }
   }
 
   function cancelAdd() {
     setAddMode(null);
-    setLinkUrl('');
-    setNoteTitle('');
-    setNoteText('');
+    setLinkUrl(''); setLinkTags('');
+    setNoteTitle(''); setNoteText(''); setNoteTags('');
     setAddError('');
   }
 
@@ -441,6 +490,10 @@ export default function CollectionDetail() {
 
   function toggleMenu(cardId) {
     setOpenMenuId(prev => prev === cardId ? null : cardId);
+  }
+
+  function handleTagClick(tag) {
+    setActiveTag(prev => prev === tag ? null : tag);
   }
 
   // ── Render ───────────────────────────────────────────────────────────────
@@ -474,11 +527,7 @@ export default function CollectionDetail() {
 
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0, flex: 1 }}>
-            <div style={{
-              width: 40, height: 40, borderRadius: 10,
-              background: 'rgba(199,255,46,0.10)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-            }}>
+            <div style={{ width: 40, height: 40, borderRadius: 10, background: 'rgba(199,255,46,0.10)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <Library size={20} color="var(--accent)" />
             </div>
             <div style={{ minWidth: 0 }}>
@@ -504,22 +553,12 @@ export default function CollectionDetail() {
           </div>
 
           <div style={{ display: 'flex', gap: '8px', flexShrink: 0, flexWrap: 'wrap' }}>
-            <button
-              className="btn-ghost"
-              style={{ padding: '7px 13px', fontSize: '12px' }}
-              onClick={handleArchive}
-              title={collection.archived ? 'Unarchive' : 'Archive'}
-            >
+            <button className="btn-ghost" style={{ padding: '7px 13px', fontSize: '12px' }} onClick={handleArchive} title={collection.archived ? 'Unarchive' : 'Archive'}>
               {collection.archived
                 ? <><ArchiveRestore size={13} style={{ marginRight: 5 }} /> Unarchive</>
                 : <><Archive size={13} style={{ marginRight: 5 }} /> Archive</>}
             </button>
-            <button
-              className="btn-ghost"
-              style={{ padding: '7px 13px', fontSize: '12px', color: 'var(--danger)', borderColor: 'rgba(255,68,68,0.3)' }}
-              onClick={handleDeleteCollection}
-              title="Delete collection"
-            >
+            <button className="btn-ghost" style={{ padding: '7px 13px', fontSize: '12px', color: 'var(--danger)', borderColor: 'rgba(255,68,68,0.3)' }} onClick={handleDeleteCollection} title="Delete collection">
               <Trash2 size={13} style={{ marginRight: 5 }} /> Delete
             </button>
           </div>
@@ -532,21 +571,13 @@ export default function CollectionDetail() {
         )}
       </div>
 
-      {/* ── Add affordance buttons (when no form is open) ── */}
+      {/* ── Add affordance buttons ── */}
       {!addMode && (
-        <div style={{ display: 'flex', gap: '10px', marginBottom: '24px', flexWrap: 'wrap' }}>
-          <button
-            className="btn-primary"
-            style={{ fontSize: '13px', padding: '8px 18px' }}
-            onClick={() => { setAddMode('link'); setAddError(''); }}
-          >
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
+          <button className="btn-primary" style={{ fontSize: '13px', padding: '8px 18px' }} onClick={() => { setAddMode('link'); setAddError(''); }}>
             <Link2 size={14} style={{ marginRight: 6 }} /> Add Link
           </button>
-          <button
-            className="btn-ghost"
-            style={{ fontSize: '13px', padding: '8px 18px' }}
-            onClick={() => { setAddMode('note'); setAddError(''); }}
-          >
+          <button className="btn-ghost" style={{ fontSize: '13px', padding: '8px 18px' }} onClick={() => { setAddMode('note'); setAddError(''); }}>
             <FileText size={14} style={{ marginRight: 6 }} /> Add Note
           </button>
         </div>
@@ -558,40 +589,40 @@ export default function CollectionDetail() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
             <Link2 size={14} color="var(--accent)" />
             <span style={{ fontWeight: 700, fontSize: '14px' }}>Add Link</span>
-            <button
-              onClick={cancelAdd}
-              style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}
-            >
+            <button onClick={cancelAdd} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}>
               <X size={15} />
             </button>
           </div>
-          <form onSubmit={handleAddLink} style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <form onSubmit={handleAddLink} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <input
-              className="form-input"
-              style={{ flex: 1, minWidth: '200px' }}
+              className="input"
               placeholder="Paste a URL — YouTube, Vimeo, Pinterest, Behance, or any site…"
               value={linkUrl}
               onChange={e => setLinkUrl(e.target.value)}
               autoFocus
               disabled={adding}
             />
-            <button type="submit" className="btn-primary" style={{ flexShrink: 0 }} disabled={adding}>
-              {adding ? 'Fetching…' : 'Add'}
-            </button>
-            <button type="button" className="btn-ghost" style={{ flexShrink: 0 }} onClick={cancelAdd} disabled={adding}>
-              Cancel
-            </button>
+            <input
+              className="input"
+              placeholder="Tags: design, color, 3D  (optional, comma-separated)"
+              value={linkTags}
+              onChange={e => setLinkTags(e.target.value)}
+              disabled={adding}
+              style={{ fontSize: '13px' }}
+            />
+            {adding && (
+              <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>Fetching preview — this may take a few seconds…</p>
+            )}
+            {addError && !adding && (
+              <p style={{ color: 'var(--danger)', fontSize: '12px', margin: 0, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <AlertCircle size={12} /> {addError}
+              </p>
+            )}
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button type="submit" className="btn-primary" style={{ flexShrink: 0 }} disabled={adding}>{adding ? 'Fetching…' : 'Add'}</button>
+              <button type="button" className="btn-ghost" style={{ flexShrink: 0 }} onClick={cancelAdd} disabled={adding}>Cancel</button>
+            </div>
           </form>
-          {adding && (
-            <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '10px' }}>
-              Fetching preview — this may take a few seconds…
-            </p>
-          )}
-          {addError && !adding && (
-            <p style={{ color: 'var(--danger)', fontSize: '12px', marginTop: '10px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <AlertCircle size={12} /> {addError}
-            </p>
-          )}
         </div>
       )}
 
@@ -601,30 +632,20 @@ export default function CollectionDetail() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
             <FileText size={14} color="var(--accent)" />
             <span style={{ fontWeight: 700, fontSize: '14px' }}>Add Note</span>
-            <button
-              onClick={cancelAdd}
-              style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}
-            >
+            <button onClick={cancelAdd} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}>
               <X size={15} />
             </button>
           </div>
-          <form onSubmit={handleAddNote} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <form onSubmit={handleAddNote} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <input className="input" placeholder="Title (optional)" value={noteTitle} onChange={e => setNoteTitle(e.target.value)} autoFocus disabled={adding} />
+            <textarea className="input" placeholder="Write your note…" value={noteText} onChange={e => setNoteText(e.target.value)} rows={4} style={{ resize: 'vertical', minHeight: '80px' }} disabled={adding} />
             <input
-              className="form-input"
-              placeholder="Title (optional)"
-              value={noteTitle}
-              onChange={e => setNoteTitle(e.target.value)}
-              autoFocus
+              className="input"
+              placeholder="Tags: design, color, 3D  (optional, comma-separated)"
+              value={noteTags}
+              onChange={e => setNoteTags(e.target.value)}
               disabled={adding}
-            />
-            <textarea
-              className="form-input"
-              placeholder="Write your note…"
-              value={noteText}
-              onChange={e => setNoteText(e.target.value)}
-              rows={4}
-              style={{ resize: 'vertical', minHeight: '80px' }}
-              disabled={adding}
+              style={{ fontSize: '13px' }}
             />
             {addError && (
               <p style={{ color: 'var(--danger)', fontSize: '12px', margin: 0, display: 'flex', alignItems: 'center', gap: '5px' }}>
@@ -633,11 +654,44 @@ export default function CollectionDetail() {
             )}
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
               <button type="button" className="btn-ghost" onClick={cancelAdd} disabled={adding}>Cancel</button>
-              <button type="submit" className="btn-primary" disabled={adding}>
-                {adding ? 'Saving…' : 'Add Note'}
-              </button>
+              <button type="submit" className="btn-primary" disabled={adding}>{adding ? 'Saving…' : 'Add Note'}</button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* ── Search bar + tag filter (only when cards exist) ── */}
+      {cards.length > 0 && (
+        <div style={{ marginBottom: '20px' }}>
+          <div style={{ position: 'relative', marginBottom: activeTag ? '10px' : 0 }}>
+            <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+            <input
+              className="input"
+              value={cardSearch}
+              onChange={e => setCardSearch(e.target.value)}
+              placeholder="Search cards by title, text, URL, tags…"
+              style={{ paddingLeft: 36, paddingRight: cardSearch ? 32 : 12, fontSize: '13px' }}
+            />
+            {cardSearch && (
+              <button
+                onClick={() => setCardSearch('')}
+                style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
+          {activeTag && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Filtering by tag:</span>
+              <button
+                onClick={() => setActiveTag(null)}
+                style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '3px 10px 3px 10px', borderRadius: 50, fontSize: '12px', fontWeight: 600, background: 'var(--accent)', color: '#0F0F0F', border: 'none', cursor: 'pointer' }}
+              >
+                {activeTag} <X size={11} />
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -662,40 +716,57 @@ export default function CollectionDetail() {
         </div>
       )}
 
-      {/* ── Masonry card grid ── */}
+      {/* ── Card grid ── */}
       {cards.length > 0 && (
-        <div style={{ columnWidth: '300px', columnGap: '16px' }}>
-          {cards.map(card => (
-            <div key={card.id} style={{ breakInside: 'avoid', marginBottom: '16px' }}>
-              {card.type === 'link' ? (
-                <LinkCard
-                  card={card}
-                  isMenuOpen={openMenuId === card.id}
-                  onMenuToggle={() => toggleMenu(card.id)}
-                  onEdit={() => { setEditingCard(card); setOpenMenuId(null); }}
-                  onDelete={() => handleDeleteCard(card.id)}
-                />
-              ) : (
-                <NoteCard
-                  card={card}
-                  isMenuOpen={openMenuId === card.id}
-                  onMenuToggle={() => toggleMenu(card.id)}
-                  onEdit={() => { setEditingCard(card); setOpenMenuId(null); }}
-                  onDelete={() => handleDeleteCard(card.id)}
-                  isExpanded={expandedIds.has(card.id)}
-                  onToggleExpand={() => toggleExpand(card.id)}
-                />
-              )}
-            </div>
-          ))}
-        </div>
+        displayedCards.length === 0 ? (
+          <div className="card" style={{ padding: '28px 20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
+            No cards match{activeTag ? ` tag "${activeTag}"` : ''}{cardSearch ? ` "${cardSearch}"` : ''}.
+            {(cardSearch || activeTag) && (
+              <button
+                onClick={() => { setCardSearch(''); setActiveTag(null); }}
+                style={{ marginLeft: '10px', color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px' }}
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
+        ) : (
+          <div style={{ columnWidth: '300px', columnGap: '16px' }}>
+            {displayedCards.map(card => (
+              <div key={card.id} style={{ breakInside: 'avoid', marginBottom: '16px' }}>
+                {card.type === 'link' ? (
+                  <LinkCard
+                    card={card}
+                    isMenuOpen={openMenuId === card.id}
+                    onMenuToggle={() => toggleMenu(card.id)}
+                    onEdit={() => { setEditingCard(card); setOpenMenuId(null); }}
+                    onDelete={() => handleDeleteCard(card.id)}
+                    activeTag={activeTag}
+                    onTagClick={handleTagClick}
+                  />
+                ) : (
+                  <NoteCard
+                    card={card}
+                    isMenuOpen={openMenuId === card.id}
+                    onMenuToggle={() => toggleMenu(card.id)}
+                    onEdit={() => { setEditingCard(card); setOpenMenuId(null); }}
+                    onDelete={() => handleDeleteCard(card.id)}
+                    isExpanded={expandedIds.has(card.id)}
+                    onToggleExpand={() => toggleExpand(card.id)}
+                    activeTag={activeTag}
+                    onTagClick={handleTagClick}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+        )
       )}
 
-      {/* ── Edit modal ── */}
+      {/* ── Edit card modal ── */}
       {editingCard && (
         <EditCardModal
           card={editingCard}
-          collectionId={id}
           onSave={handleEditCard}
           onClose={() => setEditingCard(null)}
         />
