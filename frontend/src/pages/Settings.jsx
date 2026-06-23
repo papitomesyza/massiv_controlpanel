@@ -200,7 +200,7 @@ export default function Settings() {
           </div>
 
           {/* Logo row */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '20px', marginBottom: '24px' }}>
+          <div className="settings-logo-row">
             <div style={{ flexShrink: 0 }}>
               {logo
                 ? <img src={logo} alt="Agency Logo" style={{ maxHeight: '80px', width: 'auto', maxWidth: '200px', objectFit: 'contain', display: 'block' }} />
@@ -219,7 +219,7 @@ export default function Settings() {
               <div style={{ fontSize: '12px', color: '#888888', marginBottom: '14px' }}>
                 Displayed in the sidebar. Recommended: square image, min 128×128px
               </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div className="settings-logo-btns">
                 <button className="btn btn-primary btn-sm" onClick={() => fileInputRef.current?.click()}>
                   Upload Logo
                 </button>
@@ -267,7 +267,7 @@ export default function Settings() {
           {/* Favicon */}
           <div className="form-row" style={{ marginBottom: '0' }}>
             <label className="form-label">Favicon</label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div className="settings-favicon-row">
               {favicon && (
                 <img
                   src={favicon}
@@ -367,7 +367,7 @@ export default function Settings() {
               </div>
             ))}
           </div>
-          <div className="flex-center gap-2" style={{ flexWrap: 'wrap' }}>
+          <div className="settings-cat-inputs">
             <input className="input" style={{ maxWidth: '220px' }} placeholder="Category name..." value={newProjCat.name} onChange={e => setNewProjCat(p => ({ ...p, name: e.target.value }))} />
             <select className="select" style={{ maxWidth: '180px' }} value={newProjCat.group_name} onChange={e => setNewProjCat(p => ({ ...p, group_name: e.target.value }))}>
               <option value="">Select group</option>
