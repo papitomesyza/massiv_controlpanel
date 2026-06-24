@@ -87,10 +87,41 @@ function detectSource(url) {
     if (h.includes('pinterest.')) return 'pinterest';
     if (h.includes('behance.net')) return 'behance';
     if (h.includes('instagram.')) return 'instagram';
+    if (h.includes('tiktok.')) return 'tiktok';
     if (h.includes('dribbble.')) return 'dribbble';
     if (h.includes('twitter.') || h === 'x.com') return 'twitter';
   } catch (_) {}
   return 'web';
+}
+
+function parseInstagramMeta(url) {
+  try {
+    const parts = new URL(url).pathname.split('/').filter(Boolean);
+    const RESERVED = ['explore', 'stories', 'accounts', 'direct', 'login', 'ar', 'challenge', 'about', 'blog', 'legal', 'help'];
+    let username = null;
+    let postType = 'post';
+    if (parts[0] === 'p') postType = 'post';
+    else if (parts[0] === 'reel' || parts[0] === 'reels') postType = 'reel';
+    else if (parts[0] === 'tv') postType = 'video';
+    else if (parts[0] && !RESERVED.includes(parts[0])) {
+      username = parts[0];
+      if (parts[1] === 'p') postType = 'post';
+      else if (parts[1] === 'reel' || parts[1] === 'reels') postType = 'reel';
+      else if (parts[1] === 'tv') postType = 'video';
+      else postType = 'profile';
+    }
+    return { username, postType };
+  } catch (_) {
+    return { username: null, postType: 'post' };
+  }
+}
+
+function buildInstagramTitle(username, postType) {
+  const handle = username ? `@${username}` : null;
+  if (postType === 'reel') return handle ? `${handle} · Instagram Reel` : 'Instagram Reel';
+  if (postType === 'video') return handle ? `${handle} · Instagram Video` : 'Instagram Video';
+  if (postType === 'profile') return handle ? `${handle} on Instagram` : 'Instagram Profile';
+  return handle ? `${handle} on Instagram` : 'Instagram Post';
 }
 
 async function fetchLinkPreview(rawUrl) {
@@ -134,6 +165,31 @@ async function fetchLinkPreview(rawUrl) {
       return { title: null, thumbnail_url: null, source: 'vimeo' };
     }
 
+    // TikTok — public oEmbed endpoint, no auth required; covers tiktok.com and vm.tiktok.com short links
+    if (/tiktok\./i.test(url)) {
+      try {
+        const r = await fetchWithTimeout(
+          `https://www.tiktok.com/oembed?url=${encodeURIComponent(url)}`,
+          7000
+        );
+        if (r.ok) {
+          const d = await r.json();
+          return {
+            title: d.title || (d.author_name ? `${d.author_name} on TikTok` : null),
+            thumbnail_url: d.thumbnail_url || null,
+            source: 'tiktok',
+          };
+        }
+      } catch (_) {}
+      return { title: null, thumbnail_url: null, source: 'tiktok' };
+    }
+
+    // Instagram — server-side preview is blocked for logged-out requests; extract what we can from the URL
+    if (/instagram\./i.test(url)) {
+      const { username, postType } = parseInstagramMeta(url);
+      return { title: buildInstagramTitle(username, postType), thumbnail_url: null, source: 'instagram' };
+    }
+
     const source = detectSource(url);
     const html = await fetchHtml(url);
     if (!html) return { title: null, thumbnail_url: null, source };
@@ -161,7 +217,10 @@ router.get('/', (req, res) => {
              (SELECT COUNT(*) FROM collection_cards cc WHERE cc.collection_id = c.id) as card_count,
              (SELECT thumbnail_url FROM collection_cards
               WHERE collection_id = c.id AND thumbnail_url IS NOT NULL
-              ORDER BY created_at DESC LIMIT 1) as cover_thumbnail
+              ORDER BY created_at DESC LIMIT 1) as cover_thumbnail,
+             (SELECT source FROM collection_cards
+              WHERE collection_id = c.id AND type = 'link'
+              ORDER BY created_at DESC LIMIT 1) as cover_source
       FROM collections c
       LEFT JOIN projects p ON p.id = c.project_id
     `;
@@ -190,7 +249,10 @@ router.get('/search', (req, res) => {
              (SELECT COUNT(*) FROM collection_cards cc WHERE cc.collection_id = c.id) as card_count,
              (SELECT thumbnail_url FROM collection_cards
               WHERE collection_id = c.id AND thumbnail_url IS NOT NULL
-              ORDER BY created_at DESC LIMIT 1) as cover_thumbnail
+              ORDER BY created_at DESC LIMIT 1) as cover_thumbnail,
+             (SELECT source FROM collection_cards
+              WHERE collection_id = c.id AND type = 'link'
+              ORDER BY created_at DESC LIMIT 1) as cover_source
       FROM collections c
       LEFT JOIN projects p ON p.id = c.project_id
       WHERE c.archived = 0 AND (c.name LIKE ? OR c.description LIKE ?)

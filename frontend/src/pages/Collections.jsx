@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Plus, Edit2, Trash2, FolderKanban, Library, Clapperboard, User, X,
   Archive, ArchiveRestore, Search, Link2, FileText, GripVertical,
+  Instagram, Music2,
 } from 'lucide-react';
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors,
@@ -25,6 +26,8 @@ function CollectionTile({ collection, onEdit, onDelete, onArchive, onClick }) {
   const isProject = collection.kind === 'project';
   const [imgFailed, setImgFailed] = useState(false);
   const hasCover = !!collection.cover_thumbnail && !imgFailed;
+  const isInstagramCover = !hasCover && collection.cover_source === 'instagram';
+  const isTikTokCover = !hasCover && collection.cover_source === 'tiktok';
 
   return (
     <div
@@ -45,6 +48,21 @@ function CollectionTile({ collection, onEdit, onDelete, onArchive, onClick }) {
             style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
             loading="lazy"
           />
+        ) : isInstagramCover ? (
+          <div style={{
+            width: '100%', height: '100%',
+            background: 'linear-gradient(135deg, #833ab4 0%, #fd1d1d 50%, #fcb045 100%)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Instagram size={30} color="rgba(255,255,255,0.92)" strokeWidth={1.5} />
+          </div>
+        ) : isTikTokCover ? (
+          <div style={{
+            width: '100%', height: '100%', background: '#010101',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Music2 size={30} color="rgba(255,255,255,0.85)" strokeWidth={1.5} />
+          </div>
         ) : (
           <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Library size={28} color="var(--text-muted)" style={{ opacity: 0.28 }} />
@@ -376,11 +394,7 @@ const SECTION_LABEL = {
   fontSize: '11px', fontWeight: 700, letterSpacing: '0.1em',
   textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '14px',
 };
-const TILE_GRID = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-  gap: '14px',
-};
+const TILE_GRID = 'collections-tile-grid';
 
 function SortableSection({ kind, list, onListChange, onEdit, onDelete, onArchive, navigate }) {
   const meta = KIND_META[kind];
@@ -408,7 +422,7 @@ function SortableSection({ kind, list, onListChange, onEdit, onDelete, onArchive
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={list.map(c => c.id)} strategy={rectSortingStrategy}>
-            <div style={TILE_GRID}>
+            <div className={TILE_GRID}>
               {list.map(c => (
                 <SortableCollectionTile
                   key={c.id}
@@ -431,7 +445,7 @@ function SortableSection({ kind, list, onListChange, onEdit, onDelete, onArchive
 
 function StaticTileGrid({ list, onEdit, onDelete, onArchive, navigate }) {
   return (
-    <div style={TILE_GRID}>
+    <div className={TILE_GRID}>
       {list.map(c => (
         <CollectionTile
           key={c.id}
@@ -598,7 +612,7 @@ export default function Collections() {
                 No collections match "{searchQuery}"
               </div>
             ) : (
-              <div style={TILE_GRID}>
+              <div className={TILE_GRID}>
                 {searchFilteredCollections.map(c => (
                   <CollectionTile key={c.id} collection={c} onEdit={setEditingColl} onDelete={handleDelete} onArchive={handleArchive} onClick={() => navigate(`/collections/${c.id}`)} />
                 ))}

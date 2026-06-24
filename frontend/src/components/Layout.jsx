@@ -3,7 +3,7 @@ import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, FolderKanban, Users, UserCog, Package,
   BarChart3, FileText, Settings, LogOut, CalendarDays, MapPin, Receipt,
-  Plus, X, Lightbulb, LayoutGrid, Library,
+  Plus, X, Lightbulb, LayoutGrid, Library, ChevronRight,
 } from 'lucide-react';
 import { useAgency } from '../context/AgencyContext';
 import { api } from '../api';
@@ -61,6 +61,17 @@ function fmtShortDate(d) {
   return `${day}/${month}`;
 }
 
+function getGroupForPath(pathname) {
+  if (OPS_LINKS.some(l => pathname.startsWith(l.to))) return 'ops';
+  if (DB_LINKS.some(l => pathname.startsWith(l.to))) return 'db';
+  if (MIND_LINKS.some(l => pathname.startsWith(l.to))) return 'mind';
+  return null;
+}
+
+function hasActiveLink(links, pathname) {
+  return links.some(l => pathname.startsWith(l.to));
+}
+
 export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -70,6 +81,7 @@ export default function Layout() {
   const [floatMenuOpen, setFloatMenuOpen] = useState(false);
   const fabRef = useRef(null);
   const [showSetupWizard, setShowSetupWizard] = useState(false);
+  const [openGroup, setOpenGroup] = useState(() => getGroupForPath(location.pathname) || 'ops');
 
   useEffect(() => {
     api.get('/calendar/upcoming?limit=3').then(setUpcoming).catch(() => {});
@@ -93,10 +105,16 @@ export default function Layout() {
     return () => document.removeEventListener('mousedown', handleClick);
   }, [fabOpen]);
 
-  // Close all launchers on navigation
+  // Close all launchers on navigation; auto-open the active group
   useEffect(() => {
     setFloatMenuOpen(false);
+    const group = getGroupForPath(location.pathname);
+    if (group) setOpenGroup(group);
   }, [location.pathname]);
+
+  function toggleGroup(group) {
+    setOpenGroup(prev => prev === group ? null : group);
+  }
 
   async function logout() {
     try { await api.post('/auth/logout', {}); } catch (_) {}
@@ -142,39 +160,60 @@ export default function Layout() {
 
         <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
           <nav className="sidebar-nav">
-            <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#444', padding: '4px 16px 6px', userSelect: 'none' }}>
-              Operations
+            {/* OPERATIONS */}
+            <button
+              className={`sidebar-group-header${hasActiveLink(OPS_LINKS, location.pathname) && openGroup !== 'ops' ? ' has-active' : ''}`}
+              onClick={() => toggleGroup('ops')}
+            >
+              <span>Operations</span>
+              <ChevronRight size={13} style={{ transform: openGroup === 'ops' ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease', flexShrink: 0 }} />
+            </button>
+            <div style={{ maxHeight: openGroup === 'ops' ? '400px' : '0', overflow: 'hidden', transition: 'max-height 0.25s ease' }}>
+              {OPS_LINKS.map(({ to, icon: Icon, label }) => (
+                <NavLink key={to} to={to} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
+                  <div className="nav-icon"><Icon size={18} /></div>
+                  {label}
+                </NavLink>
+              ))}
             </div>
-            {OPS_LINKS.map(({ to, icon: Icon, label }) => (
-              <NavLink key={to} to={to} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-                <div className="nav-icon"><Icon size={18} /></div>
-                {label}
-              </NavLink>
-            ))}
 
-            <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', margin: '8px 16px' }} />
+            <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', margin: '4px 16px' }} />
 
-            <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#444', padding: '4px 16px 6px', userSelect: 'none' }}>
-              Database
+            {/* DATABASE */}
+            <button
+              className={`sidebar-group-header${hasActiveLink(DB_LINKS, location.pathname) && openGroup !== 'db' ? ' has-active' : ''}`}
+              onClick={() => toggleGroup('db')}
+            >
+              <span>Database</span>
+              <ChevronRight size={13} style={{ transform: openGroup === 'db' ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease', flexShrink: 0 }} />
+            </button>
+            <div style={{ maxHeight: openGroup === 'db' ? '200px' : '0', overflow: 'hidden', transition: 'max-height 0.25s ease' }}>
+              {DB_LINKS.map(({ to, icon: Icon, label }) => (
+                <NavLink key={to} to={to} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
+                  <div className="nav-icon"><Icon size={18} /></div>
+                  {label}
+                </NavLink>
+              ))}
             </div>
-            {DB_LINKS.map(({ to, icon: Icon, label }) => (
-              <NavLink key={to} to={to} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-                <div className="nav-icon"><Icon size={18} /></div>
-                {label}
-              </NavLink>
-            ))}
 
-            <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', margin: '8px 16px' }} />
+            <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', margin: '4px 16px' }} />
 
-            <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#444', padding: '4px 16px 6px', userSelect: 'none' }}>
-              The Mind
+            {/* THE MIND */}
+            <button
+              className={`sidebar-group-header${hasActiveLink(MIND_LINKS, location.pathname) && openGroup !== 'mind' ? ' has-active' : ''}`}
+              onClick={() => toggleGroup('mind')}
+            >
+              <span>The Mind</span>
+              <ChevronRight size={13} style={{ transform: openGroup === 'mind' ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease', flexShrink: 0 }} />
+            </button>
+            <div style={{ maxHeight: openGroup === 'mind' ? '200px' : '0', overflow: 'hidden', transition: 'max-height 0.25s ease' }}>
+              {MIND_LINKS.map(({ to, icon: Icon, label }) => (
+                <NavLink key={to} to={to} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
+                  <div className="nav-icon"><Icon size={18} /></div>
+                  {label}
+                </NavLink>
+              ))}
             </div>
-            {MIND_LINKS.map(({ to, icon: Icon, label }) => (
-              <NavLink key={to} to={to} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-                <div className="nav-icon"><Icon size={18} /></div>
-                {label}
-              </NavLink>
-            ))}
           </nav>
 
           {upcoming.length > 0 && (

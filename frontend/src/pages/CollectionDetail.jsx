@@ -5,6 +5,7 @@ import {
   ChevronLeft, Library, FolderKanban, Archive, ArchiveRestore, Trash2,
   Link2, FileText, MoreHorizontal, Edit2, Youtube, Play,
   Globe, X, AlertCircle, Search, Share2, Copy, Check, GripVertical,
+  Instagram, Music2,
 } from 'lucide-react';
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors,
@@ -18,12 +19,34 @@ import { api } from '../api';
 
 const SOURCE_LABEL = {
   youtube: 'YouTube', vimeo: 'Vimeo', pinterest: 'Pinterest',
-  behance: 'Behance', instagram: 'Instagram', dribbble: 'Dribbble',
-  twitter: 'X / Twitter', web: 'Web',
+  behance: 'Behance', instagram: 'Instagram', tiktok: 'TikTok',
+  dribbble: 'Dribbble', twitter: 'X / Twitter', web: 'Web',
 };
 
 function getDomain(url) {
   try { return new URL(url).hostname.replace(/^www\./, ''); } catch (_) { return url; }
+}
+
+function parseInstagramInfo(url) {
+  try {
+    const parts = new URL(url).pathname.split('/').filter(Boolean);
+    const RESERVED = ['explore', 'stories', 'accounts', 'direct', 'login', 'ar', 'challenge', 'about', 'blog', 'legal', 'help'];
+    let username = null;
+    let postType = 'Post';
+    if (parts[0] === 'p') postType = 'Post';
+    else if (parts[0] === 'reel' || parts[0] === 'reels') postType = 'Reel';
+    else if (parts[0] === 'tv') postType = 'Video';
+    else if (parts[0] && !RESERVED.includes(parts[0])) {
+      username = parts[0];
+      if (parts[1] === 'p') postType = 'Post';
+      else if (parts[1] === 'reel' || parts[1] === 'reels') postType = 'Reel';
+      else if (parts[1] === 'tv') postType = 'Video';
+      else postType = 'Profile';
+    }
+    return { username, postType };
+  } catch (_) {
+    return { username: null, postType: 'Post' };
+  }
 }
 
 function parseTags(tags) {
@@ -46,6 +69,50 @@ function TagChip({ tag, active, onClick }) {
     >
       {tag}
     </button>
+  );
+}
+
+// ── Instagram branded placeholder ─────────────────────────────────────────────
+
+function InstagramPlaceholder({ url }) {
+  const { username, postType } = parseInstagramInfo(url || '');
+  return (
+    <div style={{
+      position: 'absolute', inset: 0,
+      background: 'linear-gradient(135deg, #833ab4 0%, #fd1d1d 50%, #fcb045 100%)',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      gap: '8px',
+    }}>
+      <Instagram size={38} color="rgba(255,255,255,0.95)" strokeWidth={1.5} />
+      <div style={{ textAlign: 'center', lineHeight: 1.4 }}>
+        <div style={{ fontSize: '11px', fontWeight: 700, color: 'rgba(255,255,255,0.9)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+          {postType}
+        </div>
+        {username && (
+          <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.72)', marginTop: '3px' }}>
+            @{username}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── TikTok branded placeholder ────────────────────────────────────────────────
+
+function TikTokPlaceholder() {
+  return (
+    <div style={{
+      position: 'absolute', inset: 0,
+      background: '#010101',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      gap: '8px',
+    }}>
+      <Music2 size={38} color="rgba(255,255,255,0.90)" strokeWidth={1.5} />
+      <div style={{ fontSize: '11px', fontWeight: 700, color: 'rgba(255,255,255,0.65)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+        TikTok
+      </div>
+    </div>
   );
 }
 
@@ -81,8 +148,10 @@ function FaviconPlaceholder({ url }) {
 
 function CardThumbnail({ card }) {
   const [imgFailed, setImgFailed] = useState(false);
-  const isVideo = card.source === 'youtube' || card.source === 'vimeo';
+  const isVideo = card.source === 'youtube' || card.source === 'vimeo' || card.source === 'tiktok';
   const hasThumbnail = !!card.thumbnail_url && !imgFailed;
+  const isInstagram = card.source === 'instagram';
+  const isTikTok = card.source === 'tiktok';
 
   return (
     <div style={{
@@ -97,6 +166,10 @@ function CardThumbnail({ card }) {
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
           loading="lazy"
         />
+      ) : isInstagram ? (
+        <InstagramPlaceholder url={card.url} />
+      ) : isTikTok ? (
+        <TikTokPlaceholder />
       ) : (
         <FaviconPlaceholder url={card.url || ''} />
       )}
