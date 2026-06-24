@@ -122,8 +122,9 @@ function FaviconPlaceholder({ url }) {
 
 function PublicLinkCard({ card }) {
   const [imgFailed, setImgFailed] = useState(false);
-  const isVideo = card.source === 'youtube' || card.source === 'vimeo' || card.source === 'tiktok';
   const hasThumbnail = !!card.thumbnail_url && !imgFailed;
+  const isInstagramReel = card.source === 'instagram' && !!card.url && /\/(reel|reels)\//.test(card.url);
+  const isVideo = card.source === 'youtube' || card.source === 'vimeo' || card.source === 'tiktok' || isInstagramReel;
   const isInstagram = card.source === 'instagram';
   const isTikTok = card.source === 'tiktok';
   const tags = parseTags(card.tags);

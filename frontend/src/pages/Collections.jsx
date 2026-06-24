@@ -3,8 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import {
   Plus, Edit2, Trash2, FolderKanban, Library, Clapperboard, User, X,
   Archive, ArchiveRestore, Search, Link2, FileText, GripVertical,
-  Instagram, Music2,
+  Instagram, Music2, Star, Share2, Copy, Check,
 } from 'lucide-react';
+import Modal from '../components/Modal';
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors,
 } from '@dnd-kit/core';
@@ -22,12 +23,13 @@ const KIND_META = {
 
 // ── Collection tile ───────────────────────────────────────────────────────────
 
-function CollectionTile({ collection, onEdit, onDelete, onArchive, onClick }) {
+function CollectionTile({ collection, onEdit, onDelete, onArchive, onStar, onClick }) {
   const isProject = collection.kind === 'project';
   const [imgFailed, setImgFailed] = useState(false);
   const hasCover = !!collection.cover_thumbnail && !imgFailed;
   const isInstagramCover = !hasCover && collection.cover_source === 'instagram';
   const isTikTokCover = !hasCover && collection.cover_source === 'tiktok';
+  const isStarred = !!collection.starred;
 
   return (
     <div
@@ -35,6 +37,8 @@ function CollectionTile({ collection, onEdit, onDelete, onArchive, onClick }) {
       style={{
         cursor: 'pointer', overflow: 'hidden', display: 'flex', flexDirection: 'column',
         position: 'relative', opacity: collection.archived ? 0.75 : 1,
+        border: isStarred ? '2px solid #F6B93B' : undefined,
+        boxShadow: isStarred ? '0 0 0 3px rgba(246,185,59,0.14)' : undefined,
       }}
       onClick={onClick}
     >
@@ -77,6 +81,14 @@ function CollectionTile({ collection, onEdit, onDelete, onArchive, onClick }) {
             {collection.name}
           </span>
           <div style={{ display: 'flex', gap: '2px', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+            <button
+              className="btn-ghost"
+              style={{ padding: '3px 5px', color: isStarred ? '#F6B93B' : undefined }}
+              title={isStarred ? 'Unstar' : 'Star'}
+              onClick={() => onStar(collection)}
+            >
+              <Star size={12} fill={isStarred ? '#F6B93B' : 'none'} />
+            </button>
             {!isProject && !collection.archived && (
               <button className="btn-ghost" style={{ padding: '3px 5px' }} title="Edit" onClick={() => onEdit(collection)}>
                 <Edit2 size={12} />
@@ -111,6 +123,17 @@ function CollectionTile({ collection, onEdit, onDelete, onArchive, onClick }) {
           {collection.card_count} {collection.card_count === 1 ? 'card' : 'cards'}
         </span>
       </div>
+
+      {isStarred && (
+        <div style={{
+          position: 'absolute', bottom: 8, left: 8,
+          background: '#F6B93B', borderRadius: '50%',
+          width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          pointerEvents: 'none',
+        }}>
+          <Star size={10} fill="#000" color="#000" />
+        </div>
+      )}
     </div>
   );
 }
@@ -119,6 +142,7 @@ function CollectionTile({ collection, onEdit, onDelete, onArchive, onClick }) {
 
 function SortableCollectionTile(props) {
   const { collection } = props;
+  const isStarred = !!collection.starred;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: collection.id });
   return (
     <div
@@ -132,16 +156,17 @@ function SortableCollectionTile(props) {
       }}
       {...attributes}
     >
-      {/* Drag handle */}
+      {/* Drag handle — hidden for starred (pinned) tiles */}
       <div
-        {...listeners}
+        {...(isStarred ? {} : listeners)}
         onClick={e => e.stopPropagation()}
-        title="Drag to reorder"
+        title={isStarred ? 'Starred — unstar to reorder' : 'Drag to reorder'}
         style={{
           position: 'absolute', top: 7, left: 7, zIndex: 20,
-          cursor: isDragging ? 'grabbing' : 'grab',
+          cursor: isStarred ? 'default' : (isDragging ? 'grabbing' : 'grab'),
           background: 'rgba(0,0,0,0.55)', borderRadius: 6, padding: '3px 5px',
           color: '#aaa', touchAction: 'none', display: 'flex', alignItems: 'center',
+          opacity: isStarred ? 0.25 : 1,
         }}
       >
         <GripVertical size={11} />
@@ -396,7 +421,7 @@ const SECTION_LABEL = {
 };
 const TILE_GRID = 'collections-tile-grid';
 
-function SortableSection({ kind, list, onListChange, onEdit, onDelete, onArchive, navigate }) {
+function SortableSection({ kind, list, onListChange, onEdit, onDelete, onArchive, onStar, navigate }) {
   const meta = KIND_META[kind];
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -405,6 +430,9 @@ function SortableSection({ kind, list, onListChange, onEdit, onDelete, onArchive
 
   function handleDragEnd({ active, over }) {
     if (!over || active.id === over.id) return;
+    const activeItem = list.find(c => c.id === active.id);
+    const overItem = list.find(c => c.id === over.id);
+    if (activeItem?.starred || overItem?.starred) return;
     const oldIndex = list.findIndex(c => c.id === active.id);
     const newIndex = list.findIndex(c => c.id === over.id);
     const newList = arrayMove(list, oldIndex, newIndex);
@@ -430,6 +458,7 @@ function SortableSection({ kind, list, onListChange, onEdit, onDelete, onArchive
                   onEdit={onEdit}
                   onDelete={onDelete}
                   onArchive={onArchive}
+                  onStar={onStar}
                   onClick={() => navigate(`/collections/${c.id}`)}
                 />
               ))}
@@ -443,7 +472,7 @@ function SortableSection({ kind, list, onListChange, onEdit, onDelete, onArchive
 
 // ── Simple (non-sortable) tile grid for archived view ─────────────────────────
 
-function StaticTileGrid({ list, onEdit, onDelete, onArchive, navigate }) {
+function StaticTileGrid({ list, onEdit, onDelete, onArchive, onStar, navigate }) {
   return (
     <div className={TILE_GRID}>
       {list.map(c => (
@@ -453,10 +482,191 @@ function StaticTileGrid({ list, onEdit, onDelete, onArchive, navigate }) {
           onEdit={onEdit}
           onDelete={onDelete}
           onArchive={onArchive}
+          onStar={onStar}
           onClick={() => navigate(`/collections/${c.id}`)}
         />
       ))}
     </div>
+  );
+}
+
+// ── Mind share modal ─────────────────────────────────────────────────────────
+
+const MIND_CAT_LABELS = { project: 'Project Collections', studio: 'Studio', personal: 'Personal' };
+
+function MindShareModal({ onClose }) {
+  const [loading, setLoading] = useState(true);
+  const [hasLink, setHasLink] = useState(false);
+  const [token, setToken] = useState(null);
+  const [linkCategories, setLinkCategories] = useState([]);
+  const [selectedCategories, setSelectedCategories] = useState(['project', 'studio', 'personal']);
+  const [generating, setGenerating] = useState(false);
+  const [revoking, setRevoking] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState('');
+
+  const shareUrl = token ? `${window.location.origin}/shared/mind/${token}` : '';
+
+  useEffect(() => {
+    api.get('/collections/mind-share')
+      .then(data => {
+        setHasLink(data.has_link);
+        if (data.has_link) {
+          setToken(data.token);
+          setLinkCategories(data.categories || []);
+          setSelectedCategories(data.categories || ['project', 'studio', 'personal']);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  function toggleCategory(cat) {
+    setSelectedCategories(prev =>
+      prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]
+    );
+  }
+
+  async function handleGenerate() {
+    if (selectedCategories.length === 0) { setError('Select at least one category'); return; }
+    setGenerating(true); setError('');
+    try {
+      const data = await api.post('/collections/mind-share', { categories: selectedCategories });
+      setToken(data.token);
+      setLinkCategories(data.categories || selectedCategories);
+      setHasLink(true);
+    } catch (err) {
+      setError(err.message || 'Failed to generate link');
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  async function handleRevoke() {
+    if (!confirm('Revoke this link permanently? The current URL will stop working immediately and cannot be recovered.')) return;
+    setRevoking(true);
+    try {
+      await api.del('/collections/mind-share');
+      setHasLink(false);
+      setToken(null);
+      setLinkCategories([]);
+    } catch (err) {
+      setError(err.message || 'Failed to revoke');
+    } finally {
+      setRevoking(false);
+    }
+  }
+
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+    } catch (_) {
+      const ta = document.createElement('textarea');
+      ta.value = shareUrl;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  const categoryRow = (cat) => (
+    <label key={cat} style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '13px', padding: '4px 0' }}>
+      <input
+        type="checkbox"
+        checked={selectedCategories.includes(cat)}
+        onChange={() => toggleCategory(cat)}
+        style={{ accentColor: 'var(--accent)', width: 15, height: 15, flexShrink: 0 }}
+      />
+      {MIND_CAT_LABELS[cat]}
+    </label>
+  );
+
+  return (
+    <Modal title="Share Collections Page" onClose={onClose}>
+      {loading ? (
+        <p style={{ color: 'var(--text-muted)', fontSize: '13px', padding: '8px 0' }}>Loading…</p>
+      ) : (
+        <div>
+          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '18px', lineHeight: 1.5 }}>
+            Share a read-only view of your Collections page. Select which categories to expose — unselected categories stay private.
+          </p>
+
+          <div className="form-row">
+            <label className="form-label">Categories to share</label>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {['project', 'studio', 'personal'].map(categoryRow)}
+            </div>
+          </div>
+
+          {error && <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 14px' }}>{error}</p>}
+
+          {!hasLink && (
+            <div className="modal-footer" style={{ marginTop: 4 }}>
+              <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+              <button
+                className="btn btn-primary"
+                onClick={handleGenerate}
+                disabled={generating || selectedCategories.length === 0}
+              >
+                {generating ? 'Generating…' : 'Generate Link'}
+              </button>
+            </div>
+          )}
+
+          {hasLink && token && (
+            <>
+              <div className="form-row">
+                <label className="form-label">Share Link</label>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <input
+                    className="input"
+                    value={shareUrl}
+                    readOnly
+                    style={{ flex: 1, fontSize: '12px' }}
+                    onFocus={e => e.target.select()}
+                  />
+                  <button className="btn btn-primary" style={{ flexShrink: 0, minWidth: 80 }} onClick={copyLink}>
+                    {copied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy</>}
+                  </button>
+                </div>
+                <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
+                  Sharing: {linkCategories.map(c => MIND_CAT_LABELS[c]).join(', ')}
+                </p>
+              </div>
+
+              <div style={{ borderTop: '1px solid var(--border-default)', paddingTop: '14px' }}>
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '14px', lineHeight: 1.5 }}>
+                  "Generate New Link" creates a new link with the selected categories and <strong style={{ color: 'var(--text-secondary)' }}>permanently disables</strong> the current URL — the old link is gone forever.
+                </p>
+                <div style={{ display: 'flex', gap: '8px', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+                  <button
+                    className="btn btn-ghost"
+                    style={{ color: 'var(--danger)', borderColor: 'rgba(255,68,68,0.3)', fontSize: '12px' }}
+                    onClick={handleRevoke}
+                    disabled={revoking}
+                  >
+                    {revoking ? 'Revoking…' : 'Revoke Link'}
+                  </button>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button type="button" className="btn btn-ghost" onClick={onClose}>Close</button>
+                    <button
+                      className="btn btn-primary"
+                      onClick={handleGenerate}
+                      disabled={generating || selectedCategories.length === 0}
+                    >
+                      {generating ? 'Generating…' : 'Generate New Link'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </Modal>
   );
 }
 
@@ -473,6 +683,7 @@ export default function Collections() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState(null);
   const [searching, setSearching] = useState(false);
+  const [showMindShare, setShowMindShare] = useState(false);
 
   // Per-section sorted lists (active only; derived from collections)
   const [sortedProject, setSortedProject] = useState([]);
@@ -555,6 +766,13 @@ export default function Collections() {
     } catch (err) { alert(err.message || 'Failed to delete'); }
   }
 
+  async function handleStar(coll) {
+    try {
+      await api.put(`/collections/${coll.id}/star`, { starred: !coll.starred });
+      await loadData();
+    } catch (err) { alert(err.message || 'Failed to update'); }
+  }
+
   async function handleArchive(coll) {
     try {
       await api.patch(`/collections/${coll.id}/archive`, { archived: !coll.archived });
@@ -575,9 +793,14 @@ export default function Collections() {
     <div>
       <div className="page-header">
         <h1 className="page-title">Collections</h1>
-        <button className="btn btn-primary" onClick={() => setShowNewModal(true)}>
-          <Plus size={16} /> New Collection
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button className="btn btn-ghost" style={{ fontSize: '13px' }} onClick={() => setShowMindShare(true)} title="Share Collections page">
+            <Share2 size={14} /> Share Page
+          </button>
+          <button className="btn btn-primary" onClick={() => setShowNewModal(true)}>
+            <Plus size={16} /> New Collection
+          </button>
+        </div>
       </div>
 
       {/* Search bar */}
@@ -614,7 +837,7 @@ export default function Collections() {
             ) : (
               <div className={TILE_GRID}>
                 {searchFilteredCollections.map(c => (
-                  <CollectionTile key={c.id} collection={c} onEdit={setEditingColl} onDelete={handleDelete} onArchive={handleArchive} onClick={() => navigate(`/collections/${c.id}`)} />
+                  <CollectionTile key={c.id} collection={c} onEdit={setEditingColl} onDelete={handleDelete} onArchive={handleArchive} onStar={handleStar} onClick={() => navigate(`/collections/${c.id}`)} />
                 ))}
               </div>
             )}
@@ -706,9 +929,9 @@ export default function Collections() {
                 </div>
               ) : (
                 <>
-                  <SortableSection kind="project" list={sortedProject} onListChange={handleSectionListChange} onEdit={setEditingColl} onDelete={handleDelete} onArchive={handleArchive} navigate={navigate} />
-                  <SortableSection kind="studio"  list={sortedStudio}  onListChange={handleSectionListChange} onEdit={setEditingColl} onDelete={handleDelete} onArchive={handleArchive} navigate={navigate} />
-                  <SortableSection kind="personal" list={sortedPersonal} onListChange={handleSectionListChange} onEdit={setEditingColl} onDelete={handleDelete} onArchive={handleArchive} navigate={navigate} />
+                  <SortableSection kind="project" list={sortedProject} onListChange={handleSectionListChange} onEdit={setEditingColl} onDelete={handleDelete} onArchive={handleArchive} onStar={handleStar} navigate={navigate} />
+                  <SortableSection kind="studio"  list={sortedStudio}  onListChange={handleSectionListChange} onEdit={setEditingColl} onDelete={handleDelete} onArchive={handleArchive} onStar={handleStar} navigate={navigate} />
+                  <SortableSection kind="personal" list={sortedPersonal} onListChange={handleSectionListChange} onEdit={setEditingColl} onDelete={handleDelete} onArchive={handleArchive} onStar={handleStar} navigate={navigate} />
                 </>
               )}
             </>
@@ -725,19 +948,19 @@ export default function Collections() {
                   {archivedByKind('project').length > 0 && (
                     <section style={{ marginBottom: '32px' }}>
                       <h2 style={SECTION_LABEL}>Project Collections — Archived</h2>
-                      <StaticTileGrid list={archivedByKind('project')} onEdit={setEditingColl} onDelete={handleDelete} onArchive={handleArchive} navigate={navigate} />
+                      <StaticTileGrid list={archivedByKind('project')} onEdit={setEditingColl} onDelete={handleDelete} onArchive={handleArchive} onStar={handleStar} navigate={navigate} />
                     </section>
                   )}
                   {archivedByKind('studio').length > 0 && (
                     <section style={{ marginBottom: '32px' }}>
                       <h2 style={SECTION_LABEL}>Studio — Archived</h2>
-                      <StaticTileGrid list={archivedByKind('studio')} onEdit={setEditingColl} onDelete={handleDelete} onArchive={handleArchive} navigate={navigate} />
+                      <StaticTileGrid list={archivedByKind('studio')} onEdit={setEditingColl} onDelete={handleDelete} onArchive={handleArchive} onStar={handleStar} navigate={navigate} />
                     </section>
                   )}
                   {archivedByKind('personal').length > 0 && (
                     <section style={{ marginBottom: '32px' }}>
                       <h2 style={SECTION_LABEL}>Personal — Archived</h2>
-                      <StaticTileGrid list={archivedByKind('personal')} onEdit={setEditingColl} onDelete={handleDelete} onArchive={handleArchive} navigate={navigate} />
+                      <StaticTileGrid list={archivedByKind('personal')} onEdit={setEditingColl} onDelete={handleDelete} onArchive={handleArchive} onStar={handleStar} navigate={navigate} />
                     </section>
                   )}
                 </>
@@ -752,6 +975,9 @@ export default function Collections() {
       )}
       {editingColl && (
         <EditModal collection={editingColl} onSave={handleEdit} onClose={() => setEditingColl(null)} />
+      )}
+      {showMindShare && (
+        <MindShareModal onClose={() => setShowMindShare(false)} />
       )}
     </div>
   );

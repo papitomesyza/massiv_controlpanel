@@ -117,4 +117,53 @@ router.get('/collection/:token', (req, res) => {
   }
 });
 
+// GET /api/public/mind/:token — read-only shared Collections page
+router.get('/mind/:token', (req, res) => {
+  try {
+    const link = db.prepare('SELECT * FROM mind_share_links WHERE token = ?').get(req.params.token);
+    if (!link) return res.json({ valid: false, reason: 'invalid' });
+
+    let categories;
+    try { categories = JSON.parse(link.categories); } catch (_) {
+      categories = (link.categories || '').split(',').map(c => c.trim()).filter(Boolean);
+    }
+
+    const VALID_CATS = ['project', 'studio', 'personal'];
+    const LABELS = { project: 'Project Collections', studio: 'Studio', personal: 'Personal' };
+
+    const sections = {};
+    for (const cat of categories) {
+      if (!VALID_CATS.includes(cat)) continue;
+      const collections = db.prepare(`
+        SELECT id, name, description,
+               (SELECT COUNT(*) FROM collection_cards cc WHERE cc.collection_id = c.id) as card_count,
+               (SELECT thumbnail_url FROM collection_cards
+                WHERE collection_id = c.id AND thumbnail_url IS NOT NULL
+                ORDER BY created_at DESC LIMIT 1) as cover_thumbnail,
+               (SELECT source FROM collection_cards
+                WHERE collection_id = c.id AND type = 'link'
+                ORDER BY created_at DESC LIMIT 1) as cover_source
+        FROM collections c
+        WHERE c.kind = ? AND c.archived = 0
+        ORDER BY c.starred DESC, c.sort_order ASC, c.created_at DESC
+      `).all(cat);
+
+      const collectionsWithCards = collections.map(coll => {
+        const cards = db.prepare(
+          `SELECT id, type, url, title, note_text, thumbnail_url, source, tags
+           FROM collection_cards WHERE collection_id = ?
+           ORDER BY sort_order ASC, created_at DESC`
+        ).all(coll.id);
+        return { ...coll, cards };
+      });
+
+      sections[cat] = { label: LABELS[cat], collections: collectionsWithCards };
+    }
+
+    res.json({ valid: true, categories, sections });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

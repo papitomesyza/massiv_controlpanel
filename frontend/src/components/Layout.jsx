@@ -162,11 +162,11 @@ export default function Layout() {
           <nav className="sidebar-nav">
             {/* OPERATIONS */}
             <button
-              className={`sidebar-group-header${hasActiveLink(OPS_LINKS, location.pathname) && openGroup !== 'ops' ? ' has-active' : ''}`}
+              className={`sidebar-group-header${openGroup === 'ops' ? ' is-open' : ''}${hasActiveLink(OPS_LINKS, location.pathname) && openGroup !== 'ops' ? ' has-active' : ''}`}
               onClick={() => toggleGroup('ops')}
             >
               <span>Operations</span>
-              <ChevronRight size={13} style={{ transform: openGroup === 'ops' ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease', flexShrink: 0 }} />
+              <ChevronRight size={15} style={{ transform: openGroup === 'ops' ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease', flexShrink: 0 }} />
             </button>
             <div style={{ maxHeight: openGroup === 'ops' ? '400px' : '0', overflow: 'hidden', transition: 'max-height 0.25s ease' }}>
               {OPS_LINKS.map(({ to, icon: Icon, label }) => (
@@ -181,11 +181,11 @@ export default function Layout() {
 
             {/* DATABASE */}
             <button
-              className={`sidebar-group-header${hasActiveLink(DB_LINKS, location.pathname) && openGroup !== 'db' ? ' has-active' : ''}`}
+              className={`sidebar-group-header${openGroup === 'db' ? ' is-open' : ''}${hasActiveLink(DB_LINKS, location.pathname) && openGroup !== 'db' ? ' has-active' : ''}`}
               onClick={() => toggleGroup('db')}
             >
               <span>Database</span>
-              <ChevronRight size={13} style={{ transform: openGroup === 'db' ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease', flexShrink: 0 }} />
+              <ChevronRight size={15} style={{ transform: openGroup === 'db' ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease', flexShrink: 0 }} />
             </button>
             <div style={{ maxHeight: openGroup === 'db' ? '200px' : '0', overflow: 'hidden', transition: 'max-height 0.25s ease' }}>
               {DB_LINKS.map(({ to, icon: Icon, label }) => (
@@ -200,11 +200,11 @@ export default function Layout() {
 
             {/* THE MIND */}
             <button
-              className={`sidebar-group-header${hasActiveLink(MIND_LINKS, location.pathname) && openGroup !== 'mind' ? ' has-active' : ''}`}
+              className={`sidebar-group-header${openGroup === 'mind' ? ' is-open' : ''}${hasActiveLink(MIND_LINKS, location.pathname) && openGroup !== 'mind' ? ' has-active' : ''}`}
               onClick={() => toggleGroup('mind')}
             >
               <span>The Mind</span>
-              <ChevronRight size={13} style={{ transform: openGroup === 'mind' ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease', flexShrink: 0 }} />
+              <ChevronRight size={15} style={{ transform: openGroup === 'mind' ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease', flexShrink: 0 }} />
             </button>
             <div style={{ maxHeight: openGroup === 'mind' ? '200px' : '0', overflow: 'hidden', transition: 'max-height 0.25s ease' }}>
               {MIND_LINKS.map(({ to, icon: Icon, label }) => (

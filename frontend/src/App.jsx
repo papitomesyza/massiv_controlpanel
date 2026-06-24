@@ -18,6 +18,7 @@ import Map from './pages/Map';
 import Invoices from './pages/Invoices';
 import PublicExpense from './pages/PublicExpense';
 import PublicCollection from './pages/PublicCollection';
+import PublicMind from './pages/PublicMind';
 import Collections from './pages/Collections';
 import CollectionDetail from './pages/CollectionDetail';
 import { AgencyProvider } from './context/AgencyContext';
@@ -68,6 +69,7 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/expense/:token" element={<PublicExpense />} />
         <Route path="/shared/collection/:token" element={<PublicCollection />} />
+        <Route path="/shared/mind/:token" element={<PublicMind />} />
         <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />

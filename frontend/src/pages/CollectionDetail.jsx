@@ -5,7 +5,7 @@ import {
   ChevronLeft, Library, FolderKanban, Archive, ArchiveRestore, Trash2,
   Link2, FileText, MoreHorizontal, Edit2, Youtube, Play,
   Globe, X, AlertCircle, Search, Share2, Copy, Check, GripVertical,
-  Instagram, Music2,
+  Instagram, Music2, Star,
 } from 'lucide-react';
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors,
@@ -148,8 +148,9 @@ function FaviconPlaceholder({ url }) {
 
 function CardThumbnail({ card }) {
   const [imgFailed, setImgFailed] = useState(false);
-  const isVideo = card.source === 'youtube' || card.source === 'vimeo' || card.source === 'tiktok';
   const hasThumbnail = !!card.thumbnail_url && !imgFailed;
+  const isInstagramReel = card.source === 'instagram' && !!card.url && /\/(reel|reels)\//.test(card.url);
+  const isVideo = card.source === 'youtube' || card.source === 'vimeo' || card.source === 'tiktok' || isInstagramReel;
   const isInstagram = card.source === 'instagram';
   const isTikTok = card.source === 'tiktok';
 
@@ -252,12 +253,18 @@ function CardMenu({ isOpen, onToggle, onEdit, onDelete }) {
 
 // ── Link card ─────────────────────────────────────────────────────────────────
 
-function LinkCard({ card, isMenuOpen, onMenuToggle, onEdit, onDelete, activeTag, onTagClick }) {
+function LinkCard({ card, isMenuOpen, onMenuToggle, onEdit, onDelete, onStar, activeTag, onTagClick }) {
   const tags = parseTags(card.tags);
+  const isStarred = !!card.starred;
   return (
     <div
       className="card"
-      style={{ padding: 0, overflow: 'hidden', cursor: 'pointer', display: 'flex', flexDirection: 'column' }}
+      style={{
+        padding: 0, overflow: 'hidden', cursor: 'pointer', display: 'flex', flexDirection: 'column',
+        position: 'relative',
+        border: isStarred ? '2px solid #F6B93B' : undefined,
+        boxShadow: isStarred ? '0 0 0 3px rgba(246,185,59,0.12)' : undefined,
+      }}
       onClick={() => window.open(card.url, '_blank', 'noopener,noreferrer')}
       title={card.url}
     >
@@ -273,7 +280,15 @@ function LinkCard({ card, isMenuOpen, onMenuToggle, onEdit, onDelete, activeTag,
               {getDomain(card.url)}
             </p>
           )}
-          <div onClick={e => e.stopPropagation()}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '2px', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+            <button
+              className="btn-ghost"
+              style={{ padding: '3px 5px', color: isStarred ? '#F6B93B' : undefined, border: 'none' }}
+              title={isStarred ? 'Unstar' : 'Star'}
+              onClick={() => onStar(card.id)}
+            >
+              <Star size={13} fill={isStarred ? '#F6B93B' : 'none'} />
+            </button>
             <CardMenu isOpen={isMenuOpen} onToggle={onMenuToggle} onEdit={onEdit} onDelete={onDelete} />
           </div>
         </div>
@@ -291,20 +306,36 @@ function LinkCard({ card, isMenuOpen, onMenuToggle, onEdit, onDelete, activeTag,
           </div>
         )}
       </div>
+      {isStarred && (
+        <div style={{
+          position: 'absolute', bottom: 8, left: 8, zIndex: 10,
+          background: '#F6B93B', borderRadius: '50%',
+          width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          pointerEvents: 'none',
+        }}>
+          <Star size={10} fill="#000" color="#000" />
+        </div>
+      )}
     </div>
   );
 }
 
 // ── Note card ─────────────────────────────────────────────────────────────────
 
-function NoteCard({ card, isMenuOpen, onMenuToggle, onEdit, onDelete, isExpanded, onToggleExpand, activeTag, onTagClick }) {
+function NoteCard({ card, isMenuOpen, onMenuToggle, onEdit, onDelete, onStar, isExpanded, onToggleExpand, activeTag, onTagClick }) {
   const isLong = (card.note_text || '').length > 250;
   const tags = parseTags(card.tags);
+  const isStarred = !!card.starred;
 
   return (
     <div
       className="card"
-      style={{ padding: '14px 16px', background: 'rgba(199,255,46,0.04)', border: '1px solid rgba(199,255,46,0.11)', display: 'flex', flexDirection: 'column', gap: '9px' }}
+      style={{
+        padding: '14px 16px', background: 'rgba(199,255,46,0.04)',
+        border: isStarred ? '2px solid #F6B93B' : '1px solid rgba(199,255,46,0.11)',
+        boxShadow: isStarred ? '0 0 0 3px rgba(246,185,59,0.12)' : undefined,
+        display: 'flex', flexDirection: 'column', gap: '9px', position: 'relative',
+      }}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '7px', flex: 1, minWidth: 0 }}>
@@ -315,7 +346,17 @@ function NoteCard({ card, isMenuOpen, onMenuToggle, onEdit, onDelete, isExpanded
             </span>
           )}
         </div>
-        <CardMenu isOpen={isMenuOpen} onToggle={onMenuToggle} onEdit={onEdit} onDelete={onDelete} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '2px', flexShrink: 0 }}>
+          <button
+            className="btn-ghost"
+            style={{ padding: '3px 5px', color: isStarred ? '#F6B93B' : undefined, border: 'none' }}
+            title={isStarred ? 'Unstar' : 'Star'}
+            onClick={e => { e.stopPropagation(); onStar(card.id); }}
+          >
+            <Star size={13} fill={isStarred ? '#F6B93B' : 'none'} />
+          </button>
+          <CardMenu isOpen={isMenuOpen} onToggle={onMenuToggle} onEdit={onEdit} onDelete={onDelete} />
+        </div>
       </div>
       <p style={{
         fontSize: '13px', lineHeight: 1.65, color: 'var(--text-secondary)', margin: 0,
@@ -337,6 +378,16 @@ function NoteCard({ card, isMenuOpen, onMenuToggle, onEdit, onDelete, isExpanded
           {tags.map(tag => <TagChip key={tag} tag={tag} active={activeTag === tag} onClick={onTagClick} />)}
         </div>
       )}
+      {isStarred && (
+        <div style={{
+          position: 'absolute', bottom: 8, left: 8, zIndex: 10,
+          background: '#F6B93B', borderRadius: '50%',
+          width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          pointerEvents: 'none',
+        }}>
+          <Star size={10} fill="#000" color="#000" />
+        </div>
+      )}
     </div>
   );
 }
@@ -344,6 +395,7 @@ function NoteCard({ card, isMenuOpen, onMenuToggle, onEdit, onDelete, isExpanded
 // ── Sortable card wrapper (Section 4) ─────────────────────────────────────────
 
 function SortableCardWrapper({ card, ...props }) {
+  const isStarred = !!card.starred;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: card.id });
   return (
     <div
@@ -357,17 +409,18 @@ function SortableCardWrapper({ card, ...props }) {
       }}
       {...attributes}
     >
-      {/* Drag handle — positioned top-left, avoids conflicting with menu top-right */}
+      {/* Drag handle — disabled for starred (pinned) cards */}
       <div
-        {...listeners}
+        {...(isStarred ? {} : listeners)}
         onClick={e => e.stopPropagation()}
-        title="Drag to reorder"
+        title={isStarred ? 'Starred — unstar to reorder' : 'Drag to reorder'}
         style={{
           position: 'absolute', top: 7, left: 7, zIndex: 20,
-          cursor: isDragging ? 'grabbing' : 'grab',
+          cursor: isStarred ? 'default' : (isDragging ? 'grabbing' : 'grab'),
           background: 'rgba(0,0,0,0.55)', borderRadius: 6, padding: '3px 5px',
           color: '#aaa', touchAction: 'none',
           display: 'flex', alignItems: 'center',
+          opacity: isStarred ? 0.25 : 1,
         }}
       >
         <GripVertical size={11} />
@@ -631,6 +684,9 @@ export default function CollectionDetail() {
 
   function handleDragEnd({ active, over }) {
     if (!over || active.id === over.id) return;
+    const activeCard = cards.find(c => c.id === active.id);
+    const overCard = cards.find(c => c.id === over.id);
+    if (activeCard?.starred || overCard?.starred) return;
     setCards(prev => {
       const oldIndex = prev.findIndex(c => c.id === active.id);
       const newIndex = prev.findIndex(c => c.id === over.id);
@@ -638,6 +694,15 @@ export default function CollectionDetail() {
       api.put(`/collections/${id}/cards/reorder`, { orderedIds: newOrder.map(c => c.id) }).catch(() => {});
       return newOrder;
     });
+  }
+
+  async function handleStarCard(cardId) {
+    const card = cards.find(c => c.id === cardId);
+    if (!card) return;
+    try {
+      await api.put(`/collections/${id}/cards/${cardId}/star`, { starred: !card.starred });
+      await loadCollection();
+    } catch (err) { alert(err.message || 'Failed to update'); }
   }
 
   // ── Card actions ──────────────────────────────────────────────────────────
@@ -994,6 +1059,7 @@ export default function CollectionDetail() {
                     onMenuToggle={() => toggleMenu(card.id)}
                     onEdit={() => { setEditingCard(card); setOpenMenuId(null); }}
                     onDelete={() => handleDeleteCard(card.id)}
+                    onStar={handleStarCard}
                     isExpanded={expandedIds.has(card.id)}
                     onToggleExpand={() => toggleExpand(card.id)}
                     activeTag={activeTag}

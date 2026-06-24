@@ -3,6 +3,23 @@ const router = express.Router();
 const crypto = require('crypto');
 const { db } = require('../db/database');
 
+// Schema-safe: add starred column to both tables if not already present
+try { db.exec('ALTER TABLE collections ADD COLUMN starred INTEGER DEFAULT 0'); } catch (_) {}
+try { db.exec('ALTER TABLE collection_cards ADD COLUMN starred INTEGER DEFAULT 0'); } catch (_) {}
+
+// Schema-safe: page-level share links table
+try {
+  db.exec(`CREATE TABLE IF NOT EXISTS mind_share_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    token TEXT NOT NULL UNIQUE,
+    categories TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`);
+} catch (_) {}
+
+// Instagram proxy domains — reorder or swap if one stops working
+const INSTAGRAM_PROXIES = ['ddinstagram.com', 'kkinstagram.com', 'instagramez.com'];
+
 // ── Link preview helpers ──────────────────────────────────────────────────────
 
 async function fetchWithTimeout(url, ms) {
@@ -184,10 +201,22 @@ async function fetchLinkPreview(rawUrl) {
       return { title: null, thumbnail_url: null, source: 'tiktok' };
     }
 
-    // Instagram — server-side preview is blocked for logged-out requests; extract what we can from the URL
+    // Instagram — try proxy services to fetch a real thumbnail; fall back to placeholder
     if (/instagram\./i.test(url)) {
       const { username, postType } = parseInstagramMeta(url);
-      return { title: buildInstagramTitle(username, postType), thumbnail_url: null, source: 'instagram' };
+      const fallbackTitle = buildInstagramTitle(username, postType);
+      for (const proxyDomain of INSTAGRAM_PROXIES) {
+        try {
+          const proxyUrl = url.replace(/^(https?:\/\/)(www\.|m\.)?instagram\.[a-z.]+/, `$1${proxyDomain}`);
+          const html = await fetchHtml(proxyUrl);
+          if (!html) continue;
+          const { title: proxyTitle, thumbnail_url } = await parseOgTags(html, proxyUrl);
+          if (thumbnail_url) {
+            return { title: proxyTitle || fallbackTitle, thumbnail_url, source: 'instagram' };
+          }
+        } catch (_) {}
+      }
+      return { title: fallbackTitle, thumbnail_url: null, source: 'instagram' };
     }
 
     const source = detectSource(url);
@@ -212,7 +241,7 @@ router.get('/', (req, res) => {
   try {
     const { archived } = req.query;
     let sql = `
-      SELECT c.id, c.name, c.project_id, c.kind, c.description, c.archived, c.sort_order, c.created_at,
+      SELECT c.id, c.name, c.project_id, c.kind, c.description, c.archived, c.starred, c.sort_order, c.created_at,
              p.title as project_title,
              (SELECT COUNT(*) FROM collection_cards cc WHERE cc.collection_id = c.id) as card_count,
              (SELECT thumbnail_url FROM collection_cards
@@ -229,7 +258,7 @@ router.get('/', (req, res) => {
       sql += ' WHERE c.archived = ?';
       params.push(Number(archived));
     }
-    sql += ' ORDER BY c.sort_order ASC, c.created_at DESC';
+    sql += ' ORDER BY c.starred DESC, c.sort_order ASC, c.created_at DESC';
     const collections = db.prepare(sql).all(...params);
     res.json(collections);
   } catch (err) {
@@ -244,7 +273,7 @@ router.get('/search', (req, res) => {
     if (q.length < 1) return res.json({ collections: [], cards: [] });
     const like = `%${q}%`;
     const collections = db.prepare(`
-      SELECT c.id, c.name, c.description, c.project_id, c.kind, c.archived, c.sort_order, c.created_at,
+      SELECT c.id, c.name, c.description, c.project_id, c.kind, c.archived, c.starred, c.sort_order, c.created_at,
              p.title as project_title,
              (SELECT COUNT(*) FROM collection_cards cc WHERE cc.collection_id = c.id) as card_count,
              (SELECT thumbnail_url FROM collection_cards
@@ -256,18 +285,18 @@ router.get('/search', (req, res) => {
       FROM collections c
       LEFT JOIN projects p ON p.id = c.project_id
       WHERE c.archived = 0 AND (c.name LIKE ? OR c.description LIKE ?)
-      ORDER BY c.sort_order ASC, c.created_at DESC LIMIT 20
+      ORDER BY c.starred DESC, c.sort_order ASC, c.created_at DESC LIMIT 20
     `).all(like, like);
     const cards = db.prepare(`
       SELECT cc.id, cc.collection_id, cc.type, cc.title, cc.url, cc.source,
-             cc.note_text, cc.tags, cc.thumbnail_url,
+             cc.note_text, cc.tags, cc.thumbnail_url, cc.starred,
              col.name as collection_name
       FROM collection_cards cc
       JOIN collections col ON col.id = cc.collection_id
       WHERE col.archived = 0
         AND (cc.title LIKE ? OR cc.note_text LIKE ? OR cc.url LIKE ?
              OR cc.source LIKE ? OR cc.tags LIKE ?)
-      ORDER BY cc.sort_order ASC, cc.created_at DESC LIMIT 30
+      ORDER BY cc.starred DESC, cc.sort_order ASC, cc.created_at DESC LIMIT 30
     `).all(like, like, like, like, like);
     res.json({ collections, cards });
   } catch (err) {
@@ -280,7 +309,8 @@ router.put('/reorder', (req, res) => {
   try {
     const { orderedIds } = req.body;
     if (!Array.isArray(orderedIds)) return res.status(400).json({ error: 'orderedIds array required' });
-    const update = db.prepare('UPDATE collections SET sort_order = ? WHERE id = ?');
+    // Only update unstarred collections — starred items stay pinned at top via ORDER BY starred DESC
+    const update = db.prepare('UPDATE collections SET sort_order = ? WHERE id = ? AND starred = 0');
     const tx = db.transaction(() => {
       orderedIds.forEach((id, index) => update.run(index, id));
     });
@@ -291,11 +321,53 @@ router.put('/reorder', (req, res) => {
   }
 });
 
+// ── Page-level share links ─────────────────────────────────────────────────────
+
+// GET /api/collections/mind-share — return current active page-share link if any
+router.get('/mind-share', (req, res) => {
+  try {
+    const link = db.prepare('SELECT * FROM mind_share_links ORDER BY id DESC LIMIT 1').get();
+    if (!link) return res.json({ has_link: false });
+    let categories;
+    try { categories = JSON.parse(link.categories); } catch (_) {
+      categories = (link.categories || '').split(',').map(c => c.trim()).filter(Boolean);
+    }
+    res.json({ has_link: true, token: link.token, categories });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/collections/mind-share — create (or replace) page-share link
+router.post('/mind-share', (req, res) => {
+  try {
+    const VALID_CATS = ['project', 'studio', 'personal'];
+    const cats = (req.body.categories || []).filter(c => VALID_CATS.includes(c));
+    if (cats.length === 0) return res.status(400).json({ error: 'At least one valid category required' });
+    db.prepare('DELETE FROM mind_share_links').run();
+    const token = crypto.randomBytes(32).toString('hex');
+    db.prepare('INSERT INTO mind_share_links (token, categories) VALUES (?, ?)').run(token, JSON.stringify(cats));
+    res.json({ token, categories: cats });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/collections/mind-share — permanently revoke current page-share link
+router.delete('/mind-share', (req, res) => {
+  try {
+    db.prepare('DELETE FROM mind_share_links').run();
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/collections/:id — single collection + its cards
 router.get('/:id', (req, res) => {
   try {
     const coll = db.prepare(`
-      SELECT c.id, c.name, c.project_id, c.kind, c.description, c.archived, c.sort_order, c.created_at,
+      SELECT c.id, c.name, c.project_id, c.kind, c.description, c.archived, c.starred, c.sort_order, c.created_at,
              p.title as project_title,
              (SELECT COUNT(*) FROM collection_cards cc WHERE cc.collection_id = c.id) as card_count
       FROM collections c
@@ -305,7 +377,7 @@ router.get('/:id', (req, res) => {
     if (!coll) return res.status(404).json({ error: 'Collection not found' });
 
     const cards = db.prepare(
-      'SELECT * FROM collection_cards WHERE collection_id = ? ORDER BY sort_order ASC, created_at DESC'
+      'SELECT * FROM collection_cards WHERE collection_id = ? ORDER BY starred DESC, sort_order ASC, created_at DESC'
     ).all(req.params.id);
 
     res.json({ ...coll, cards });
@@ -360,6 +432,19 @@ router.post('/', (req, res) => {
       FROM collections c WHERE c.id = ?
     `).get(result.lastInsertRowid);
     res.json(created);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/collections/:id/star
+router.put('/:id/star', (req, res) => {
+  try {
+    const coll = db.prepare('SELECT id FROM collections WHERE id = ?').get(req.params.id);
+    if (!coll) return res.status(404).json({ error: 'Collection not found' });
+    const { starred } = req.body;
+    db.prepare('UPDATE collections SET starred = ? WHERE id = ?').run(starred ? 1 : 0, req.params.id);
+    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -500,11 +585,27 @@ router.put('/:id/cards/reorder', (req, res) => {
   try {
     const { orderedIds } = req.body;
     if (!Array.isArray(orderedIds)) return res.status(400).json({ error: 'orderedIds array required' });
-    const update = db.prepare('UPDATE collection_cards SET sort_order = ? WHERE id = ? AND collection_id = ?');
+    // Only update unstarred cards — starred cards stay pinned at top via ORDER BY starred DESC
+    const update = db.prepare('UPDATE collection_cards SET sort_order = ? WHERE id = ? AND collection_id = ? AND starred = 0');
     const tx = db.transaction(() => {
       orderedIds.forEach((cardId, index) => update.run(index, cardId, req.params.id));
     });
     tx();
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/collections/:id/cards/:cardId/star — must be BEFORE /:id/cards/:cardId
+router.put('/:id/cards/:cardId/star', (req, res) => {
+  try {
+    const card = db.prepare(
+      'SELECT id FROM collection_cards WHERE id = ? AND collection_id = ?'
+    ).get(req.params.cardId, req.params.id);
+    if (!card) return res.status(404).json({ error: 'Card not found' });
+    const { starred } = req.body;
+    db.prepare('UPDATE collection_cards SET starred = ? WHERE id = ?').run(starred ? 1 : 0, card.id);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
