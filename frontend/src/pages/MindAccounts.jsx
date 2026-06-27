@@ -2,8 +2,13 @@ import React, { useEffect, useState } from 'react';
 import {
   Plus, Edit2, Trash2, Archive, ArchiveRestore, X,
   ExternalLink, CreditCard, FolderKanban, Clapperboard, User, KeyRound,
+  Lock, Unlock, Eye, EyeOff, Copy, Check,
 } from 'lucide-react';
 import { api } from '../api';
+import {
+  generateSalt, DEFAULT_ITERATIONS, deriveKey,
+  encryptSecret, decryptSecret, makeSentinel, verifyKey,
+} from '../lib/vault';
 
 const CATEGORY_META = {
   project:  { label: 'Project Accounts',  icon: FolderKanban, emptyMsg: 'No project accounts yet.' },
@@ -46,12 +51,193 @@ function currencySymbol(currency) {
   }
 }
 
+// ── Vault Setup Modal ─────────────────────────────────────────────────────────
+
+function VaultSetupModal({ onSetup, onClose }) {
+  const [pass, setPass] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (pass.length < 8) { setError('Passphrase must be at least 8 characters'); return; }
+    if (pass !== confirm) { setError('Passphrases do not match'); return; }
+    setSaving(true);
+    setError('');
+    try {
+      const salt = generateSalt();
+      const key = await deriveKey(pass, salt, DEFAULT_ITERATIONS);
+      const { cipher, iv } = await makeSentinel(key);
+      await api.post('/vault/setup', { salt, sentinel_cipher: cipher, sentinel_iv: iv, iterations: DEFAULT_ITERATIONS });
+      onSetup(key, { exists: true, salt, sentinel_cipher: cipher, sentinel_iv: iv, iterations: DEFAULT_ITERATIONS });
+    } catch (err) {
+      setError(err.message || 'Setup failed');
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal-box" style={{ maxWidth: 460 }}>
+        <div className="modal-header">
+          <span className="modal-title">Set Up Vault</span>
+          <button className="modal-close" onClick={onClose}><X size={18} /></button>
+        </div>
+        <div style={{ marginBottom: '16px', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+          <p style={{ margin: '0 0 12px' }}>
+            The vault encrypts passwords locally before storing them. Only the encrypted ciphertext reaches the
+            server — your passphrase never leaves your device.
+          </p>
+          <div style={{
+            background: 'rgba(255,80,80,0.08)', border: '1px solid rgba(255,80,80,0.25)',
+            borderRadius: '8px', padding: '10px 14px', fontSize: '12px', color: '#ff8080',
+          }}>
+            <strong>Warning:</strong> If you forget your passphrase, stored passwords cannot be recovered.
+            There is no reset option.
+          </div>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <div className="form-row">
+            <label className="form-label">Master Passphrase</label>
+            <input
+              className="input"
+              type="password"
+              value={pass}
+              onChange={e => setPass(e.target.value)}
+              placeholder="Minimum 8 characters"
+              autoFocus
+              autoComplete="new-password"
+            />
+          </div>
+          <div className="form-row">
+            <label className="form-label">Confirm Passphrase</label>
+            <input
+              className="input"
+              type="password"
+              value={confirm}
+              onChange={e => setConfirm(e.target.value)}
+              placeholder="Re-enter passphrase"
+              autoComplete="new-password"
+            />
+          </div>
+          {error && <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 12px' }}>{error}</p>}
+          <div className="modal-footer">
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              {saving ? 'Setting up…' : 'Create Vault'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ── Vault Unlock Modal ────────────────────────────────────────────────────────
+
+function VaultUnlockModal({ vaultMeta, onUnlock, onClose }) {
+  const [pass, setPass] = useState('');
+  const [error, setError] = useState('');
+  const [unlocking, setUnlocking] = useState(false);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setUnlocking(true);
+    setError('');
+    try {
+      const key = await deriveKey(pass, vaultMeta.salt, vaultMeta.iterations);
+      const ok = await verifyKey(key, vaultMeta.sentinel_cipher, vaultMeta.sentinel_iv);
+      if (ok) {
+        onUnlock(key);
+      } else {
+        setError('Incorrect passphrase');
+        setUnlocking(false);
+      }
+    } catch (_) {
+      setError('Failed to unlock vault');
+      setUnlocking(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal-box" style={{ maxWidth: 400 }}>
+        <div className="modal-header">
+          <span className="modal-title">Unlock Vault</span>
+          <button className="modal-close" onClick={onClose}><X size={18} /></button>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <div className="form-row">
+            <label className="form-label">Master Passphrase</label>
+            <input
+              className="input"
+              type="password"
+              value={pass}
+              onChange={e => setPass(e.target.value)}
+              placeholder="Enter your passphrase"
+              autoFocus
+              autoComplete="current-password"
+            />
+          </div>
+          {error && <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 12px' }}>{error}</p>}
+          <div className="modal-footer">
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={unlocking}>
+              {unlocking ? 'Unlocking…' : 'Unlock'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ── Account card ──────────────────────────────────────────────────────────────
 
-function AccountCard({ account, onEdit, onDelete, onArchive }) {
+function AccountCard({ account, onEdit, onDelete, onArchive, vaultKey, unlocked }) {
   const hasPayment = !!account.has_payment && account.cost > 0;
+  const hasPassword = !!account.password_cipher;
   const sym = currencySymbol(account.currency);
   const renewal = fmtRenewal(account.renewal_date);
+
+  const [revealed, setRevealed] = useState(false);
+  const [revealedText, setRevealedText] = useState('');
+  const [revealError, setRevealError] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!unlocked) {
+      setRevealed(false);
+      setRevealedText('');
+      setRevealError('');
+    }
+  }, [unlocked]);
+
+  async function handleReveal() {
+    if (revealed) {
+      setRevealed(false);
+      setRevealedText('');
+      return;
+    }
+    try {
+      const text = await decryptSecret(vaultKey, account.password_cipher, account.password_iv);
+      setRevealedText(text);
+      setRevealError('');
+      setRevealed(true);
+    } catch (_) {
+      setRevealError('Unable to decrypt');
+    }
+  }
+
+  async function handleCopy() {
+    try {
+      const text = await decryptSecret(vaultKey, account.password_cipher, account.password_iv);
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (_) {}
+  }
 
   return (
     <div className="card" style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column', opacity: account.archived ? 0.75 : 1 }}>
@@ -110,6 +296,55 @@ function AccountCard({ account, onEdit, onDelete, onArchive }) {
         </div>
       )}
 
+      {/* Password row */}
+      {hasPassword && (
+        <div style={{ padding: '8px 14px 0' }}>
+          {unlocked ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <KeyRound size={11} color="var(--text-muted)" style={{ flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+                {revealed ? (
+                  <span style={{
+                    fontSize: '12px', fontFamily: 'monospace', color: 'var(--text-primary)',
+                    display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    {revealedText}
+                  </span>
+                ) : (
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)', letterSpacing: '0.12em' }}>
+                    ••••••••
+                  </span>
+                )}
+              </div>
+              {revealError && (
+                <span style={{ fontSize: '11px', color: 'var(--danger)', flexShrink: 0 }}>{revealError}</span>
+              )}
+              <button
+                className="btn-ghost"
+                style={{ padding: '2px 4px', flexShrink: 0 }}
+                title={revealed ? 'Hide password' : 'Reveal password'}
+                onClick={handleReveal}
+              >
+                {revealed ? <EyeOff size={11} /> : <Eye size={11} />}
+              </button>
+              <button
+                className="btn-ghost"
+                style={{ padding: '2px 4px', flexShrink: 0 }}
+                title="Copy password"
+                onClick={handleCopy}
+              >
+                {copied ? <Check size={11} color="var(--accent)" /> : <Copy size={11} />}
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <Lock size={11} color="var(--text-muted)" />
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Password stored — unlock vault to view</span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Payment badge */}
       <div style={{ padding: '8px 14px 14px', marginTop: 'auto' }}>
         {hasPayment && (
@@ -136,7 +371,7 @@ function AccountCard({ account, onEdit, onDelete, onArchive }) {
 
 // ── Category section ──────────────────────────────────────────────────────────
 
-function AccountSection({ category, list, onEdit, onDelete, onArchive }) {
+function AccountSection({ category, list, onEdit, onDelete, onArchive, vaultKey, unlocked }) {
   const meta = CATEGORY_META[category];
   return (
     <section style={{ marginBottom: '32px' }}>
@@ -148,7 +383,15 @@ function AccountSection({ category, list, onEdit, onDelete, onArchive }) {
       ) : (
         <div className="collections-tile-grid">
           {list.map(a => (
-            <AccountCard key={a.id} account={a} onEdit={onEdit} onDelete={onDelete} onArchive={onArchive} />
+            <AccountCard
+              key={a.id}
+              account={a}
+              onEdit={onEdit}
+              onDelete={onDelete}
+              onArchive={onArchive}
+              vaultKey={vaultKey}
+              unlocked={unlocked}
+            />
           ))}
         </div>
       )}
@@ -158,8 +401,10 @@ function AccountSection({ category, list, onEdit, onDelete, onArchive }) {
 
 // ── Add / Edit modal ──────────────────────────────────────────────────────────
 
-function AccountModal({ account, onSave, onClose }) {
+function AccountModal({ account, vaultKey, unlocked, onSave, onClose }) {
   const isEdit = !!account;
+  const hasExistingPassword = isEdit && !!account.password_cipher;
+
   const [form, setForm] = useState({
     category:      account?.category      || 'project',
     platform:      account?.platform      || '',
@@ -172,6 +417,9 @@ function AccountModal({ account, onSave, onClose }) {
     renewal_date:  account?.renewal_date  || '',
     currency:      account?.currency      || 'EUR',
   });
+  const [passwordInput, setPasswordInput] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [clearPassword, setClearPassword] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -192,7 +440,7 @@ function AccountModal({ account, onSave, onClose }) {
     setSaving(true);
     setError('');
     try {
-      await onSave({
+      const data = {
         category:      form.category,
         platform:      form.platform,
         username:      form.username || null,
@@ -203,7 +451,19 @@ function AccountModal({ account, onSave, onClose }) {
         billing_cycle: form.billing_cycle,
         renewal_date:  form.renewal_date || null,
         currency:      form.currency,
-      });
+      };
+
+      if (clearPassword) {
+        data.password_cipher = null;
+        data.password_iv = null;
+      } else if (unlocked && passwordInput.trim()) {
+        const { cipher, iv } = await encryptSecret(vaultKey, passwordInput);
+        data.password_cipher = cipher;
+        data.password_iv = iv;
+      }
+      // if neither condition: password fields omitted → backend preserves existing value
+
+      await onSave(data);
       onClose();
     } catch (err) {
       setError(err.message || 'Failed to save');
@@ -264,6 +524,68 @@ function AccountModal({ account, onSave, onClose }) {
               placeholder="Optional notes"
               style={{ resize: 'vertical', minHeight: '60px' }}
             />
+          </div>
+
+          {/* Password field */}
+          <div className="form-row">
+            <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+              Password
+              {!unlocked && (
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 400 }}>
+                  — unlock vault to save a password
+                </span>
+              )}
+              {unlocked && hasExistingPassword && !clearPassword && (
+                <span style={{ fontSize: '11px', color: 'var(--accent)', fontWeight: 400 }}>
+                  — stored
+                </span>
+              )}
+            </label>
+            <div style={{ position: 'relative' }}>
+              <input
+                className="input"
+                type={showPassword ? 'text' : 'password'}
+                value={clearPassword ? '' : passwordInput}
+                onChange={e => setPasswordInput(e.target.value)}
+                placeholder={
+                  !unlocked
+                    ? 'Unlock vault first'
+                    : hasExistingPassword
+                    ? 'Leave blank to keep existing password'
+                    : 'Optional password'
+                }
+                disabled={!unlocked || clearPassword}
+                autoComplete="new-password"
+                style={{ paddingRight: unlocked && !clearPassword ? '36px' : undefined }}
+              />
+              {unlocked && !clearPassword && (
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(v => !v)}
+                  tabIndex={-1}
+                  style={{
+                    position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)',
+                    background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '2px',
+                  }}
+                >
+                  {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              )}
+            </div>
+            {unlocked && hasExistingPassword && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={clearPassword}
+                  onChange={e => {
+                    setClearPassword(e.target.checked);
+                    if (e.target.checked) setPasswordInput('');
+                  }}
+                  style={{ accentColor: 'var(--danger)', width: 14, height: 14, flexShrink: 0 }}
+                />
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Clear saved password</span>
+              </label>
+            )}
           </div>
 
           {/* Payment toggle */}
@@ -345,6 +667,14 @@ export default function MindAccounts() {
   const [showModal, setShowModal] = useState(false);
   const [editingAccount, setEditingAccount] = useState(null);
 
+  // Vault — in memory only, never written to storage
+  const [vaultKey, setVaultKey] = useState(null);
+  const [vaultMeta, setVaultMeta] = useState(null);
+  const [showVaultSetup, setShowVaultSetup] = useState(false);
+  const [showVaultUnlock, setShowVaultUnlock] = useState(false);
+
+  const unlocked = vaultKey !== null;
+
   async function loadData() {
     try {
       const [active, archived, spend] = await Promise.all([
@@ -359,7 +689,14 @@ export default function MindAccounts() {
   }
 
   useEffect(() => {
-    loadData().finally(() => setLoading(false));
+    async function init() {
+      await loadData();
+      try {
+        const meta = await api.get('/vault/meta');
+        setVaultMeta(meta);
+      } catch (_) {}
+    }
+    init().finally(() => setLoading(false));
   }, []);
 
   function openAdd() {
@@ -402,6 +739,17 @@ export default function MindAccounts() {
     } catch (err) { alert(err.message || 'Failed to update'); }
   }
 
+  function handleVaultSetup(key, meta) {
+    setVaultKey(key);
+    setVaultMeta(meta);
+    setShowVaultSetup(false);
+  }
+
+  function handleVaultUnlock(key) {
+    setVaultKey(key);
+    setShowVaultUnlock(false);
+  }
+
   const byCategory = (cat, list) => list.filter(a => a.category === cat);
 
   if (loading) return (
@@ -417,9 +765,53 @@ export default function MindAccounts() {
     <div>
       <div className="page-header">
         <h1 className="page-title">Accounts</h1>
-        <button className="btn btn-primary" onClick={openAdd}>
-          <Plus size={16} /> New Account
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          {vaultMeta !== null && (
+            !vaultMeta.exists ? (
+              <button
+                className="btn btn-ghost"
+                style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '5px' }}
+                onClick={() => setShowVaultSetup(true)}
+              >
+                <Lock size={13} />
+                Set up Vault
+              </button>
+            ) : unlocked ? (
+              <>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: 'var(--accent)' }}>
+                  <Unlock size={13} />
+                  Vault unlocked
+                </span>
+                <button
+                  className="btn btn-ghost"
+                  style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '5px' }}
+                  onClick={() => setVaultKey(null)}
+                >
+                  <Lock size={13} />
+                  Lock
+                </button>
+              </>
+            ) : (
+              <>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: 'var(--text-muted)' }}>
+                  <Lock size={13} />
+                  Vault locked
+                </span>
+                <button
+                  className="btn btn-ghost"
+                  style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '5px' }}
+                  onClick={() => setShowVaultUnlock(true)}
+                >
+                  <Unlock size={13} />
+                  Unlock
+                </button>
+              </>
+            )
+          )}
+          <button className="btn btn-primary" onClick={openAdd}>
+            <Plus size={16} /> New Account
+          </button>
+        </div>
       </div>
 
       {/* Monthly spend summary */}
@@ -481,9 +873,9 @@ export default function MindAccounts() {
           </div>
         ) : (
           <>
-            <AccountSection category="project"  list={byCategory('project', accounts)}  onEdit={openEdit} onDelete={handleDelete} onArchive={handleArchive} />
-            <AccountSection category="studio"   list={byCategory('studio', accounts)}   onEdit={openEdit} onDelete={handleDelete} onArchive={handleArchive} />
-            <AccountSection category="personal" list={byCategory('personal', accounts)} onEdit={openEdit} onDelete={handleDelete} onArchive={handleArchive} />
+            <AccountSection category="project"  list={byCategory('project', accounts)}  onEdit={openEdit} onDelete={handleDelete} onArchive={handleArchive} vaultKey={vaultKey} unlocked={unlocked} />
+            <AccountSection category="studio"   list={byCategory('studio', accounts)}   onEdit={openEdit} onDelete={handleDelete} onArchive={handleArchive} vaultKey={vaultKey} unlocked={unlocked} />
+            <AccountSection category="personal" list={byCategory('personal', accounts)} onEdit={openEdit} onDelete={handleDelete} onArchive={handleArchive} vaultKey={vaultKey} unlocked={unlocked} />
           </>
         )
       )}
@@ -501,7 +893,7 @@ export default function MindAccounts() {
                 <h2 style={SECTION_LABEL}>Project Accounts — Archived</h2>
                 <div className="collections-tile-grid">
                   {byCategory('project', archivedAccounts).map(a => (
-                    <AccountCard key={a.id} account={a} onEdit={openEdit} onDelete={handleDelete} onArchive={handleArchive} />
+                    <AccountCard key={a.id} account={a} onEdit={openEdit} onDelete={handleDelete} onArchive={handleArchive} vaultKey={vaultKey} unlocked={unlocked} />
                   ))}
                 </div>
               </section>
@@ -511,7 +903,7 @@ export default function MindAccounts() {
                 <h2 style={SECTION_LABEL}>Studio Accounts — Archived</h2>
                 <div className="collections-tile-grid">
                   {byCategory('studio', archivedAccounts).map(a => (
-                    <AccountCard key={a.id} account={a} onEdit={openEdit} onDelete={handleDelete} onArchive={handleArchive} />
+                    <AccountCard key={a.id} account={a} onEdit={openEdit} onDelete={handleDelete} onArchive={handleArchive} vaultKey={vaultKey} unlocked={unlocked} />
                   ))}
                 </div>
               </section>
@@ -521,7 +913,7 @@ export default function MindAccounts() {
                 <h2 style={SECTION_LABEL}>Personal Accounts — Archived</h2>
                 <div className="collections-tile-grid">
                   {byCategory('personal', archivedAccounts).map(a => (
-                    <AccountCard key={a.id} account={a} onEdit={openEdit} onDelete={handleDelete} onArchive={handleArchive} />
+                    <AccountCard key={a.id} account={a} onEdit={openEdit} onDelete={handleDelete} onArchive={handleArchive} vaultKey={vaultKey} unlocked={unlocked} />
                   ))}
                 </div>
               </section>
@@ -531,7 +923,19 @@ export default function MindAccounts() {
       )}
 
       {showModal && (
-        <AccountModal account={editingAccount} onSave={handleSave} onClose={closeModal} />
+        <AccountModal
+          account={editingAccount}
+          vaultKey={vaultKey}
+          unlocked={unlocked}
+          onSave={handleSave}
+          onClose={closeModal}
+        />
+      )}
+      {showVaultSetup && (
+        <VaultSetupModal onSetup={handleVaultSetup} onClose={() => setShowVaultSetup(false)} />
+      )}
+      {showVaultUnlock && vaultMeta?.exists && (
+        <VaultUnlockModal vaultMeta={vaultMeta} onUnlock={handleVaultUnlock} onClose={() => setShowVaultUnlock(false)} />
       )}
     </div>
   );
