@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { ChevronLeft, ChevronRight, Plus, X, Trash2, Edit2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { DndContext, useDraggable, useDroppable, PointerSensor, TouchSensor, useSensors, useSensor, pointerWithin } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { api } from '../api';
@@ -7,7 +8,8 @@ import { api } from '../api';
 const EVENT_TYPE_COLORS = {
   shoot: '#7BA01A',
   meeting: '#3B82F6',
-  deadline: '#FF4444',
+  deadline: '#FF902F',
+  task: '#22D3EE',
   other: '#888888',
 };
 
@@ -356,11 +358,18 @@ function DraggableEventChip({ ev, onClick }) {
 
 function EventDetailModal({ event, onClose, onEdit, onDelete }) {
   const [deleting, setDeleting] = useState(false);
+  const navigate = useNavigate();
+  const isTask = event.event_type === 'task';
 
   async function handleDelete() {
     if (!window.confirm('Delete this event?')) return;
     setDeleting(true);
     await onDelete();
+  }
+
+  function openProject() {
+    navigate(`/projects/${event.project_id}`);
+    onClose();
   }
 
   return (
@@ -410,12 +419,19 @@ function EventDetailModal({ event, onClose, onEdit, onDelete }) {
           )}
         </div>
         <div className="modal-footer">
-          <button className="btn btn-danger btn-sm" onClick={handleDelete} disabled={deleting}>
-            <Trash2 size={13} /> {deleting ? 'Deleting...' : 'Delete'}
-          </button>
+          {!isTask && (
+            <button className="btn btn-danger btn-sm" onClick={handleDelete} disabled={deleting}>
+              <Trash2 size={13} /> {deleting ? 'Deleting...' : 'Delete'}
+            </button>
+          )}
           <div style={{ flex: 1 }} />
           <button className="btn btn-ghost" onClick={onClose}>Close</button>
-          <button className="btn btn-primary" onClick={onEdit}><Edit2 size={13} /> Edit</button>
+          {event.project_id && (
+            <button className="btn btn-ghost" onClick={openProject}>Open Project</button>
+          )}
+          {!isTask && (
+            <button className="btn btn-primary" onClick={onEdit}><Edit2 size={13} /> Edit</button>
+          )}
         </div>
       </div>
     </div>

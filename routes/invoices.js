@@ -477,13 +477,16 @@ router.post('/from-estimate/:budgetId', (req, res) => {
     const description = [l.description, l.position_label].filter(Boolean).join(' — ') || l.section || '';
     const qty = Number(l.days) || 1;
     const price = Number(l.rate) || (qty > 0 ? Number(l.amount) / qty : Number(l.amount));
+    const lineGross = qty * (price || 0);
+    const cappedDiscount = Math.min(Number(l.discount) || 0, lineGross);
+    const line_discount_pct = lineGross > 0 ? (cappedDiscount / lineGross) * 100 : 0;
     return {
       code: null,
       description: description.trim(),
       unit: 'Shërbim',
       qty,
       price: price || 0,
-      line_discount_pct: 0,
+      line_discount_pct,
       sort_order: i,
     };
   });

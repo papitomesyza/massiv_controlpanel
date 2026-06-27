@@ -161,6 +161,18 @@ router.get('/', (req, res) => {
   res.json(projects);
 });
 
+function syncTaskCalendarEvent(taskId) {
+  db.prepare("DELETE FROM calendar_events WHERE event_type='task' AND task_id = ?").run(taskId);
+  const task = db.prepare(
+    'SELECT t.due_date, t.status, t.title, t.project_id, p.title AS project_title FROM tasks t LEFT JOIN projects p ON p.id = t.project_id WHERE t.id = ?'
+  ).get(taskId);
+  if (!task || !task.due_date || task.status === 'done') return;
+  const title = task.project_title ? `${task.project_title} — ${task.title}` : task.title;
+  db.prepare(
+    "INSERT INTO calendar_events (project_id, task_id, title, event_type, start_date, color) VALUES (?, ?, ?, 'task', ?, '#22D3EE')"
+  ).run(task.project_id, taskId, title, task.due_date);
+}
+
 function syncProjectCalendarEvents(projectId, title, deadline, shootDate, shootLocation, shootStartTime, shootEndTime) {
   db.prepare("DELETE FROM calendar_events WHERE project_id = ? AND event_type IN ('shoot', 'deadline')").run(projectId);
 
@@ -360,15 +372,18 @@ router.post('/:id/duplicate', (req, res) => {
     const newPhaseId = newPhaseIds[origPhase.phase_name];
     if (!newPhaseId) return;
     const tasks = db.prepare('SELECT * FROM tasks WHERE phase_id = ? AND is_locked = 0').all(origPhase.id);
-    tasks.forEach(t => insertTask.run(newPhaseId, newProjectId, t.title, t.assigned_crew_id, t.due_date, t.notes, 'todo'));
+    tasks.forEach(t => {
+      const r = insertTask.run(newPhaseId, newProjectId, t.title, t.assigned_crew_id, t.due_date, t.notes, 'todo');
+      syncTaskCalendarEvent(r.lastInsertRowid);
+    });
   });
 
   res.json({ id: newProjectId });
 });
 
-// Delete project — also deletes linked shoot and deadline calendar events
+// Delete project — also deletes linked shoot, deadline, and task calendar events
 router.delete('/:id', (req, res) => {
-  db.prepare("DELETE FROM calendar_events WHERE project_id = ? AND event_type IN ('shoot', 'deadline')").run(req.params.id);
+  db.prepare("DELETE FROM calendar_events WHERE project_id = ? AND event_type IN ('shoot', 'deadline', 'task')").run(req.params.id);
   db.prepare('DELETE FROM projects WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
@@ -381,6 +396,7 @@ router.post('/:id/tasks', (req, res) => {
   const result = db.prepare(
     'INSERT INTO tasks (phase_id, project_id, title, assigned_crew_id, due_date, notes, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)'
   ).run(phase_id, req.params.id, title, assigned_crew_id || null, due_date || null, notes || null, maxRow.m + 1);
+  syncTaskCalendarEvent(result.lastInsertRowid);
   res.json({ id: result.lastInsertRowid });
 });
 
@@ -388,12 +404,14 @@ router.put('/:id/tasks/:taskId', (req, res) => {
   const { title, assigned_crew_id, due_date, notes, status } = req.body;
   db.prepare('UPDATE tasks SET title=?, assigned_crew_id=?, due_date=?, notes=?, status=? WHERE id=? AND project_id=?')
     .run(title, assigned_crew_id || null, due_date || null, notes || null, status, req.params.taskId, req.params.id);
+  syncTaskCalendarEvent(parseInt(req.params.taskId));
   res.json({ ok: true });
 });
 
 router.delete('/:id/tasks/:taskId', (req, res) => {
   const task = db.prepare('SELECT is_locked FROM tasks WHERE id = ? AND project_id = ?').get(req.params.taskId, req.params.id);
   if (task && task.is_locked) return res.status(400).json({ error: 'Cannot delete a locked task' });
+  db.prepare("DELETE FROM calendar_events WHERE event_type='task' AND task_id = ?").run(req.params.taskId);
   db.prepare('DELETE FROM tasks WHERE id = ? AND project_id = ?').run(req.params.taskId, req.params.id);
   res.json({ ok: true });
 });

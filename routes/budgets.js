@@ -268,7 +268,9 @@ router.get('/:id/pdf', (req, res) => {
   const ROW_H        = 22;
   const SUB_ROW_H    = 22;
   const SEC_GAP      = 20;
-  const totalsH      = budget.vat_enabled ? 82 : 68;
+  const totalDiscount = budget.total_discount || 0;
+  const hasDiscount   = totalDiscount > 0;
+  const totalsH       = 48 + 20 + (hasDiscount ? 40 : 0) + (budget.vat_enabled ? 16 : 0);
   const notesH       = budget.notes ? 46 : 0;
 
   const sectionsH = activeSections.reduce(
@@ -402,8 +404,16 @@ router.get('/:id/pdf', (req, res) => {
         doc.font('Helvetica').fontSize(8).fillColor('#FFFFFF')
            .text(label, 44, y + 7, { width: VW * 0.60, lineBreak: false });
       }
-      doc.font('Helvetica').fontSize(8).fillColor('#FFFFFF')
-         .text(fmt(line.amount), 0, y + 7, { width: VW - 40, align: 'right', lineBreak: false });
+      const lineDisc = Math.min(parseFloat(line.discount) || 0, parseFloat(line.amount) || 0);
+      if (lineDisc > 0) {
+        doc.font('Helvetica').fontSize(8).fillColor('#888888')
+           .text(fmt(line.amount), 0, y + 3, { width: VW - 40, align: 'right', lineBreak: false });
+        doc.font('Helvetica').fontSize(7).fillColor('#FF902F')
+           .text(`-${fmt(lineDisc)}`, 0, y + 12, { width: VW - 40, align: 'right', lineBreak: false });
+      } else {
+        doc.font('Helvetica').fontSize(8).fillColor('#FFFFFF')
+           .text(fmt(line.amount), 0, y + 7, { width: VW - 40, align: 'right', lineBreak: false });
+      }
       y += ROW_H;
     });
 
@@ -418,8 +428,10 @@ router.get('/:id/pdf', (req, res) => {
 
   // Totals block
   y += SEC_GAP;
-  const vatAmount  = budget.vat_enabled ? grandSubtotal * (budget.vat_rate / 100) : 0;
-  const totalFinal = grandSubtotal + vatAmount;
+  const grossSubtotal = grandSubtotal;
+  const netSubtotal   = grossSubtotal - totalDiscount;
+  const vatAmount     = budget.vat_enabled ? netSubtotal * (budget.vat_rate / 100) : 0;
+  const grandTotal    = netSubtotal + vatAmount;
 
   doc.rect(0, y, VW, totalsH).fill('#1e1e1e');
   doc.rect(0, y, 3, totalsH).fill('#723CEB');
@@ -428,8 +440,21 @@ router.get('/:id/pdf', (req, res) => {
   doc.font('Helvetica').fontSize(10).fillColor('#888888')
      .text('SUBTOTAL', 40, ty, { lineBreak: false });
   doc.font('Helvetica').fontSize(10).fillColor('#888888')
-     .text(fmt(grandSubtotal), 0, ty, { width: VW - 40, align: 'right', lineBreak: false });
+     .text(fmt(grossSubtotal), 0, ty, { width: VW - 40, align: 'right', lineBreak: false });
   ty += 20;
+
+  if (hasDiscount) {
+    doc.font('Helvetica').fontSize(10).fillColor('#FF902F')
+       .text('DISCOUNT', 40, ty, { lineBreak: false });
+    doc.font('Helvetica').fontSize(10).fillColor('#FF902F')
+       .text(`-${fmt(totalDiscount)}`, 0, ty, { width: VW - 40, align: 'right', lineBreak: false });
+    ty += 20;
+    doc.font('Helvetica').fontSize(10).fillColor('#888888')
+       .text('NET SUBTOTAL', 40, ty, { lineBreak: false });
+    doc.font('Helvetica').fontSize(10).fillColor('#888888')
+       .text(fmt(netSubtotal), 0, ty, { width: VW - 40, align: 'right', lineBreak: false });
+    ty += 20;
+  }
 
   if (budget.vat_enabled) {
     doc.font('Helvetica').fontSize(10).fillColor('#888888')
@@ -446,12 +471,12 @@ router.get('/:id/pdf', (req, res) => {
     doc.font('Helvetica-Bold').fontSize(13).fillColor('#FF902F')
        .text('TOTAL INC. VAT', 40, ty, { lineBreak: false });
     doc.font('Helvetica-Bold').fontSize(13).fillColor('#FF902F')
-       .text(fmt(totalFinal), 0, ty, { width: VW - 40, align: 'right', lineBreak: false });
+       .text(fmt(grandTotal), 0, ty, { width: VW - 40, align: 'right', lineBreak: false });
   } else {
     doc.font('Helvetica-Bold').fontSize(13).fillColor('#FFFFFF')
        .text('TOTAL', 40, ty, { lineBreak: false });
     doc.font('Helvetica-Bold').fontSize(13).fillColor('#FFFFFF')
-       .text(fmt(totalFinal), 0, ty, { width: VW - 40, align: 'right', lineBreak: false });
+       .text(fmt(grandTotal), 0, ty, { width: VW - 40, align: 'right', lineBreak: false });
   }
   y += totalsH;
 
