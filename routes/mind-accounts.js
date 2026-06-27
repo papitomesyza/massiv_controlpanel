@@ -75,7 +75,7 @@ router.get('/', (req, res) => {
 // POST /api/mind-accounts
 router.post('/', (req, res) => {
   try {
-    const { category, platform, username, url, notes, has_payment, cost, billing_cycle, renewal_date, currency } = req.body;
+    const { category, platform, username, url, notes, has_payment, cost, billing_cycle, renewal_date, currency, password_cipher, password_iv } = req.body;
 
     if (!platform || !platform.trim()) return res.status(400).json({ error: 'platform is required' });
     const err = validateAccount({ category, billing_cycle, cost });
@@ -85,8 +85,8 @@ router.post('/', (req, res) => {
     const sortOrder = (maxRes.m === null || maxRes.m === undefined) ? 0 : maxRes.m + 1;
 
     const result = db.prepare(`
-      INSERT INTO mind_accounts (category, platform, username, url, notes, has_payment, cost, billing_cycle, renewal_date, currency, sort_order)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO mind_accounts (category, platform, username, url, notes, has_payment, cost, billing_cycle, renewal_date, currency, sort_order, password_cipher, password_iv)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       category,
       platform.trim(),
@@ -98,7 +98,9 @@ router.post('/', (req, res) => {
       billing_cycle || 'monthly',
       renewal_date || null,
       currency || 'EUR',
-      sortOrder
+      sortOrder,
+      password_cipher || null,
+      password_iv || null
     );
 
     const created = db.prepare('SELECT * FROM mind_accounts WHERE id = ?').get(result.lastInsertRowid);
@@ -111,10 +113,10 @@ router.post('/', (req, res) => {
 // PUT /api/mind-accounts/:id
 router.put('/:id', (req, res) => {
   try {
-    const account = db.prepare('SELECT id FROM mind_accounts WHERE id = ?').get(req.params.id);
+    const account = db.prepare('SELECT id, password_cipher, password_iv FROM mind_accounts WHERE id = ?').get(req.params.id);
     if (!account) return res.status(404).json({ error: 'Account not found' });
 
-    const { category, platform, username, url, notes, has_payment, cost, billing_cycle, renewal_date, currency } = req.body;
+    const { category, platform, username, url, notes, has_payment, cost, billing_cycle, renewal_date, currency, password_cipher, password_iv } = req.body;
 
     if (!platform || !platform.trim()) return res.status(400).json({ error: 'platform is required' });
     const err = validateAccount({ category, billing_cycle, cost });
@@ -123,7 +125,8 @@ router.put('/:id', (req, res) => {
     db.prepare(`
       UPDATE mind_accounts
       SET category = ?, platform = ?, username = ?, url = ?, notes = ?,
-          has_payment = ?, cost = ?, billing_cycle = ?, renewal_date = ?, currency = ?
+          has_payment = ?, cost = ?, billing_cycle = ?, renewal_date = ?, currency = ?,
+          password_cipher = ?, password_iv = ?
       WHERE id = ?
     `).run(
       category,
@@ -136,6 +139,8 @@ router.put('/:id', (req, res) => {
       billing_cycle || 'monthly',
       renewal_date || null,
       currency || 'EUR',
+      password_cipher !== undefined ? (password_cipher || null) : account.password_cipher ?? null,
+      password_iv !== undefined ? (password_iv || null) : account.password_iv ?? null,
       req.params.id
     );
 

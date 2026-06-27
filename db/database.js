@@ -450,6 +450,20 @@ function initDb() {
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('invoice_last_year', '25')").run();
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('invoice_language', 'sq')").run();
 
+  // vault_meta: single-row table for ZK password vault parameters
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS vault_meta (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        salt TEXT NOT NULL,
+        sentinel_cipher TEXT NOT NULL,
+        sentinel_iv TEXT NOT NULL,
+        iterations INTEGER NOT NULL,
+        created_at TEXT DEFAULT (datetime('now'))
+      )
+    `);
+  } catch (_) {}
+
   // Schema migrations — safe to run on every boot
   [
     'ALTER TABLE crew ADD COLUMN is_company INTEGER DEFAULT 0',
@@ -475,6 +489,8 @@ function initDb() {
     'ALTER TABLE collection_cards ADD COLUMN sort_order INTEGER NULL',
     'ALTER TABLE budget_lines ADD COLUMN discount REAL DEFAULT 0',
     'ALTER TABLE calendar_events ADD COLUMN task_id INTEGER',
+    'ALTER TABLE mind_accounts ADD COLUMN password_cipher TEXT',
+    'ALTER TABLE mind_accounts ADD COLUMN password_iv TEXT',
   ].forEach(sql => { try { db.exec(sql); } catch (_) {} });
 
   // collection_share_links table
