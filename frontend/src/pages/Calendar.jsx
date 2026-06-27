@@ -29,6 +29,36 @@ function getFirstDayOfWeek(year, month) {
   return d === 0 ? 6 : d - 1;
 }
 
+function getGridRange(year, month) {
+  const dim = getDaysInMonth(year, month);
+  const firstDOW = getFirstDayOfWeek(year, month);
+  const prevDim = getDaysInMonth(year, month === 0 ? 11 : month - 1);
+  const totalCells = Math.ceil((firstDOW + dim) / 7) * 7;
+
+  let firstDate;
+  if (firstDOW > 0) {
+    const cDay = prevDim - firstDOW + 1;
+    const cMonth = month === 0 ? 11 : month - 1;
+    const cYear = month === 0 ? year - 1 : year;
+    firstDate = dateStr(cYear, cMonth, cDay);
+  } else {
+    firstDate = dateStr(year, month, 1);
+  }
+
+  const lastDayNum = totalCells - firstDOW;
+  let lastDate;
+  if (lastDayNum > dim) {
+    const cDay = lastDayNum - dim;
+    const cMonth = month === 11 ? 0 : month + 1;
+    const cYear = month === 11 ? year + 1 : year;
+    lastDate = dateStr(cYear, cMonth, cDay);
+  } else {
+    lastDate = dateStr(year, month, lastDayNum);
+  }
+
+  return { firstDate, lastDate };
+}
+
 function isSameDay(a, b) {
   return a.getFullYear() === b.getFullYear() &&
     a.getMonth() === b.getMonth() &&
@@ -65,8 +95,8 @@ export default function Calendar() {
   );
 
   const loadEvents = useCallback(() => {
-    const key = getMonthKey(year, month);
-    api.get(`/calendar?month=${key}`).then(setEvents).catch(() => {});
+    const { firstDate, lastDate } = getGridRange(year, month);
+    api.get(`/calendar?start=${firstDate}&end=${lastDate}`).then(setEvents).catch(() => {});
   }, [year, month]);
 
   useEffect(() => {
@@ -303,6 +333,7 @@ function DraggableEventChip({ ev, onClick }) {
       {...listeners}
       {...attributes}
       onClick={onClick}
+      className="calendar-event-chip"
       style={{
         background: ev.color || '#7BA01A',
         borderRadius: '4px',
@@ -311,9 +342,6 @@ function DraggableEventChip({ ev, onClick }) {
         color: '#fff',
         marginBottom: '2px',
         cursor: isDragging ? 'grabbing' : 'grab',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap',
         maxWidth: '100%',
         opacity: isDragging ? 0.4 : 1,
         transform: CSS.Translate.toString(transform),

@@ -40,15 +40,23 @@ function uid() {
 }
 
 function mkCrewLine(override = {}) {
-  return { _id: uid(), crew_id: null, position_label: '', days: 1, rate: 0, amount: 0, ...override };
+  return { _id: uid(), crew_id: null, position_label: '', days: 1, rate: 0, amount: 0, discount: 0, ...override };
 }
 
 function mkEquipLine(override = {}) {
-  return { _id: uid(), item_id: null, provider_id: null, position_label: '', provider_name: '', days: 1, rate: 0, amount: 0, ...override };
+  return { _id: uid(), item_id: null, provider_id: null, position_label: '', provider_name: '', days: 1, rate: 0, amount: 0, discount: 0, ...override };
 }
 
 function mkLogLine(override = {}) {
-  return { _id: uid(), position_label: '', description: '', amount: 0, ...override };
+  return { _id: uid(), position_label: '', description: '', amount: 0, discount: 0, ...override };
+}
+
+function discountLabel(amount, discount) {
+  const amt = parseFloat(amount) || 0;
+  const eff = Math.min(parseFloat(discount) || 0, amt);
+  if (eff <= 0) return null;
+  const pct = amt > 0 ? (eff / amt) * 100 : 0;
+  return `−€${eff.toFixed(2)} (−${pct.toFixed(1)}%)`;
 }
 
 export default function BudgetWizard({ budget, onClose, onSaved }) {
@@ -291,9 +299,15 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
   const crewSubtotal = crewLines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0);
   const equipSubtotal = equipLines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0);
   const logSubtotal = logLines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0);
-  const grandSubtotal = crewSubtotal + equipSubtotal + logSubtotal;
-  const vatAmount = info.vat_enabled ? grandSubtotal * (parseFloat(info.vat_rate) / 100) : 0;
-  const grandTotal = grandSubtotal + vatAmount;
+  const grossSubtotal = crewSubtotal + equipSubtotal + logSubtotal;
+  const totalDiscount = [...crewLines, ...equipLines, ...logLines].reduce((s, l) => {
+    const amt = parseFloat(l.amount) || 0;
+    const disc = parseFloat(l.discount) || 0;
+    return s + Math.min(disc, amt);
+  }, 0);
+  const netSubtotal = grossSubtotal - totalDiscount;
+  const vatAmount = info.vat_enabled ? netSubtotal * (parseFloat(info.vat_rate) / 100) : 0;
+  const grandTotal = netSubtotal + vatAmount;
 
   async function saveToDB() {
     if (!info.title.trim()) throw new Error('Title required');
@@ -331,6 +345,7 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
         days: isFlatFee ? 1 : parseFloat(l.days) || 1,
         rate: isFlatFee ? 0 : parseFloat(l.rate) || 0,
         amount: parseFloat(l.amount) || 0,
+        discount: parseFloat(l.discount) || 0,
         sort_order: i,
       })),
       ...equipLines.map((l, i) => {
@@ -344,6 +359,7 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
           days,
           rate,
           amount: days * rate,
+          discount: parseFloat(l.discount) || 0,
           sort_order: i,
         };
       }),
@@ -355,6 +371,7 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
         days: 1,
         rate: 0,
         amount: parseFloat(l.amount) || 0,
+        discount: parseFloat(l.discount) || 0,
         sort_order: i,
       })),
     ];
@@ -489,7 +506,9 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
               crewSubtotal={crewSubtotal}
               equipSubtotal={equipSubtotal}
               logSubtotal={logSubtotal}
-              grandSubtotal={grandSubtotal}
+              grossSubtotal={grossSubtotal}
+              totalDiscount={totalDiscount}
+              netSubtotal={netSubtotal}
               vatAmount={vatAmount}
               grandTotal={grandTotal}
             />
@@ -612,62 +631,80 @@ function StepCrew({ crewMembers, lines, isFlatFee, shootDays, selected, onToggle
             {!isFlatFee && <span style={{ width: '60px' }}>Days</span>}
             {!isFlatFee && <span style={{ width: '80px' }}>Rate/Day</span>}
             <span style={{ width: '80px', textAlign: 'right' }}>{isFlatFee ? 'Amount' : 'Total'}</span>
+            <span style={{ width: '76px' }}>Disc. €</span>
             <span style={{ width: '28px' }} />
           </div>
         )}
 
         <div className="budget-lines-list">
-          {lines.map(line => (
-            <div key={line._id} className="budget-line-row">
-              <input
-                className="input budget-line-input"
-                style={{ flex: 2 }}
-                value={line.position_label}
-                onChange={e => onUpdate(line._id, 'position_label', e.target.value)}
-                placeholder={isFlatFee ? 'Service description' : 'Position label'}
-              />
-              {!isFlatFee && (
+          {lines.map(line => {
+            const discLbl = discountLabel(line.amount, line.discount);
+            return (
+              <div key={line._id} className="budget-line-row" style={{ flexWrap: 'wrap' }}>
                 <input
-                  type="number"
                   className="input budget-line-input"
-                  style={{ width: '60px' }}
-                  value={line.days}
-                  min="0.5"
-                  step="0.5"
-                  onChange={e => onUpdate(line._id, 'days', e.target.value)}
+                  style={{ flex: 2, minWidth: '100px' }}
+                  value={line.position_label}
+                  onChange={e => onUpdate(line._id, 'position_label', e.target.value)}
+                  placeholder={isFlatFee ? 'Service description' : 'Position label'}
                 />
-              )}
-              {!isFlatFee && (
-                <input
-                  type="number"
-                  className="input budget-line-input"
-                  style={{ width: '80px' }}
-                  value={line.rate}
-                  min="0"
-                  onChange={e => onUpdate(line._id, 'rate', e.target.value)}
-                  placeholder="0"
-                />
-              )}
-              <div className="budget-line-total" style={{ width: '80px' }}>
-                {isFlatFee ? (
+                {!isFlatFee && (
+                  <input
+                    type="number"
+                    className="input budget-line-input"
+                    style={{ width: '60px' }}
+                    value={line.days}
+                    min="0.5"
+                    step="0.5"
+                    onChange={e => onUpdate(line._id, 'days', e.target.value)}
+                  />
+                )}
+                {!isFlatFee && (
                   <input
                     type="number"
                     className="input budget-line-input"
                     style={{ width: '80px' }}
-                    value={line.amount}
+                    value={line.rate}
                     min="0"
-                    onChange={e => onUpdate(line._id, 'amount', e.target.value)}
+                    onChange={e => onUpdate(line._id, 'rate', e.target.value)}
                     placeholder="0"
                   />
-                ) : (
-                  <span>{fmt(line.amount)}</span>
                 )}
+                <div className="budget-line-total" style={{ width: '80px' }}>
+                  {isFlatFee ? (
+                    <input
+                      type="number"
+                      className="input budget-line-input"
+                      style={{ width: '80px' }}
+                      value={line.amount}
+                      min="0"
+                      onChange={e => onUpdate(line._id, 'amount', e.target.value)}
+                      placeholder="0"
+                    />
+                  ) : (
+                    <span>{fmt(line.amount)}</span>
+                  )}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <input
+                    type="number"
+                    className="input budget-line-input"
+                    style={{ width: '76px' }}
+                    value={line.discount || 0}
+                    min="0"
+                    placeholder="0"
+                    onChange={e => onUpdate(line._id, 'discount', e.target.value)}
+                  />
+                  {discLbl && (
+                    <span style={{ fontSize: '11px', color: '#FF6B6B', whiteSpace: 'nowrap' }}>{discLbl}</span>
+                  )}
+                </div>
+                <button className="btn-icon" style={{ width: '28px', height: '28px', borderRadius: '8px', flexShrink: 0 }} onClick={() => onRemove(line._id)}>
+                  <Trash2 size={12} />
+                </button>
               </div>
-              <button className="btn-icon" style={{ width: '28px', height: '28px', borderRadius: '8px', flexShrink: 0 }} onClick={() => onRemove(line._id)}>
-                <Trash2 size={12} />
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <button className="btn btn-ghost btn-sm" style={{ marginTop: '10px' }} onClick={onAddCustom}>
@@ -789,51 +826,69 @@ function StepEquipmentAssets({ assetProviders, assetAllItems, lines, selectedKey
             <span style={{ width: '52px' }}>Days</span>
             <span style={{ width: '76px' }}>Rate/Day €</span>
             <span style={{ width: '72px', textAlign: 'right' }}>Total</span>
+            <span style={{ width: '76px' }}>Disc. €</span>
             <span style={{ width: '28px' }} />
           </div>
         )}
 
         <div className="budget-lines-list">
-          {lines.map(line => (
-            <div key={line._id} style={{ marginBottom: '4px' }}>
-              <div className="budget-line-row">
-                <input
-                  className="input budget-line-input"
-                  style={{ flex: 2 }}
-                  value={line.position_label}
-                  onChange={e => onUpdate(line._id, 'position_label', e.target.value)}
-                  placeholder="Item description"
-                />
-                <input
-                  type="number"
-                  className="input budget-line-input"
-                  style={{ width: '52px' }}
-                  value={line.days}
-                  min="0.5"
-                  step="0.5"
-                  onChange={e => onUpdate(line._id, 'days', e.target.value)}
-                />
-                <input
-                  type="number"
-                  className="input budget-line-input"
-                  style={{ width: '76px' }}
-                  value={line.rate}
-                  min="0"
-                  onChange={e => onUpdate(line._id, 'rate', e.target.value)}
-                  placeholder="0"
-                />
-                <div className="budget-line-total" style={{ width: '72px', textAlign: 'right' }}>
-                  {fmt((parseFloat(line.days) || 0) * (parseFloat(line.rate) || 0))}
+          {lines.map(line => {
+            const discLbl = discountLabel((parseFloat(line.days) || 0) * (parseFloat(line.rate) || 0), line.discount);
+            return (
+              <div key={line._id} style={{ marginBottom: '4px' }}>
+                <div className="budget-line-row" style={{ flexWrap: 'wrap' }}>
+                  <input
+                    className="input budget-line-input"
+                    style={{ flex: 2, minWidth: '100px' }}
+                    value={line.position_label}
+                    onChange={e => onUpdate(line._id, 'position_label', e.target.value)}
+                    placeholder="Item description"
+                  />
+                  <input
+                    type="number"
+                    className="input budget-line-input"
+                    style={{ width: '52px' }}
+                    value={line.days}
+                    min="0.5"
+                    step="0.5"
+                    onChange={e => onUpdate(line._id, 'days', e.target.value)}
+                  />
+                  <input
+                    type="number"
+                    className="input budget-line-input"
+                    style={{ width: '76px' }}
+                    value={line.rate}
+                    min="0"
+                    onChange={e => onUpdate(line._id, 'rate', e.target.value)}
+                    placeholder="0"
+                  />
+                  <div className="budget-line-total" style={{ width: '72px', textAlign: 'right' }}>
+                    {fmt((parseFloat(line.days) || 0) * (parseFloat(line.rate) || 0))}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <input
+                      type="number"
+                      className="input budget-line-input"
+                      style={{ width: '76px' }}
+                      value={line.discount || 0}
+                      min="0"
+                      placeholder="0"
+                      onChange={e => onUpdate(line._id, 'discount', e.target.value)}
+                    />
+                    {discLbl && (
+                      <span style={{ fontSize: '11px', color: '#FF6B6B', whiteSpace: 'nowrap' }}>{discLbl}</span>
+                    )}
+                  </div>
+                  <button className="btn-icon" style={{ width: '28px', height: '28px', borderRadius: '8px', flexShrink: 0 }} onClick={() => onRemove(line._id)}>
+                    <Trash2 size={12} />
+                  </button>
                 </div>
-                <button className="btn-icon" style={{ width: '28px', height: '28px', borderRadius: '8px', flexShrink: 0 }} onClick={() => onRemove(line._id)}>
-                  <Trash2 size={12} />
-                </button>
+                {line.provider_name && (
+                  <div style={{ fontSize: '11px', color: '#555', paddingLeft: '6px', marginTop: '-2px' }}>{line.provider_name}</div>
+                )}
               </div>
-              {line.provider_name && (
-                <div style={{ fontSize: '11px', color: '#555', paddingLeft: '6px', marginTop: '-2px' }}>{line.provider_name}</div>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <button className="btn btn-ghost btn-sm" style={{ marginTop: '10px' }} onClick={onAddCustom}>
@@ -865,46 +920,64 @@ function StepLogistics({ lines, expenseCats, onAdd, onUpdate, onRemove, subtotal
           <span style={{ flex: 1 }}>Category</span>
           <span style={{ flex: 1 }}>Description</span>
           <span style={{ width: '90px', textAlign: 'right' }}>Amount €</span>
+          <span style={{ width: '76px' }}>Disc. €</span>
           <span style={{ width: '28px' }} />
         </div>
       )}
 
       <div className="budget-lines-list">
-        {lines.map(line => (
-          <div key={line._id} className="budget-line-row">
-            <select
-              className="select budget-line-input"
-              style={{ flex: 1 }}
-              value={line.position_label}
-              onChange={e => onUpdate(line._id, 'position_label', e.target.value)}
-            >
-              <option value="">Select category</option>
-              {expenseCats.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-              {line.position_label && !expenseCats.find(c => c.name === line.position_label) && (
-                <option value={line.position_label}>{line.position_label}</option>
-              )}
-            </select>
-            <input
-              className="input budget-line-input"
-              style={{ flex: 1 }}
-              value={line.description}
-              onChange={e => onUpdate(line._id, 'description', e.target.value)}
-              placeholder="Optional detail"
-            />
-            <input
-              type="number"
-              className="input budget-line-input"
-              style={{ width: '90px' }}
-              value={line.amount}
-              min="0"
-              onChange={e => onUpdate(line._id, 'amount', e.target.value)}
-              placeholder="0"
-            />
-            <button className="btn-icon" style={{ width: '28px', height: '28px', borderRadius: '8px', flexShrink: 0 }} onClick={() => onRemove(line._id)}>
-              <Trash2 size={12} />
-            </button>
-          </div>
-        ))}
+        {lines.map(line => {
+          const discLbl = discountLabel(line.amount, line.discount);
+          return (
+            <div key={line._id} className="budget-line-row" style={{ flexWrap: 'wrap' }}>
+              <select
+                className="select budget-line-input"
+                style={{ flex: 1, minWidth: '100px' }}
+                value={line.position_label}
+                onChange={e => onUpdate(line._id, 'position_label', e.target.value)}
+              >
+                <option value="">Select category</option>
+                {expenseCats.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                {line.position_label && !expenseCats.find(c => c.name === line.position_label) && (
+                  <option value={line.position_label}>{line.position_label}</option>
+                )}
+              </select>
+              <input
+                className="input budget-line-input"
+                style={{ flex: 1, minWidth: '80px' }}
+                value={line.description}
+                onChange={e => onUpdate(line._id, 'description', e.target.value)}
+                placeholder="Optional detail"
+              />
+              <input
+                type="number"
+                className="input budget-line-input"
+                style={{ width: '90px' }}
+                value={line.amount}
+                min="0"
+                onChange={e => onUpdate(line._id, 'amount', e.target.value)}
+                placeholder="0"
+              />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <input
+                  type="number"
+                  className="input budget-line-input"
+                  style={{ width: '76px' }}
+                  value={line.discount || 0}
+                  min="0"
+                  placeholder="0"
+                  onChange={e => onUpdate(line._id, 'discount', e.target.value)}
+                />
+                {discLbl && (
+                  <span style={{ fontSize: '11px', color: '#FF6B6B', whiteSpace: 'nowrap' }}>{discLbl}</span>
+                )}
+              </div>
+              <button className="btn-icon" style={{ width: '28px', height: '28px', borderRadius: '8px', flexShrink: 0 }} onClick={() => onRemove(line._id)}>
+                <Trash2 size={12} />
+              </button>
+            </div>
+          );
+        })}
       </div>
 
       <button className="btn btn-ghost btn-sm" style={{ marginTop: '10px' }} onClick={onAdd}>
@@ -930,7 +1003,7 @@ function StepReview({
   isFlatFee, hasEquipment, hasLogistics,
   expenseCats,
   crewSubtotal, equipSubtotal, logSubtotal,
-  grandSubtotal, vatAmount, grandTotal,
+  grossSubtotal, totalDiscount, netSubtotal, vatAmount, grandTotal,
 }) {
   function f(k, v) { setInfo(p => ({ ...p, [k]: v })); }
 
@@ -1018,35 +1091,45 @@ function StepReview({
               {!isFlatFee && <span style={{ width: '60px' }}>Days</span>}
               {!isFlatFee && <span style={{ width: '80px' }}>Rate/Day</span>}
               <span style={{ width: '90px', textAlign: 'right' }}>Total</span>
+              <span style={{ width: '76px' }}>Disc. €</span>
               <span style={{ width: '28px' }} />
             </div>
-            {crewLines.map(line => (
-              <div key={line._id} className="budget-line-row">
-                <input className="input budget-line-input" style={{ flex: 2 }} value={line.position_label}
-                  onChange={e => updateCrew(line._id, 'position_label', e.target.value)} />
-                {!isFlatFee && (
-                  <input type="number" className="input budget-line-input" style={{ width: '60px' }}
-                    value={line.days} min="0.5" step="0.5"
-                    onChange={e => updateCrew(line._id, 'days', e.target.value)} />
-                )}
-                {!isFlatFee && (
-                  <input type="number" className="input budget-line-input" style={{ width: '80px' }}
-                    value={line.rate} min="0"
-                    onChange={e => updateCrew(line._id, 'rate', e.target.value)} />
-                )}
-                {isFlatFee ? (
-                  <input type="number" className="input budget-line-input" style={{ width: '90px' }}
-                    value={line.amount} min="0"
-                    onChange={e => updateCrew(line._id, 'amount', e.target.value)} />
-                ) : (
-                  <div className="budget-line-total" style={{ width: '90px' }}>{fmt(line.amount)}</div>
-                )}
-                <button className="btn-icon" style={{ width: '28px', height: '28px', borderRadius: '8px', flexShrink: 0 }}
-                  onClick={() => setCrewLines(prev => prev.filter(l => l._id !== line._id))}>
-                  <Trash2 size={12} />
-                </button>
-              </div>
-            ))}
+            {crewLines.map(line => {
+              const discLbl = discountLabel(line.amount, line.discount);
+              return (
+                <div key={line._id} className="budget-line-row" style={{ flexWrap: 'wrap' }}>
+                  <input className="input budget-line-input" style={{ flex: 2, minWidth: '100px' }} value={line.position_label}
+                    onChange={e => updateCrew(line._id, 'position_label', e.target.value)} />
+                  {!isFlatFee && (
+                    <input type="number" className="input budget-line-input" style={{ width: '60px' }}
+                      value={line.days} min="0.5" step="0.5"
+                      onChange={e => updateCrew(line._id, 'days', e.target.value)} />
+                  )}
+                  {!isFlatFee && (
+                    <input type="number" className="input budget-line-input" style={{ width: '80px' }}
+                      value={line.rate} min="0"
+                      onChange={e => updateCrew(line._id, 'rate', e.target.value)} />
+                  )}
+                  {isFlatFee ? (
+                    <input type="number" className="input budget-line-input" style={{ width: '90px' }}
+                      value={line.amount} min="0"
+                      onChange={e => updateCrew(line._id, 'amount', e.target.value)} />
+                  ) : (
+                    <div className="budget-line-total" style={{ width: '90px' }}>{fmt(line.amount)}</div>
+                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <input type="number" className="input budget-line-input" style={{ width: '76px' }}
+                      value={line.discount || 0} min="0" placeholder="0"
+                      onChange={e => updateCrew(line._id, 'discount', e.target.value)} />
+                    {discLbl && <span style={{ fontSize: '11px', color: '#FF6B6B', whiteSpace: 'nowrap' }}>{discLbl}</span>}
+                  </div>
+                  <button className="btn-icon" style={{ width: '28px', height: '28px', borderRadius: '8px', flexShrink: 0 }}
+                    onClick={() => setCrewLines(prev => prev.filter(l => l._id !== line._id))}>
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              );
+            })}
             <div className="budget-subtotal-row"><span>Section subtotal</span><span>{fmt(crewSubtotal)}</span></div>
           </>
         )}
@@ -1066,32 +1149,42 @@ function StepReview({
                 <span style={{ width: '52px' }}>Days</span>
                 <span style={{ width: '76px' }}>Rate/Day</span>
                 <span style={{ width: '80px', textAlign: 'right' }}>Total</span>
+                <span style={{ width: '76px' }}>Disc. €</span>
                 <span style={{ width: '28px' }} />
               </div>
-              {equipLines.map(line => (
-                <div key={line._id} style={{ marginBottom: '4px' }}>
-                  <div className="budget-line-row">
-                    <input className="input budget-line-input" style={{ flex: 2 }} value={line.position_label}
-                      onChange={e => updateEquip(line._id, 'position_label', e.target.value)} />
-                    <input type="number" className="input budget-line-input" style={{ width: '52px' }}
-                      value={line.days} min="0.5" step="0.5"
-                      onChange={e => updateEquip(line._id, 'days', e.target.value)} />
-                    <input type="number" className="input budget-line-input" style={{ width: '76px' }}
-                      value={line.rate} min="0"
-                      onChange={e => updateEquip(line._id, 'rate', e.target.value)} />
-                    <div className="budget-line-total" style={{ width: '80px' }}>
-                      {fmt((parseFloat(line.days) || 0) * (parseFloat(line.rate) || 0))}
+              {equipLines.map(line => {
+                const discLbl = discountLabel((parseFloat(line.days) || 0) * (parseFloat(line.rate) || 0), line.discount);
+                return (
+                  <div key={line._id} style={{ marginBottom: '4px' }}>
+                    <div className="budget-line-row" style={{ flexWrap: 'wrap' }}>
+                      <input className="input budget-line-input" style={{ flex: 2, minWidth: '100px' }} value={line.position_label}
+                        onChange={e => updateEquip(line._id, 'position_label', e.target.value)} />
+                      <input type="number" className="input budget-line-input" style={{ width: '52px' }}
+                        value={line.days} min="0.5" step="0.5"
+                        onChange={e => updateEquip(line._id, 'days', e.target.value)} />
+                      <input type="number" className="input budget-line-input" style={{ width: '76px' }}
+                        value={line.rate} min="0"
+                        onChange={e => updateEquip(line._id, 'rate', e.target.value)} />
+                      <div className="budget-line-total" style={{ width: '80px' }}>
+                        {fmt((parseFloat(line.days) || 0) * (parseFloat(line.rate) || 0))}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <input type="number" className="input budget-line-input" style={{ width: '76px' }}
+                          value={line.discount || 0} min="0" placeholder="0"
+                          onChange={e => updateEquip(line._id, 'discount', e.target.value)} />
+                        {discLbl && <span style={{ fontSize: '11px', color: '#FF6B6B', whiteSpace: 'nowrap' }}>{discLbl}</span>}
+                      </div>
+                      <button className="btn-icon" style={{ width: '28px', height: '28px', borderRadius: '8px', flexShrink: 0 }}
+                        onClick={() => setEquipLines(prev => prev.filter(l => l._id !== line._id))}>
+                        <Trash2 size={12} />
+                      </button>
                     </div>
-                    <button className="btn-icon" style={{ width: '28px', height: '28px', borderRadius: '8px', flexShrink: 0 }}
-                      onClick={() => setEquipLines(prev => prev.filter(l => l._id !== line._id))}>
-                      <Trash2 size={12} />
-                    </button>
+                    {line.provider_name && (
+                      <div style={{ fontSize: '11px', color: '#555', paddingLeft: '6px', marginTop: '-2px' }}>{line.provider_name}</div>
+                    )}
                   </div>
-                  {line.provider_name && (
-                    <div style={{ fontSize: '11px', color: '#555', paddingLeft: '6px', marginTop: '-2px' }}>{line.provider_name}</div>
-                  )}
-                </div>
-              ))}
+                );
+              })}
               <div className="budget-subtotal-row"><span>Section subtotal</span><span>{fmt(equipSubtotal)}</span></div>
             </>
           )}
@@ -1110,30 +1203,40 @@ function StepReview({
                 <span style={{ flex: 1 }}>Category</span>
                 <span style={{ flex: 1 }}>Description</span>
                 <span style={{ width: '90px', textAlign: 'right' }}>Amount</span>
+                <span style={{ width: '76px' }}>Disc. €</span>
                 <span style={{ width: '28px' }} />
               </div>
-              {logLines.map(line => (
-                <div key={line._id} className="budget-line-row">
-                  <select className="select budget-line-input" style={{ flex: 1 }} value={line.position_label}
-                    onChange={e => updateLog(line._id, 'position_label', e.target.value)}>
-                    <option value="">Category</option>
-                    {expenseCats.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                    {line.position_label && !expenseCats.find(c => c.name === line.position_label) && (
-                      <option value={line.position_label}>{line.position_label}</option>
-                    )}
-                  </select>
-                  <input className="input budget-line-input" style={{ flex: 1 }} value={line.description || ''}
-                    onChange={e => updateLog(line._id, 'description', e.target.value)}
-                    placeholder="Optional detail" />
-                  <input type="number" className="input budget-line-input" style={{ width: '90px' }}
-                    value={line.amount} min="0"
-                    onChange={e => updateLog(line._id, 'amount', e.target.value)} />
-                  <button className="btn-icon" style={{ width: '28px', height: '28px', borderRadius: '8px', flexShrink: 0 }}
-                    onClick={() => setLogLines(prev => prev.filter(l => l._id !== line._id))}>
-                    <Trash2 size={12} />
-                  </button>
-                </div>
-              ))}
+              {logLines.map(line => {
+                const discLbl = discountLabel(line.amount, line.discount);
+                return (
+                  <div key={line._id} className="budget-line-row" style={{ flexWrap: 'wrap' }}>
+                    <select className="select budget-line-input" style={{ flex: 1, minWidth: '100px' }} value={line.position_label}
+                      onChange={e => updateLog(line._id, 'position_label', e.target.value)}>
+                      <option value="">Category</option>
+                      {expenseCats.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                      {line.position_label && !expenseCats.find(c => c.name === line.position_label) && (
+                        <option value={line.position_label}>{line.position_label}</option>
+                      )}
+                    </select>
+                    <input className="input budget-line-input" style={{ flex: 1, minWidth: '80px' }} value={line.description || ''}
+                      onChange={e => updateLog(line._id, 'description', e.target.value)}
+                      placeholder="Optional detail" />
+                    <input type="number" className="input budget-line-input" style={{ width: '90px' }}
+                      value={line.amount} min="0"
+                      onChange={e => updateLog(line._id, 'amount', e.target.value)} />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <input type="number" className="input budget-line-input" style={{ width: '76px' }}
+                        value={line.discount || 0} min="0" placeholder="0"
+                        onChange={e => updateLog(line._id, 'discount', e.target.value)} />
+                      {discLbl && <span style={{ fontSize: '11px', color: '#FF6B6B', whiteSpace: 'nowrap' }}>{discLbl}</span>}
+                    </div>
+                    <button className="btn-icon" style={{ width: '28px', height: '28px', borderRadius: '8px', flexShrink: 0 }}
+                      onClick={() => setLogLines(prev => prev.filter(l => l._id !== line._id))}>
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                );
+              })}
               <div className="budget-subtotal-row"><span>Section subtotal</span><span>{fmt(logSubtotal)}</span></div>
             </>
           )}
@@ -1143,8 +1246,27 @@ function StepReview({
       {/* Totals + VAT */}
       <div className="budget-review-section budget-totals-block">
         <div className="fin-row" style={{ paddingTop: '12px' }}>
-          <span className="text-2">Grand Subtotal</span>
-          <span style={{ fontWeight: 600 }}>{fmt(grandSubtotal)}</span>
+          <span className="text-2">Subtotal</span>
+          <span style={{ fontWeight: 600 }}>{fmt(grossSubtotal)}</span>
+        </div>
+
+        {totalDiscount > 0 && (
+          <div className="fin-row" style={{ color: '#FF6B6B' }}>
+            <span style={{ fontSize: '13px' }}>
+              Discount
+              {grossSubtotal > 0 && (
+                <span style={{ fontSize: '11px', marginLeft: '6px', opacity: 0.8 }}>
+                  (−{((totalDiscount / grossSubtotal) * 100).toFixed(1)}%)
+                </span>
+              )}
+            </span>
+            <span style={{ fontWeight: 600 }}>−{fmt(totalDiscount)}</span>
+          </div>
+        )}
+
+        <div className="fin-row">
+          <span className="text-2">Net Subtotal</span>
+          <span style={{ fontWeight: 600 }}>{fmt(netSubtotal)}</span>
         </div>
 
         <div className="fin-row" style={{ alignItems: 'flex-start' }}>

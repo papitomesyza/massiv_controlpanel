@@ -2,10 +2,10 @@ const express = require('express');
 const router = express.Router();
 const { db } = require('../db/database');
 
-// GET /api/calendar?month=YYYY-MM
-// Returns events that overlap with the requested month (date-range overlap)
+// GET /api/calendar?month=YYYY-MM  OR  ?start=YYYY-MM-DD&end=YYYY-MM-DD
+// Returns events that overlap with the requested range (date-range overlap)
 router.get('/', (req, res) => {
-  const { month } = req.query;
+  const { month, start, end } = req.query;
   let query = `
     SELECT ce.*, p.title as project_title
     FROM calendar_events ce
@@ -13,7 +13,11 @@ router.get('/', (req, res) => {
     WHERE 1=1
   `;
   const params = [];
-  if (month) {
+  if (start && end) {
+    // Event overlaps [start, end] if: start_date <= end AND COALESCE(end_date, start_date) >= start
+    query += ` AND ce.start_date <= ? AND COALESCE(ce.end_date, ce.start_date) >= ?`;
+    params.push(end, start);
+  } else if (month) {
     // Compute first and last day of the requested month (local-date safe: no toISOString)
     const [y, m] = month.split('-').map(Number);
     const firstDay = `${month}-01`;

@@ -473,6 +473,7 @@ function initDb() {
     'ALTER TABLE collections ADD COLUMN kind TEXT NULL',
     'ALTER TABLE collections ADD COLUMN sort_order INTEGER NULL',
     'ALTER TABLE collection_cards ADD COLUMN sort_order INTEGER NULL',
+    'ALTER TABLE budget_lines ADD COLUMN discount REAL DEFAULT 0',
   ].forEach(sql => { try { db.exec(sql); } catch (_) {} });
 
   // collection_share_links table

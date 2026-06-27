@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { db } = require('../db/database');
 
-function validateLineFields({ days, rate, amount }) {
+function validateLineFields({ days, rate, amount, discount }) {
   if (days !== undefined && days !== null) {
     const d = Number(days);
     if (!Number.isFinite(d) || d < 0) return 'days must be at least 0';
@@ -14,6 +14,10 @@ function validateLineFields({ days, rate, amount }) {
   if (amount !== undefined && amount !== null) {
     const a = Number(amount);
     if (!Number.isFinite(a) || a < 0 || a > 1000000) return 'amount must be between 0 and 1,000,000';
+  }
+  if (discount !== undefined && discount !== null) {
+    const disc = Number(discount);
+    if (!Number.isFinite(disc) || disc < 0 || disc > 1000000) return 'discount must be between 0 and 1,000,000';
   }
   return null;
 }
@@ -37,7 +41,16 @@ function getBudgetFull(id) {
     'SELECT * FROM budget_lines WHERE budget_id = ? ORDER BY section, sort_order, id'
   ).all(id);
 
-  return { ...budget, lines };
+  const subtotal = lines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0);
+  const totalDiscount = lines.reduce((s, l) => {
+    const amt = parseFloat(l.amount) || 0;
+    const disc = parseFloat(l.discount) || 0;
+    return s + Math.min(disc, amt);
+  }, 0);
+  const netSubtotal = subtotal - totalDiscount;
+  const total = budget.vat_enabled ? netSubtotal * (1 + budget.vat_rate / 100) : netSubtotal;
+
+  return { ...budget, lines, subtotal, total_discount: totalDiscount, net_subtotal: netSubtotal, total };
 }
 
 // GET /api/budgets
@@ -45,9 +58,11 @@ router.get('/', (req, res) => {
   const budgets = db.prepare(`
     SELECT b.*, p.title as project_title,
       (SELECT COALESCE(SUM(bl.amount), 0) FROM budget_lines bl WHERE bl.budget_id = b.id) as subtotal,
+      (SELECT COALESCE(SUM(MIN(bl.discount, bl.amount)), 0) FROM budget_lines bl WHERE bl.budget_id = b.id) as total_discount,
+      (SELECT COALESCE(SUM(MAX(bl.amount - bl.discount, 0)), 0) FROM budget_lines bl WHERE bl.budget_id = b.id) as net_subtotal,
       CASE WHEN b.vat_enabled = 1
-        THEN (SELECT COALESCE(SUM(bl.amount), 0) FROM budget_lines bl WHERE bl.budget_id = b.id) * (1 + b.vat_rate / 100.0)
-        ELSE (SELECT COALESCE(SUM(bl.amount), 0) FROM budget_lines bl WHERE bl.budget_id = b.id)
+        THEN (SELECT COALESCE(SUM(MAX(bl.amount - bl.discount, 0)), 0) FROM budget_lines bl WHERE bl.budget_id = b.id) * (1 + b.vat_rate / 100.0)
+        ELSE (SELECT COALESCE(SUM(MAX(bl.amount - bl.discount, 0)), 0) FROM budget_lines bl WHERE bl.budget_id = b.id)
       END as total
     FROM budgets b
     LEFT JOIN projects p ON p.id = b.project_id
@@ -140,18 +155,19 @@ router.post('/:id/lines', (req, res) => {
   const budget = db.prepare('SELECT id FROM budgets WHERE id = ?').get(req.params.id);
   if (!budget) return res.status(404).json({ error: 'Budget not found' });
 
-  const { section, position_label, description, crew_id, days, rate, amount, sort_order } = req.body;
+  const { section, position_label, description, crew_id, days, rate, amount, sort_order, discount } = req.body;
   if (!section) return res.status(400).json({ error: 'Section required' });
-  const lineErr = validateLineFields({ days, rate, amount });
+  const lineErr = validateLineFields({ days, rate, amount, discount });
   if (lineErr) return res.status(400).json({ error: lineErr });
 
   const result = db.prepare(`
-    INSERT INTO budget_lines (budget_id, section, position_label, description, crew_id, days, rate, amount, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO budget_lines (budget_id, section, position_label, description, crew_id, days, rate, amount, sort_order, discount)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     req.params.id, section,
     position_label || null, description || null, crew_id || null,
     days || 1, rate || 0, amount || 0, sort_order || 0,
+    discount != null ? discount : 0,
   );
 
   res.json({ id: result.lastInsertRowid });
@@ -162,18 +178,19 @@ router.put('/:id/lines/:lineId', (req, res) => {
   const line = db.prepare('SELECT id FROM budget_lines WHERE id = ? AND budget_id = ?').get(req.params.lineId, req.params.id);
   if (!line) return res.status(404).json({ error: 'Line not found' });
 
-  const { section, position_label, description, crew_id, days, rate, amount, sort_order } = req.body;
-  const lineErr2 = validateLineFields({ days, rate, amount });
+  const { section, position_label, description, crew_id, days, rate, amount, sort_order, discount } = req.body;
+  const lineErr2 = validateLineFields({ days, rate, amount, discount });
   if (lineErr2) return res.status(400).json({ error: lineErr2 });
 
   db.prepare(`
     UPDATE budget_lines SET
       section = ?, position_label = ?, description = ?, crew_id = ?,
-      days = ?, rate = ?, amount = ?, sort_order = ?
+      days = ?, rate = ?, amount = ?, sort_order = ?, discount = ?
     WHERE id = ?
   `).run(
     section, position_label || null, description || null, crew_id || null,
     days || 1, rate || 0, amount || 0, sort_order || 0,
+    discount != null ? discount : 0,
     req.params.lineId,
   );
 
@@ -198,12 +215,12 @@ router.post('/:id/lines/batch-replace', (req, res) => {
 
   const deleteLines = db.prepare('DELETE FROM budget_lines WHERE budget_id = ?');
   const insertLine = db.prepare(`
-    INSERT INTO budget_lines (budget_id, section, position_label, description, crew_id, days, rate, amount, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO budget_lines (budget_id, section, position_label, description, crew_id, days, rate, amount, sort_order, discount)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   for (const l of lines) {
-    const err = validateLineFields({ days: l.days, rate: l.rate, amount: l.amount });
+    const err = validateLineFields({ days: l.days, rate: l.rate, amount: l.amount, discount: l.discount });
     if (err) return res.status(400).json({ error: err });
   }
 
@@ -214,6 +231,7 @@ router.post('/:id/lines/batch-replace', (req, res) => {
         req.params.id, l.section,
         l.position_label || null, l.description || null, l.crew_id || null,
         l.days || 1, l.rate || 0, l.amount || 0, l.sort_order != null ? l.sort_order : i,
+        l.discount != null ? l.discount : 0,
       );
     });
   })();
