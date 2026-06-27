@@ -468,6 +468,7 @@ function initDb() {
     'ALTER TABLE expenses ADD COLUMN category_text TEXT',
     'ALTER TABLE projects ADD COLUMN shoot_start_time TEXT',
     'ALTER TABLE projects ADD COLUMN shoot_end_time TEXT',
+    'ALTER TABLE projects ADD COLUMN deadline TEXT',
     'ALTER TABLE collections ADD COLUMN archived INTEGER DEFAULT 0',
     'ALTER TABLE collections ADD COLUMN kind TEXT NULL',
     'ALTER TABLE collections ADD COLUMN sort_order INTEGER NULL',

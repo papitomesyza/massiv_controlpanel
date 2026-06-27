@@ -117,6 +117,7 @@ export function LocationPicker({ value, lat, lng, onChange }) {
 
 const PHASES = ['Development', 'Pre-Production', 'Production', 'Post-Production'];
 const STEP_LABELS = ['Project Info', 'Development', 'Pre-Production', 'Production', 'Post-Production', 'Review'];
+const PRODUCTION_GROUPS = ['Video Production', 'Photography'];
 
 const FOCUS_TO_GROUP = {
   video: 'Video Production',
@@ -154,6 +155,7 @@ export default function ProjectWizard({ onClose, onCreated, prefill }) {
     client_id: prefill?.client_id ? String(prefill.client_id) : '',
     category_id: prefill?.category_id ? String(prefill.category_id) : '',
     client_budget: '', agreed_budget: '',
+    deadline: '',
     shoot_date: '', shoot_days: '1',
     shoot_start_time: '', shoot_end_time: '',
     location_name: '', location_lat: null, location_lng: null,
@@ -268,6 +270,8 @@ export default function ProjectWizard({ onClose, onCreated, prefill }) {
     setSaving(true);
     setErr('');
     try {
+      const selectedCategory = categories.find(c => c.id === parseInt(basicInfo.category_id));
+      const isProductionCategory = !!(selectedCategory && PRODUCTION_GROUPS.includes(selectedCategory.group_name));
       const { id, phases } = await api.post('/projects', {
         title: basicInfo.title.trim(),
         client_id: basicInfo.client_id || null,
@@ -275,13 +279,14 @@ export default function ProjectWizard({ onClose, onCreated, prefill }) {
         client_budget: parseFloat(basicInfo.client_budget) || 0,
         agreed_budget: parseFloat(basicInfo.agreed_budget) || 0,
         notes: basicInfo.notes || null,
-        shoot_date: basicInfo.shoot_date || null,
-        shoot_days: parseInt(basicInfo.shoot_days) || 1,
-        shoot_start_time: basicInfo.shoot_start_time || null,
-        shoot_end_time: basicInfo.shoot_end_time || null,
-        location_name: basicInfo.location_name || null,
-        location_lat: basicInfo.location_lat || null,
-        location_lng: basicInfo.location_lng || null,
+        deadline: basicInfo.deadline || null,
+        shoot_date: isProductionCategory ? (basicInfo.shoot_date || null) : null,
+        shoot_days: isProductionCategory ? (parseInt(basicInfo.shoot_days) || 1) : 1,
+        shoot_start_time: isProductionCategory ? (basicInfo.shoot_start_time || null) : null,
+        shoot_end_time: isProductionCategory ? (basicInfo.shoot_end_time || null) : null,
+        location_name: isProductionCategory ? (basicInfo.location_name || null) : null,
+        location_lat: isProductionCategory ? (basicInfo.location_lat || null) : null,
+        location_lng: isProductionCategory ? (basicInfo.location_lng || null) : null,
         phases: activePhases,
       });
 
@@ -438,6 +443,10 @@ function StepBasicInfo({ form, setForm, clients, grouped, onAddClient, profile }
     : [];
   const otherGroups = Object.keys(grouped).filter(g => !focusGroups.includes(g));
 
+  const allCats = Object.values(grouped).flat();
+  const selectedCat = allCats.find(c => c.id === parseInt(form.category_id));
+  const isProduction = !!(selectedCat && PRODUCTION_GROUPS.includes(selectedCat.group_name));
+
   return (
     <div>
       <div className="form-row">
@@ -497,39 +506,47 @@ function StepBasicInfo({ form, setForm, clients, grouped, onAddClient, profile }
           <input type="number" className="input" value={form.agreed_budget} onChange={e => setForm('agreed_budget', e.target.value)} placeholder="0.00" />
         </div>
       </div>
-      <div className="form-grid">
-        <div className="form-row">
-          <label className="form-label">Shoot Date</label>
-          <input type="date" className="input" value={form.shoot_date} onChange={e => setForm('shoot_date', e.target.value)} />
-        </div>
-        <div className="form-row">
-          <label className="form-label">Shoot Days</label>
-          <input type="number" min="1" max="30" className="input" value={form.shoot_days} onChange={e => setForm('shoot_days', e.target.value)} />
-        </div>
-      </div>
-      <div className="form-grid">
-        <div className="form-row">
-          <label className="form-label">Shoot Start Time</label>
-          <input type="time" className="input" value={form.shoot_start_time} onChange={e => setForm('shoot_start_time', e.target.value)} />
-        </div>
-        <div className="form-row">
-          <label className="form-label">Shoot End Time</label>
-          <input type="time" className="input" value={form.shoot_end_time} onChange={e => setForm('shoot_end_time', e.target.value)} />
-        </div>
-      </div>
       <div className="form-row">
-        <label className="form-label">Shoot Location</label>
-        <LocationPicker
-          value={form.location_name}
-          lat={form.location_lat}
-          lng={form.location_lng}
-          onChange={loc => {
-            setForm('location_name', loc.location_name);
-            setForm('location_lat', loc.location_lat);
-            setForm('location_lng', loc.location_lng);
-          }}
-        />
+        <label className="form-label">Deadline</label>
+        <input type="date" className="input" value={form.deadline} onChange={e => setForm('deadline', e.target.value)} />
       </div>
+      {isProduction && (
+        <>
+          <div className="form-grid">
+            <div className="form-row">
+              <label className="form-label">Shoot Date</label>
+              <input type="date" className="input" value={form.shoot_date} onChange={e => setForm('shoot_date', e.target.value)} />
+            </div>
+            <div className="form-row">
+              <label className="form-label">Shoot Days</label>
+              <input type="number" min="1" max="30" className="input" value={form.shoot_days} onChange={e => setForm('shoot_days', e.target.value)} />
+            </div>
+          </div>
+          <div className="form-grid">
+            <div className="form-row">
+              <label className="form-label">Shoot Start Time</label>
+              <input type="time" className="input" value={form.shoot_start_time} onChange={e => setForm('shoot_start_time', e.target.value)} />
+            </div>
+            <div className="form-row">
+              <label className="form-label">Shoot End Time</label>
+              <input type="time" className="input" value={form.shoot_end_time} onChange={e => setForm('shoot_end_time', e.target.value)} />
+            </div>
+          </div>
+          <div className="form-row">
+            <label className="form-label">Shoot Location</label>
+            <LocationPicker
+              value={form.location_name}
+              lat={form.location_lat}
+              lng={form.location_lng}
+              onChange={loc => {
+                setForm('location_name', loc.location_name);
+                setForm('location_lat', loc.location_lat);
+                setForm('location_lng', loc.location_lng);
+              }}
+            />
+          </div>
+        </>
+      )}
       <div className="form-row">
         <label className="form-label">Notes</label>
         <textarea className="input" value={form.notes} onChange={e => setForm('notes', e.target.value)} placeholder="Project notes..." />
@@ -680,6 +697,7 @@ export function PhaseTaskStep({ phaseName, tasks, onToggle, onCrewChange, onAddC
 function StepReview({ basicInfo, phaseTasks, clients, categories, skippedPhases }) {
   const client = clients.find(c => c.id === parseInt(basicInfo.client_id));
   const cat = categories.find(c => c.id === parseInt(basicInfo.category_id));
+  const isProduction = !!(cat && PRODUCTION_GROUPS.includes(cat.group_name));
   const activePhases = PHASES.filter(p => !skippedPhases.has(p));
   const totalTasks = activePhases.reduce((s, phase) => s + (phaseTasks[phase] || []).filter(t => t.included).length, 0);
 
@@ -691,8 +709,9 @@ function StepReview({ basicInfo, phaseTasks, clients, categories, skippedPhases 
         {client && <div className="fin-row"><span className="text-2">Client</span><span>{client.name}</span></div>}
         {cat && <div className="fin-row"><span className="text-2">Category</span><span>{cat.name}</span></div>}
         {basicInfo.agreed_budget && <div className="fin-row"><span className="text-2">Agreed Budget</span><span>€{parseFloat(basicInfo.agreed_budget).toFixed(2)}</span></div>}
-        {basicInfo.shoot_date && <div className="fin-row"><span className="text-2">Shoot Date</span><span>{basicInfo.shoot_date}</span></div>}
-        {basicInfo.location_name && <div className="fin-row"><span className="text-2">Location</span><span style={{ maxWidth: '200px', textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{basicInfo.location_name}</span></div>}
+        {basicInfo.deadline && <div className="fin-row"><span className="text-2">Deadline</span><span>{basicInfo.deadline}</span></div>}
+        {isProduction && basicInfo.shoot_date && <div className="fin-row"><span className="text-2">Shoot Date</span><span>{basicInfo.shoot_date}</span></div>}
+        {isProduction && basicInfo.location_name && <div className="fin-row"><span className="text-2">Location</span><span style={{ maxWidth: '200px', textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{basicInfo.location_name}</span></div>}
         <div className="fin-row"><span className="text-2">Phases</span><span>{activePhases.length} of 4{skippedPhases.size > 0 ? ` (${[...skippedPhases].join(', ')} skipped)` : ''}</span></div>
         <div className="fin-row"><span className="text-2">Total Tasks</span><span>{totalTasks} tasks across {activePhases.filter(p => (phaseTasks[p] || []).some(t => t.included)).length} phases</span></div>
       </div>

@@ -9,6 +9,7 @@ import ProjectWizard from '../components/ProjectWizard';
 import AddLeadModal from '../components/AddLeadModal';
 
 const STATUSES = ['development','pre-production','production','post-production','completed'];
+const PRODUCTION_GROUPS = ['Video Production', 'Photography'];
 
 function getMargin(p) {
   if (!p.agreed_budget || p.agreed_budget <= 0) return null;
@@ -280,7 +281,8 @@ export default function Projects() {
 
 /* ─── Project row card ─── */
 function ProjectRowCard({ p }) {
-  const shootChip    = getShootChip(p.shoot_date);
+  const isProductionGroup = PRODUCTION_GROUPS.includes(p.group_name);
+  const shootChip    = isProductionGroup ? getShootChip(p.shoot_date) : getShootChip(p.deadline);
   const totalPhases  = p.total_phases || 4;
   const phaseProgress = totalPhases > 0 ? Math.round((p.completed_phases / totalPhases) * 100) : 0;
   const receivedPct  = p.agreed_budget > 0

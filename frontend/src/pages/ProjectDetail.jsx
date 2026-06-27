@@ -6,6 +6,8 @@ import Modal from '../components/Modal';
 import { PhaseTaskStep, InlineCrewModal, LocationPicker } from '../components/ProjectWizard';
 import { getTasksForCategory } from '../data/projectTasks';
 
+const PRODUCTION_GROUPS = ['Video Production', 'Photography'];
+
 export default function ProjectDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -345,14 +347,23 @@ export default function ProjectDetail() {
           <div className="card card-pad" style={{ marginBottom: '16px' }}>
             <div className="section-title" style={{ marginBottom: '12px' }}>Agreed Budget</div>
             <div style={{ fontSize: '28px', fontWeight: 800 }}>{fmt(project.agreed_budget)}</div>
-            {project.shoot_date && (
-              <div className="text-2 text-sm mt-1">
-                {'Shoot: '}
-                {fmtDate(project.shoot_date)}
-                {project.shoot_start_time ? `, ${project.shoot_start_time.slice(0, 5)}${project.shoot_end_time ? `–${project.shoot_end_time.slice(0, 5)}` : ''}` : ''}
-                {` · ${project.shoot_days}d`}
-                {project.shoot_location ? ` · ${project.shoot_location}` : ''}
-              </div>
+            {PRODUCTION_GROUPS.includes(project.category_group) ? (
+              project.shoot_date && (
+                <div className="text-2 text-sm mt-1">
+                  {'Shoot: '}
+                  {fmtDate(project.shoot_date)}
+                  {project.shoot_start_time ? `, ${project.shoot_start_time.slice(0, 5)}${project.shoot_end_time ? `–${project.shoot_end_time.slice(0, 5)}` : ''}` : ''}
+                  {` · ${project.shoot_days}d`}
+                  {project.shoot_location ? ` · ${project.shoot_location}` : ''}
+                </div>
+              )
+            ) : (
+              project.deadline && (
+                <div className="text-2 text-sm mt-1">{'Deadline: '}{fmtDate(project.deadline)}</div>
+              )
+            )}
+            {PRODUCTION_GROUPS.includes(project.category_group) && project.deadline && (
+              <div className="text-2 text-sm mt-1">{'Deadline: '}{fmtDate(project.deadline)}</div>
             )}
           </div>
 
@@ -1294,6 +1305,7 @@ function EditProjectModal({ project, projectId, onClose, onSaved }) {
     status: project.status || 'development',
     client_budget: project.client_budget || '',
     agreed_budget: project.agreed_budget || '',
+    deadline: project.deadline || '',
     shoot_date: project.shoot_date || '',
     shoot_days: project.shoot_days || 1,
     shoot_start_time: project.shoot_start_time || '',
@@ -1320,19 +1332,24 @@ function EditProjectModal({ project, projectId, onClose, onSaved }) {
     return acc;
   }, {});
 
+  const selectedCat = categories.find(c => c.id === parseInt(form.category_id));
+  const isProduction = !!(selectedCat && PRODUCTION_GROUPS.includes(selectedCat.group_name));
+
   async function save() {
     setSaving(true);
     try {
       await api.put(`/projects/${projectId}`, {
         ...form,
+        deadline: form.deadline || null,
         client_budget: parseFloat(form.client_budget) || 0,
         agreed_budget: parseFloat(form.agreed_budget) || 0,
-        shoot_days: parseInt(form.shoot_days) || 1,
-        shoot_start_time: form.shoot_start_time || null,
-        shoot_end_time: form.shoot_end_time || null,
-        location_name: form.location_name || null,
-        location_lat: form.location_lat || null,
-        location_lng: form.location_lng || null,
+        shoot_date: isProduction ? (form.shoot_date || null) : null,
+        shoot_days: isProduction ? (parseInt(form.shoot_days) || 1) : 1,
+        shoot_start_time: isProduction ? (form.shoot_start_time || null) : null,
+        shoot_end_time: isProduction ? (form.shoot_end_time || null) : null,
+        location_name: isProduction ? (form.location_name || null) : null,
+        location_lat: isProduction ? (form.location_lat || null) : null,
+        location_lng: isProduction ? (form.location_lng || null) : null,
       });
       onSaved(); onClose();
     } catch (e) { alert(e.message); }
@@ -1396,35 +1413,43 @@ function EditProjectModal({ project, projectId, onClose, onSaved }) {
             <input type="number" className="input" value={form.agreed_budget} onChange={e => f('agreed_budget', e.target.value)} />
           </div>
         </div>
-        <div className="form-grid">
-          <div className="form-row">
-            <label className="form-label">Shoot Date</label>
-            <input type="date" className="input" value={form.shoot_date} onChange={e => f('shoot_date', e.target.value)} />
-          </div>
-          <div className="form-row">
-            <label className="form-label">Shoot Days</label>
-            <input type="number" min="1" max="30" className="input" value={form.shoot_days} onChange={e => f('shoot_days', e.target.value)} />
-          </div>
-        </div>
-        <div className="form-grid">
-          <div className="form-row">
-            <label className="form-label">Shoot Start Time</label>
-            <input type="time" className="input" value={form.shoot_start_time} onChange={e => f('shoot_start_time', e.target.value)} />
-          </div>
-          <div className="form-row">
-            <label className="form-label">Shoot End Time</label>
-            <input type="time" className="input" value={form.shoot_end_time} onChange={e => f('shoot_end_time', e.target.value)} />
-          </div>
-        </div>
         <div className="form-row">
-          <label className="form-label">Location</label>
-          <LocationPicker
-            value={form.location_name}
-            lat={form.location_lat}
-            lng={form.location_lng}
-            onChange={loc => setForm(p => ({ ...p, location_name: loc.location_name, location_lat: loc.location_lat, location_lng: loc.location_lng }))}
-          />
+          <label className="form-label">Deadline</label>
+          <input type="date" className="input" value={form.deadline} onChange={e => f('deadline', e.target.value)} />
         </div>
+        {isProduction && (
+          <>
+            <div className="form-grid">
+              <div className="form-row">
+                <label className="form-label">Shoot Date</label>
+                <input type="date" className="input" value={form.shoot_date} onChange={e => f('shoot_date', e.target.value)} />
+              </div>
+              <div className="form-row">
+                <label className="form-label">Shoot Days</label>
+                <input type="number" min="1" max="30" className="input" value={form.shoot_days} onChange={e => f('shoot_days', e.target.value)} />
+              </div>
+            </div>
+            <div className="form-grid">
+              <div className="form-row">
+                <label className="form-label">Shoot Start Time</label>
+                <input type="time" className="input" value={form.shoot_start_time} onChange={e => f('shoot_start_time', e.target.value)} />
+              </div>
+              <div className="form-row">
+                <label className="form-label">Shoot End Time</label>
+                <input type="time" className="input" value={form.shoot_end_time} onChange={e => f('shoot_end_time', e.target.value)} />
+              </div>
+            </div>
+            <div className="form-row">
+              <label className="form-label">Location</label>
+              <LocationPicker
+                value={form.location_name}
+                lat={form.location_lat}
+                lng={form.location_lng}
+                onChange={loc => setForm(p => ({ ...p, location_name: loc.location_name, location_lat: loc.location_lat, location_lng: loc.location_lng }))}
+              />
+            </div>
+          </>
+        )}
         <div className="form-row">
           <label className="form-label">Notes</label>
           <textarea className="input" value={form.notes} onChange={e => f('notes', e.target.value)} />
