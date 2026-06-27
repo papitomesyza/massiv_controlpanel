@@ -210,8 +210,15 @@ function CardMenu({ isOpen, onToggle, onEdit, onDelete }) {
       const inMenu = menuRef.current && menuRef.current.contains(e.target);
       if (!inBtn && !inMenu) onToggle();
     }
+    function closeMenu() { onToggle(); }
     document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    window.addEventListener('scroll', closeMenu, true);
+    window.addEventListener('resize', closeMenu);
+    return () => {
+      document.removeEventListener('mousedown', handler);
+      window.removeEventListener('scroll', closeMenu, true);
+      window.removeEventListener('resize', closeMenu);
+    };
   }, [isOpen, onToggle]);
 
   return (

@@ -340,13 +340,13 @@ router.get('/pl', (req, res) => {
   const monthlyData = months.map(ym => {
     const label = new Date(`${ym}-01T00:00:00`).toLocaleString('default', { month: 'short' });
     const revenue = db.prepare(
-      "SELECT COALESCE(SUM(amount),0) as v FROM client_payments WHERE status='received' AND strftime('%Y-%m',date)=?"
+      "SELECT COALESCE(SUM(cp.amount),0) as v FROM client_payments cp JOIN projects p ON p.id = cp.project_id WHERE cp.status='received' AND strftime('%Y-%m',cp.date)=?"
     ).get(ym).v;
     const expenses = db.prepare(
-      "SELECT COALESCE(SUM(amount),0) as v FROM expenses WHERE status='confirmed' AND strftime('%Y-%m',date)=?"
+      "SELECT COALESCE(SUM(e.amount),0) as v FROM expenses e JOIN projects p ON p.id = e.project_id WHERE e.status='confirmed' AND strftime('%Y-%m',e.date)=?"
     ).get(ym).v;
     const crewCosts = db.prepare(
-      "SELECT COALESCE(SUM(payment_amount),0) as v FROM crew_assignments WHERE paid_status IN ('paid','partial') AND strftime('%Y-%m',payment_date)=?"
+      "SELECT COALESCE(SUM(ca.payment_amount),0) as v FROM crew_assignments ca JOIN projects p ON p.id = ca.project_id WHERE ca.paid_status IN ('paid','partial') AND strftime('%Y-%m',ca.payment_date)=?"
     ).get(ym).v;
     return { month: ym, label, revenue, expenses, crewCosts, netProfit: revenue - expenses - crewCosts };
   });
