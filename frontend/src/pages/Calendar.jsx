@@ -1,5 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { ChevronLeft, ChevronRight, Plus, X, Trash2, Edit2 } from 'lucide-react';
+import { DndContext, useDraggable, useDroppable, PointerSensor, TouchSensor, useSensors, useSensor, pointerWithin } from '@dnd-kit/core';
+import { CSS } from '@dnd-kit/utilities';
 import { api } from '../api';
 
 const EVENT_TYPE_COLORS = {
@@ -55,6 +57,12 @@ export default function Calendar() {
   const [addModal, setAddModal] = useState(null);
   const [detailModal, setDetailModal] = useState(null);
   const [editModal, setEditModal] = useState(null);
+  const [dragError, setDragError] = useState('');
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
+  );
 
   const loadEvents = useCallback(() => {
     const key = getMonthKey(year, month);
@@ -79,6 +87,34 @@ export default function Calendar() {
   function goToday() {
     setYear(now.getFullYear());
     setMonth(now.getMonth());
+  }
+
+  function addDaysDelta(dateStr, days) {
+    const d = new Date(dateStr + 'T00:00:00');
+    d.setDate(d.getDate() + days);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  function handleDragEnd({ active, over }) {
+    if (!over) return;
+    const eventId = active.id;
+    const newDate = String(over.id);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(newDate)) return;
+    const ev = events.find(e => e.id === eventId);
+    if (!ev || ev.start_date === newDate) return;
+    const dayDiff = Math.round(
+      (new Date(newDate + 'T00:00:00') - new Date(ev.start_date + 'T00:00:00')) / 86400000
+    );
+    const newEndDate = ev.end_date ? addDaysDelta(ev.end_date, dayDiff) : null;
+    const prevEvents = [...events];
+    setEvents(evs => evs.map(e => e.id === eventId ? { ...e, start_date: newDate, end_date: newEndDate } : e));
+    setDragError('');
+    api.put(`/calendar/${eventId}/move`, { start_date: newDate })
+      .then(() => loadEvents())
+      .catch(() => {
+        setEvents(prevEvents);
+        setDragError('Failed to move event. Please try again.');
+      });
   }
 
   const daysInMonth = getDaysInMonth(year, month);
@@ -154,6 +190,12 @@ export default function Calendar() {
         </button>
       </div>
 
+      {dragError && (
+        <div style={{ padding: '8px 12px', background: '#3a1a1a', border: '1px solid #f44', borderRadius: '6px', color: '#f44', fontSize: '12px', marginBottom: '12px' }}>
+          {dragError}
+        </div>
+      )}
+
       {/* Day headers + Grid */}
       <div className="calendar-grid-outer">
         <div className="calendar-day-headers">
@@ -163,16 +205,18 @@ export default function Calendar() {
             </div>
           ))}
         </div>
-        <div className="calendar-day-grid">
-          {cells.map((cell, idx) => (
-            <DayCell
-              key={idx}
-              cell={cell}
-              onClickEmpty={() => setAddModal({ date: cell.ds })}
-              onClickEvent={ev => setDetailModal(ev)}
-            />
-          ))}
-        </div>
+        <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragEnd={handleDragEnd}>
+          <div className="calendar-day-grid">
+            {cells.map((cell, idx) => (
+              <DroppableDayCell
+                key={idx}
+                cell={cell}
+                onClickEmpty={() => setAddModal({ date: cell.ds })}
+                onClickEvent={ev => setDetailModal(ev)}
+              />
+            ))}
+          </div>
+        </DndContext>
       </div>
 
       <footer style={{ marginTop: '32px', textAlign: 'center', fontSize: '11px', color: '#444' }}>built by year28</footer>
@@ -211,52 +255,73 @@ export default function Calendar() {
   );
 }
 
-function DayCell({ cell, onClickEmpty, onClickEvent }) {
-  const { cellDay, isCurrentMonth, isToday, events, ds } = cell;
+function DroppableDayCell({ cell, onClickEmpty, onClickEvent }) {
+  const { setNodeRef, isOver } = useDroppable({ id: cell.ds });
+  const { cellDay, isCurrentMonth, isToday, events } = cell;
   const MAX_VISIBLE = 3;
   const visible = events.slice(0, MAX_VISIBLE);
   const overflow = events.length - MAX_VISIBLE;
 
   return (
     <div
-      onClick={() => onClickEmpty()}
+      ref={setNodeRef}
+      onClick={onClickEmpty}
       className="calendar-day-cell"
       style={{
-        background: '#1e1e1e',
+        background: isOver ? '#252525' : '#1e1e1e',
         border: isToday ? '1px solid var(--accent)' : '1px solid rgba(255,255,255,0.06)',
         borderRadius: '8px',
         padding: '6px',
         cursor: 'pointer',
         position: 'relative',
+        transition: 'background 0.15s',
       }}
     >
       <div style={{ fontSize: '13px', color: isCurrentMonth ? '#fff' : '#555', fontWeight: isToday ? 700 : 400, marginBottom: '4px' }}>
         {cellDay}
       </div>
       {visible.map(ev => (
-        <div
+        <DraggableEventChip
           key={ev.id}
+          ev={ev}
           onClick={e => { e.stopPropagation(); onClickEvent(ev); }}
-          style={{
-            background: ev.color || '#7BA01A',
-            borderRadius: '4px',
-            padding: '1px 5px',
-            fontSize: '11px',
-            color: '#fff',
-            marginBottom: '2px',
-            cursor: 'pointer',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            maxWidth: '100%',
-          }}
-        >
-          {ev.start_time ? `${ev.start_time.slice(0, 5)} ` : ''}{ev.title}
-        </div>
+        />
       ))}
       {overflow > 0 && (
         <div style={{ fontSize: '10px', color: '#888', marginTop: '1px' }}>+{overflow} more</div>
       )}
+    </div>
+  );
+}
+
+function DraggableEventChip({ ev, onClick }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: ev.id });
+
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      onClick={onClick}
+      style={{
+        background: ev.color || '#7BA01A',
+        borderRadius: '4px',
+        padding: '1px 5px',
+        fontSize: '11px',
+        color: '#fff',
+        marginBottom: '2px',
+        cursor: isDragging ? 'grabbing' : 'grab',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        maxWidth: '100%',
+        opacity: isDragging ? 0.4 : 1,
+        transform: CSS.Translate.toString(transform),
+        position: 'relative',
+        zIndex: isDragging ? 999 : 'auto',
+      }}
+    >
+      {ev.start_time ? `${ev.start_time.slice(0, 5)} ` : ''}{ev.title}
     </div>
   );
 }

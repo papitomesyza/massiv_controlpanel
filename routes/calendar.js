@@ -48,6 +48,38 @@ router.post('/', (req, res) => {
   res.json({ id: result.lastInsertRowid });
 });
 
+// PUT /api/calendar/:id/move — reschedule by shifting start_date (and end_date span)
+router.put('/:id/move', (req, res) => {
+  const { start_date } = req.body;
+  if (!start_date) return res.status(400).json({ error: 'start_date required' });
+
+  const event = db.prepare('SELECT * FROM calendar_events WHERE id = ?').get(req.params.id);
+  if (!event) return res.status(404).json({ error: 'Event not found' });
+
+  let new_end_date = null;
+  if (event.end_date) {
+    const spanDays = Math.round(
+      (new Date(event.end_date + 'T00:00:00') - new Date(event.start_date + 'T00:00:00')) / 86400000
+    );
+    const d = new Date(start_date + 'T00:00:00');
+    d.setDate(d.getDate() + spanDays);
+    new_end_date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  db.prepare('UPDATE calendar_events SET start_date = ?, end_date = ? WHERE id = ?')
+    .run(start_date, new_end_date, req.params.id);
+
+  if (event.project_id) {
+    if (event.event_type === 'shoot') {
+      db.prepare('UPDATE projects SET shoot_date = ? WHERE id = ?').run(start_date, event.project_id);
+    } else if (event.event_type === 'deadline') {
+      db.prepare('UPDATE projects SET deadline = ? WHERE id = ?').run(start_date, event.project_id);
+    }
+  }
+
+  res.json({ ok: true });
+});
+
 // PUT /api/calendar/:id
 router.put('/:id', (req, res) => {
   const event = db.prepare('SELECT id FROM calendar_events WHERE id = ?').get(req.params.id);
