@@ -21,6 +21,7 @@ import PublicCollection from './pages/PublicCollection';
 import PublicMind from './pages/PublicMind';
 import Collections from './pages/Collections';
 import CollectionDetail from './pages/CollectionDetail';
+import MindAccounts from './pages/MindAccounts';
 import { AgencyProvider } from './context/AgencyContext';
 
 function applyFavicon() {
@@ -88,6 +89,7 @@ export default function App() {
           <Route path="invoices" element={<Invoices />} />
           <Route path="collections" element={<Collections />} />
           <Route path="collections/:id" element={<CollectionDetail />} />
+          <Route path="accounts" element={<MindAccounts />} />
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>

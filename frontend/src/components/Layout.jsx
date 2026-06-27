@@ -3,7 +3,7 @@ import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, FolderKanban, Users, UserCog, Package,
   BarChart3, FileText, Settings, LogOut, CalendarDays, MapPin, Receipt,
-  Plus, X, Lightbulb, LayoutGrid, Library, ChevronRight,
+  Plus, X, Lightbulb, LayoutGrid, Library, ChevronRight, KeyRound,
 } from 'lucide-react';
 import { useAgency } from '../context/AgencyContext';
 import { api } from '../api';
@@ -26,7 +26,8 @@ const DB_LINKS = [
 ];
 
 const MIND_LINKS = [
-  { to: '/collections', icon: Library, label: 'Collections' },
+  { to: '/collections', icon: Library,   label: 'Collections' },
+  { to: '/accounts',    icon: KeyRound,  label: 'Accounts'    },
 ];
 
 // All pages — used by the floating menu button for full-nav access
@@ -42,6 +43,7 @@ const ALL_NAV_PAGES = [
   { to: '/crew',      icon: UserCog,         label: 'Crew'      },
   { to: '/assets',    icon: Package,         label: 'Assets'    },
   { to: '/collections', icon: Library,       label: 'Collections' },
+  { to: '/accounts',    icon: KeyRound,      label: 'Accounts'    },
   { to: '/settings',  icon: Settings,        label: 'Settings'  },
 ];
 
@@ -206,7 +208,7 @@ export default function Layout() {
               <span>The Mind</span>
               <ChevronRight size={15} style={{ transform: openGroup === 'mind' ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease', flexShrink: 0 }} />
             </button>
-            <div style={{ maxHeight: openGroup === 'mind' ? '200px' : '0', overflow: 'hidden', transition: 'max-height 0.25s ease' }}>
+            <div style={{ maxHeight: openGroup === 'mind' ? '300px' : '0', overflow: 'hidden', transition: 'max-height 0.25s ease' }}>
               {MIND_LINKS.map(({ to, icon: Icon, label }) => (
                 <NavLink key={to} to={to} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
                   <div className="nav-icon"><Icon size={18} /></div>

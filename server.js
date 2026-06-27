@@ -92,6 +92,7 @@ app.use('/api/assets', requireAuth, require('./routes/assets'));
 app.use('/api/calendar', requireAuth, require('./routes/calendar'));
 app.use('/api/invoices', requireAuth, require('./routes/invoices'));
 app.use('/api/collections', requireAuth, require('./routes/collections'));
+app.use('/api/mind-accounts', requireAuth, require('./routes/mind-accounts'));
 
 // Projects — inject multer for expense upload endpoints
 app.use('/api/projects', requireAuth, (req, res, next) => {

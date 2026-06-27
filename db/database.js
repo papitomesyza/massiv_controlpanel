@@ -520,6 +520,25 @@ function initDb() {
   } catch (_) {}
 
   // Indexes — created only if missing
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS mind_accounts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      category TEXT NOT NULL,
+      platform TEXT NOT NULL,
+      username TEXT,
+      url TEXT,
+      notes TEXT,
+      has_payment INTEGER DEFAULT 0,
+      cost REAL DEFAULT 0,
+      billing_cycle TEXT DEFAULT 'monthly',
+      renewal_date TEXT,
+      currency TEXT DEFAULT 'EUR',
+      archived INTEGER DEFAULT 0,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    )`);
+  } catch (_) {}
+
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_expenses_project ON expenses(project_id);
     CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(date);
