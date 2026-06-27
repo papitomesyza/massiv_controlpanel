@@ -19,6 +19,23 @@ const CATEGORY_META = {
 const BILLING_CYCLES = ['monthly', 'yearly', 'quarterly', 'weekly', 'one-time'];
 const CURRENCIES = ['EUR', 'USD', 'GBP', 'ALL'];
 
+const AUTH_METHODS = [
+  { value: 'password',  label: 'Password' },
+  { value: 'google',    label: 'Google' },
+  { value: 'apple',     label: 'Apple' },
+  { value: 'microsoft', label: 'Microsoft' },
+  { value: 'facebook',  label: 'Facebook' },
+  { value: 'github',    label: 'GitHub' },
+  { value: 'other',     label: 'Other' },
+];
+
+function ssoLabel(method) {
+  if (!method || method === 'password') return null;
+  if (method === 'other') return 'External sign-in';
+  const m = AUTH_METHODS.find(a => a.value === method);
+  return m ? `Sign in with ${m.label}` : 'External sign-in';
+}
+
 const SECTION_LABEL = {
   fontSize: '11px', fontWeight: 700, letterSpacing: '0.1em',
   textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '14px',
@@ -196,8 +213,9 @@ function VaultUnlockModal({ vaultMeta, onUnlock, onClose }) {
 // ── Account card ──────────────────────────────────────────────────────────────
 
 function AccountCard({ account, onEdit, onDelete, onArchive, vaultKey, unlocked }) {
+  const isSSO = account.auth_method && account.auth_method !== 'password';
   const hasPayment = !!account.has_payment && account.cost > 0;
-  const hasPassword = !!account.password_cipher;
+  const hasPassword = !isSSO && !!account.password_cipher;
   const sym = currencySymbol(account.currency);
   const renewal = fmtRenewal(account.renewal_date);
 
@@ -345,6 +363,20 @@ function AccountCard({ account, onEdit, onDelete, onArchive, vaultKey, unlocked 
         </div>
       )}
 
+      {/* SSO badge */}
+      {isSSO && (
+        <div style={{ padding: '8px 14px 0' }}>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center',
+            background: 'rgba(114,60,235,0.1)', border: '1px solid rgba(114,60,235,0.25)',
+            borderRadius: '6px', padding: '4px 8px',
+            fontSize: '11px', color: '#9b7ef8', fontWeight: 600,
+          }}>
+            {ssoLabel(account.auth_method)}
+          </span>
+        </div>
+      )}
+
       {/* Payment badge */}
       <div style={{ padding: '8px 14px 14px', marginTop: 'auto' }}>
         {hasPayment && (
@@ -416,6 +448,7 @@ function AccountModal({ account, vaultKey, unlocked, onSave, onClose }) {
     billing_cycle: account?.billing_cycle || 'monthly',
     renewal_date:  account?.renewal_date  || '',
     currency:      account?.currency      || 'EUR',
+    auth_method:   account?.auth_method   || 'password',
   });
   const [passwordInput, setPasswordInput] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -451,17 +484,24 @@ function AccountModal({ account, vaultKey, unlocked, onSave, onClose }) {
         billing_cycle: form.billing_cycle,
         renewal_date:  form.renewal_date || null,
         currency:      form.currency,
+        auth_method:   form.auth_method,
       };
 
-      if (clearPassword) {
+      if (form.auth_method === 'password') {
+        if (clearPassword) {
+          data.password_cipher = null;
+          data.password_iv = null;
+        } else if (unlocked && passwordInput.trim()) {
+          const { cipher, iv } = await encryptSecret(vaultKey, passwordInput);
+          data.password_cipher = cipher;
+          data.password_iv = iv;
+        }
+        // if neither condition: password fields omitted → backend preserves existing value
+      } else {
+        // SSO account — clear any stored password
         data.password_cipher = null;
         data.password_iv = null;
-      } else if (unlocked && passwordInput.trim()) {
-        const { cipher, iv } = await encryptSecret(vaultKey, passwordInput);
-        data.password_cipher = cipher;
-        data.password_iv = iv;
       }
-      // if neither condition: password fields omitted → backend preserves existing value
 
       await onSave(data);
       onClose();
@@ -526,8 +566,21 @@ function AccountModal({ account, vaultKey, unlocked, onSave, onClose }) {
             />
           </div>
 
-          {/* Password field */}
           <div className="form-row">
+            <label className="form-label">Sign-in method</label>
+            <select
+              className="select"
+              value={form.auth_method}
+              onChange={e => set('auth_method', e.target.value)}
+            >
+              {AUTH_METHODS.map(m => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Password field — only for password accounts */}
+          {form.auth_method === 'password' && <div className="form-row">
             <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
               Password
               {!unlocked && (
@@ -586,7 +639,7 @@ function AccountModal({ account, vaultKey, unlocked, onSave, onClose }) {
                 <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Clear saved password</span>
               </label>
             )}
-          </div>
+          </div>}
 
           {/* Payment toggle */}
           <div className="form-row">

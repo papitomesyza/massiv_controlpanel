@@ -491,6 +491,7 @@ function initDb() {
     'ALTER TABLE calendar_events ADD COLUMN task_id INTEGER',
     'ALTER TABLE mind_accounts ADD COLUMN password_cipher TEXT',
     'ALTER TABLE mind_accounts ADD COLUMN password_iv TEXT',
+    "ALTER TABLE mind_accounts ADD COLUMN auth_method TEXT DEFAULT 'password'",
   ].forEach(sql => { try { db.exec(sql); } catch (_) {} });
 
   // collection_share_links table
