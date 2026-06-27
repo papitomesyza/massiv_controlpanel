@@ -221,8 +221,26 @@ async function fetchLinkPreview(rawUrl) {
 
     const source = detectSource(url);
     const html = await fetchHtml(url);
-    if (!html) return { title: null, thumbnail_url: null, source };
-    const { title, thumbnail_url } = await parseOgTags(html, url);
+    let title = null;
+    let thumbnail_url = null;
+    if (html) {
+      ({ title, thumbnail_url } = await parseOgTags(html, url));
+    }
+    if (!thumbnail_url) {
+      try {
+        const mlr = await fetchWithTimeout(
+          `https://api.microlink.io/?url=${encodeURIComponent(url)}`,
+          7000
+        );
+        if (mlr.ok) {
+          const mld = await mlr.json();
+          if (mld.status === 'success' && mld.data?.image?.url) {
+            thumbnail_url = mld.data.image.url;
+            if (!title) title = mld.data?.title || null;
+          }
+        }
+      } catch (_) {}
+    }
     return { title, thumbnail_url, source };
   } catch (_) {
     return { title: null, thumbnail_url: null, source: 'web' };
