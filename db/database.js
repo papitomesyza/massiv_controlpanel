@@ -489,6 +489,7 @@ function initDb() {
     'ALTER TABLE collection_cards ADD COLUMN sort_order INTEGER NULL',
     'ALTER TABLE budget_lines ADD COLUMN discount REAL DEFAULT 0',
     'ALTER TABLE calendar_events ADD COLUMN task_id INTEGER',
+    'ALTER TABLE calendar_events ADD COLUMN standalone_task_id INTEGER',
     'ALTER TABLE mind_accounts ADD COLUMN password_cipher TEXT',
     'ALTER TABLE mind_accounts ADD COLUMN password_iv TEXT',
     "ALTER TABLE mind_accounts ADD COLUMN auth_method TEXT DEFAULT 'password'",

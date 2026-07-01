@@ -83,6 +83,9 @@ router.put('/:id/move', (req, res) => {
   if (event.event_type === 'task' && event.task_id) {
     db.prepare('UPDATE tasks SET due_date = ? WHERE id = ?').run(start_date, event.task_id);
   }
+  if (event.event_type === 'standalone_task' && event.standalone_task_id) {
+    db.prepare('UPDATE standalone_tasks SET due_date = ? WHERE id = ?').run(start_date, event.standalone_task_id);
+  }
 
   res.json({ ok: true });
 });

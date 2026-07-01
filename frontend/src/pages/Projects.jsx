@@ -164,29 +164,26 @@ export default function Projects() {
       <div className="page-header">
         <div>
           <div className="page-title">Projects</div>
-          {activeTab !== 'tasks' && (
-            <div className="page-subtitle">{displayProjects.length} project{displayProjects.length !== 1 ? 's' : ''}</div>
-          )}
+          <div className="page-subtitle">{displayProjects.length} project{displayProjects.length !== 1 ? 's' : ''}</div>
         </div>
         <div className="flex-center gap-2">
-          {activeTab !== 'tasks' && (
-            <>
-              <div className="view-toggle">
-                <button className={`view-toggle-btn${view === 'list'  ? ' active' : ''}`} onClick={() => switchView('list')}  title="List view"><List size={15} /></button>
-                <button className={`view-toggle-btn${view === 'gantt' ? ' active' : ''}`} onClick={() => switchView('gantt')} title="Timeline view"><GanttChart size={15} /></button>
-              </div>
-              <button className="btn btn-ghost" onClick={() => setShowAddLead(true)}>
-                <Lightbulb size={15} style={{ color: 'var(--accent)' }} /> Add Lead
-              </button>
-              <button className="btn btn-primary" onClick={() => { setWizardPrefill(null); setShowWizard(true); }}>
-                <Plus size={15} /> New Project
-              </button>
-            </>
-          )}
+          <div className="view-toggle">
+            <button className={`view-toggle-btn${view === 'list'  ? ' active' : ''}`} onClick={() => switchView('list')}  title="List view"><List size={15} /></button>
+            <button className={`view-toggle-btn${view === 'gantt' ? ' active' : ''}`} onClick={() => switchView('gantt')} title="Timeline view"><GanttChart size={15} /></button>
+          </div>
+          <button className="btn btn-ghost" onClick={() => setShowAddLead(true)}>
+            <Lightbulb size={15} style={{ color: 'var(--accent)' }} /> Add Lead
+          </button>
+          <button className="btn btn-primary" onClick={() => { setWizardPrefill(null); setShowWizard(true); }}>
+            <Plus size={15} /> New Project
+          </button>
         </div>
       </div>
 
-      {/* Active / Completed / Tasks toggle */}
+      {/* 1. TASKS — always visible at the top */}
+      <TasksView />
+
+      {/* 2. PROJECTS — Active / Completed toggle + filter-bar + project grid */}
       <div style={{ display: 'flex', gap: '4px', marginBottom: '16px' }}>
         <button
           className={`btn btn-sm ${activeTab === 'active' ? 'btn-primary' : 'btn-ghost'}`}
@@ -202,88 +199,74 @@ export default function Projects() {
         >
           Completed
         </button>
-        <button
-          className={`btn btn-sm ${activeTab === 'tasks' ? 'btn-primary' : 'btn-ghost'}`}
-          style={{ borderRadius: '50px', padding: '5px 18px' }}
-          onClick={() => switchTab('tasks')}
-        >
-          Tasks
-        </button>
       </div>
 
-      {/* Tasks tab — render TasksView, skip the rest */}
-      {activeTab === 'tasks' && <TasksView />}
+      <div className="filter-bar">
+        {activeTab === 'active' && (
+          <select className="select" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+            <option value="">All Statuses</option>
+            {STATUSES.filter(s => s !== 'completed').map(s => (
+              <option key={s} value={s}>{s.replace(/-/g,' ')}</option>
+            ))}
+          </select>
+        )}
+        <select className="select" value={filterCat} onChange={e => setFilterCat(e.target.value)}>
+          <option value="">All Categories</option>
+          {Object.entries(grouped).map(([g, cats]) => (
+            <optgroup key={g} label={g}>
+              {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </optgroup>
+          ))}
+        </select>
+        <select className="select" value={sort} onChange={e => setSort(e.target.value)}>
+          <option value="newest">Newest First</option>
+          <option value="oldest">Oldest First</option>
+          <option value="budget_high">Budget High → Low</option>
+          <option value="budget_low">Budget Low → High</option>
+          <option value="margin_high">Margin High → Low</option>
+        </select>
+      </div>
 
-      {/* Leads + filters + project grid — hidden on Tasks tab */}
-      {activeTab !== 'tasks' && (
-        <>
-          <div className="leads-section">
-            <div className="leads-section-header" onClick={() => setLeadsOpen(o => !o)}>
-              <div className="flex-center gap-2">
-                <span className="leads-section-label">LEADS</span>
-                <span className="leads-count-badge">{leads.length}</span>
-              </div>
-              {leadsOpen ? <ChevronUp size={14} color="#888" /> : <ChevronDown size={14} color="#888" />}
-            </div>
-
-            {leadsOpen && (
-              <div>
-                {leads.length === 0 ? (
-                  <div className="leads-empty">No active leads. Click "Add Lead" to track potential projects.</div>
-                ) : (
-                  <div className="leads-scroll-row">
-                    {leads.map(lead => (
-                      <LeadCard
-                        key={lead.id}
-                        lead={lead}
-                        onDismiss={handleLeadDismissed}
-                        onConvert={handleConvertLead}
-                        onEdit={setEditingLead}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          <div className="filter-bar">
-            {activeTab === 'active' && (
-              <select className="select" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-                <option value="">All Statuses</option>
-                {STATUSES.filter(s => s !== 'completed').map(s => (
-                  <option key={s} value={s}>{s.replace(/-/g,' ')}</option>
-                ))}
-              </select>
-            )}
-            <select className="select" value={filterCat} onChange={e => setFilterCat(e.target.value)}>
-              <option value="">All Categories</option>
-              {Object.entries(grouped).map(([g, cats]) => (
-                <optgroup key={g} label={g}>
-                  {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </optgroup>
-              ))}
-            </select>
-            <select className="select" value={sort} onChange={e => setSort(e.target.value)}>
-              <option value="newest">Newest First</option>
-              <option value="oldest">Oldest First</option>
-              <option value="budget_high">Budget High → Low</option>
-              <option value="budget_low">Budget Low → High</option>
-              <option value="margin_high">Margin High → Low</option>
-            </select>
-          </div>
-
-          {displayProjects.length === 0 ? (
-            <div className="card card-pad empty">No projects found</div>
-          ) : view === 'gantt' ? (
-            <GanttView projects={displayProjects} />
-          ) : (
-            <div className="card">
-              {displayProjects.map(p => <ProjectRowCard key={p.id} p={p} />)}
-            </div>
-          )}
-        </>
+      {displayProjects.length === 0 ? (
+        <div className="card card-pad empty">No projects found</div>
+      ) : view === 'gantt' ? (
+        <GanttView projects={displayProjects} />
+      ) : (
+        <div className="card">
+          {displayProjects.map(p => <ProjectRowCard key={p.id} p={p} />)}
+        </div>
       )}
+
+      {/* 3. LEADS — always visible at the bottom */}
+      <div className="leads-section" style={{ marginTop: '20px' }}>
+        <div className="leads-section-header" onClick={() => setLeadsOpen(o => !o)}>
+          <div className="flex-center gap-2">
+            <span className="leads-section-label">LEADS</span>
+            <span className="leads-count-badge">{leads.length}</span>
+          </div>
+          {leadsOpen ? <ChevronUp size={14} color="#888" /> : <ChevronDown size={14} color="#888" />}
+        </div>
+
+        {leadsOpen && (
+          <div>
+            {leads.length === 0 ? (
+              <div className="leads-empty">No active leads. Click "Add Lead" to track potential projects.</div>
+            ) : (
+              <div className="leads-scroll-row">
+                {leads.map(lead => (
+                  <LeadCard
+                    key={lead.id}
+                    lead={lead}
+                    onDismiss={handleLeadDismissed}
+                    onConvert={handleConvertLead}
+                    onEdit={setEditingLead}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {showWizard && (
         <ProjectWizardWithPrefill

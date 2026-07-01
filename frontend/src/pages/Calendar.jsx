@@ -10,6 +10,7 @@ const EVENT_TYPE_COLORS = {
   meeting: '#3B82F6',
   deadline: '#FF902F',
   task: '#22D3EE',
+  standalone_task: '#E879F9',
   other: '#888888',
 };
 
@@ -359,7 +360,7 @@ function DraggableEventChip({ ev, onClick }) {
 function EventDetailModal({ event, onClose, onEdit, onDelete }) {
   const [deleting, setDeleting] = useState(false);
   const navigate = useNavigate();
-  const isTask = event.event_type === 'task';
+  const isTask = event.event_type === 'task' || event.event_type === 'standalone_task';
 
   async function handleDelete() {
     if (!window.confirm('Delete this event?')) return;
