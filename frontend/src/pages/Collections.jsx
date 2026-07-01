@@ -21,6 +21,40 @@ const KIND_META = {
   personal: { label: 'Personal',            icon: User,          emptyMsg: 'No Personal collections yet. Save ideas and personal inspiration here.' },
 };
 
+// ── Sort helpers ──────────────────────────────────────────────────────────────
+
+const SORT_OPTIONS = [
+  { value: 'latest', label: 'Latest added' },
+  { value: 'oldest', label: 'Oldest added' },
+  { value: 'name',   label: 'Name A–Z' },
+  { value: 'custom', label: 'Custom order' },
+];
+
+function applySortMode(list, mode) {
+  const starred = list.filter(c => c.starred);
+  const rest = list.filter(c => !c.starred);
+  function sortGroup(arr) {
+    if (mode === 'oldest') return [...arr].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    if (mode === 'name') return [...arr].sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
+    if (mode === 'custom') return [...arr].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+    return [...arr].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  }
+  return [...sortGroup(starred), ...sortGroup(rest)];
+}
+
+function SortSelector({ value, onChange }) {
+  return (
+    <select
+      className="select"
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      style={{ fontSize: '12px', padding: '5px 10px', height: 'auto', width: 'auto' }}
+    >
+      {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+    </select>
+  );
+}
+
 // ── Collection tile ───────────────────────────────────────────────────────────
 
 function CollectionTile({ collection, onEdit, onDelete, onArchive, onStar, onClick }) {
@@ -421,7 +455,7 @@ const SECTION_LABEL = {
 };
 const TILE_GRID = 'collections-tile-grid';
 
-function SortableSection({ kind, list, onListChange, onEdit, onDelete, onArchive, onStar, navigate }) {
+function SortableSection({ kind, list, onListChange, onEdit, onDelete, onArchive, onStar, navigate, isDragEnabled }) {
   const meta = KIND_META[kind];
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -447,7 +481,7 @@ function SortableSection({ kind, list, onListChange, onEdit, onDelete, onArchive
         <div className="card" style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
           {meta.emptyMsg}
         </div>
-      ) : (
+      ) : isDragEnabled ? (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={list.map(c => c.id)} strategy={rectSortingStrategy}>
             <div className={TILE_GRID}>
@@ -465,6 +499,20 @@ function SortableSection({ kind, list, onListChange, onEdit, onDelete, onArchive
             </div>
           </SortableContext>
         </DndContext>
+      ) : (
+        <div className={TILE_GRID}>
+          {list.map(c => (
+            <CollectionTile
+              key={c.id}
+              collection={c}
+              onEdit={onEdit}
+              onDelete={onDelete}
+              onArchive={onArchive}
+              onStar={onStar}
+              onClick={() => navigate(`/collections/${c.id}`)}
+            />
+          ))}
+        </div>
       )}
     </section>
   );
@@ -684,6 +732,7 @@ export default function Collections() {
   const [searchResults, setSearchResults] = useState(null);
   const [searching, setSearching] = useState(false);
   const [showMindShare, setShowMindShare] = useState(false);
+  const [sortMode, setSortMode] = useState('latest');
 
   // Per-section sorted lists (active only; derived from collections)
   const [sortedProject, setSortedProject] = useState([]);
@@ -702,14 +751,14 @@ export default function Collections() {
     loadData().finally(() => setLoading(false));
   }, []);
 
-  // Sync sorted lists when collections change
+  // Sync sorted lists when collections or sortMode change
   useEffect(() => {
     const active = collections.filter(c => !c.archived);
-    const byKind = kind => active.filter(c => c.kind === kind).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+    const byKind = kind => applySortMode(active.filter(c => c.kind === kind), sortMode);
     setSortedProject(byKind('project'));
     setSortedStudio(byKind('studio'));
     setSortedPersonal(byKind('personal'));
-  }, [collections]);
+  }, [collections, sortMode]);
 
   function handleSectionListChange(kind, newList) {
     if (kind === 'project') setSortedProject(newList);
@@ -929,9 +978,12 @@ export default function Collections() {
                 </div>
               ) : (
                 <>
-                  <SortableSection kind="project" list={sortedProject} onListChange={handleSectionListChange} onEdit={setEditingColl} onDelete={handleDelete} onArchive={handleArchive} onStar={handleStar} navigate={navigate} />
-                  <SortableSection kind="studio"  list={sortedStudio}  onListChange={handleSectionListChange} onEdit={setEditingColl} onDelete={handleDelete} onArchive={handleArchive} onStar={handleStar} navigate={navigate} />
-                  <SortableSection kind="personal" list={sortedPersonal} onListChange={handleSectionListChange} onEdit={setEditingColl} onDelete={handleDelete} onArchive={handleArchive} onStar={handleStar} navigate={navigate} />
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: '20px' }}>
+                    <SortSelector value={sortMode} onChange={setSortMode} />
+                  </div>
+                  <SortableSection kind="project" list={sortedProject} onListChange={handleSectionListChange} onEdit={setEditingColl} onDelete={handleDelete} onArchive={handleArchive} onStar={handleStar} navigate={navigate} isDragEnabled={sortMode === 'custom'} />
+                  <SortableSection kind="studio"  list={sortedStudio}  onListChange={handleSectionListChange} onEdit={setEditingColl} onDelete={handleDelete} onArchive={handleArchive} onStar={handleStar} navigate={navigate} isDragEnabled={sortMode === 'custom'} />
+                  <SortableSection kind="personal" list={sortedPersonal} onListChange={handleSectionListChange} onEdit={setEditingColl} onDelete={handleDelete} onArchive={handleArchive} onStar={handleStar} navigate={navigate} isDragEnabled={sortMode === 'custom'} />
                 </>
               )}
             </>

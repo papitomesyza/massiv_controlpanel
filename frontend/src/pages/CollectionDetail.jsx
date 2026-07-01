@@ -54,6 +54,44 @@ function parseTags(tags) {
   return tags.split(',').map(t => t.trim()).filter(Boolean);
 }
 
+// ── Sort helpers ──────────────────────────────────────────────────────────────
+
+const SORT_OPTIONS = [
+  { value: 'latest', label: 'Latest added' },
+  { value: 'oldest', label: 'Oldest added' },
+  { value: 'name',   label: 'Name A–Z' },
+  { value: 'custom', label: 'Custom order' },
+];
+
+function applySortMode(list, mode) {
+  const starred = list.filter(c => c.starred);
+  const rest = list.filter(c => !c.starred);
+  function sortGroup(arr) {
+    if (mode === 'oldest') return [...arr].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    if (mode === 'name') return [...arr].sort((a, b) => {
+      const aKey = (a.title || a.url || '').toLowerCase();
+      const bKey = (b.title || b.url || '').toLowerCase();
+      return aKey.localeCompare(bKey, undefined, { sensitivity: 'base' });
+    });
+    if (mode === 'custom') return [...arr];
+    return [...arr].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  }
+  return [...sortGroup(starred), ...sortGroup(rest)];
+}
+
+function SortSelector({ value, onChange }) {
+  return (
+    <select
+      className="select"
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      style={{ fontSize: '12px', padding: '5px 10px', height: 'auto', width: 'auto' }}
+    >
+      {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+    </select>
+  );
+}
+
 // ── Tag chip ──────────────────────────────────────────────────────────────────
 
 function TagChip({ tag, active, onClick }) {
@@ -441,6 +479,16 @@ function SortableCardWrapper({ card, ...props }) {
   );
 }
 
+// ── Static card wrapper (no drag) ────────────────────────────────────────────
+
+function StaticCardItem({ card, ...props }) {
+  return card.type === 'link' ? (
+    <LinkCard card={card} {...props} />
+  ) : (
+    <NoteCard card={card} {...props} />
+  );
+}
+
 // ── Edit card modal ───────────────────────────────────────────────────────────
 
 function EditCardModal({ card, onSave, onClose }) {
@@ -652,6 +700,9 @@ export default function CollectionDetail() {
   const [expandedIds, setExpandedIds] = useState(new Set());
   const [showShare, setShowShare] = useState(false);
 
+  // Sort mode — never persisted, always defaults to 'latest' on page load
+  const [cardSortMode, setCardSortMode] = useState('latest');
+
   // Search + tag filter
   const [cardSearch, setCardSearch] = useState('');
   const [activeTag, setActiveTag] = useState(null);
@@ -677,8 +728,9 @@ export default function CollectionDetail() {
     loadCollection().finally(() => setLoading(false));
   }, [id]);
 
-  // Filtered cards
-  const displayedCards = cards.filter(card => {
+  // Sorted then filtered cards
+  const sortedCards = applySortMode(cards, cardSortMode);
+  const displayedCards = sortedCards.filter(card => {
     const q = cardSearch.trim().toLowerCase();
     const matchSearch = !q || [card.title, card.note_text, card.url, card.source, card.tags]
       .some(f => f && f.toLowerCase().includes(q));
@@ -690,6 +742,7 @@ export default function CollectionDetail() {
   // ── dnd-kit drag-end handler ──────────────────────────────────────────────
 
   function handleDragEnd({ active, over }) {
+    if (cardSortMode !== 'custom') return;
     if (!over || active.id === over.id) return;
     const activeCard = cards.find(c => c.id === active.id);
     const overCard = cards.find(c => c.id === over.id);
@@ -983,23 +1036,26 @@ export default function CollectionDetail() {
       {/* ── Search bar + tag filter ── */}
       {cards.length > 0 && (
         <div style={{ marginBottom: '20px' }}>
-          <div style={{ position: 'relative', marginBottom: activeTag ? '10px' : 0 }}>
-            <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-            <input
-              className="input"
-              value={cardSearch}
-              onChange={e => setCardSearch(e.target.value)}
-              placeholder="Search cards by title, text, URL, tags…"
-              style={{ paddingLeft: 36, paddingRight: cardSearch ? 32 : 12, fontSize: '13px' }}
-            />
-            {cardSearch && (
-              <button
-                onClick={() => setCardSearch('')}
-                style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}
-              >
-                <X size={13} />
-              </button>
-            )}
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: activeTag ? '10px' : 0 }}>
+            <div style={{ position: 'relative', flex: 1 }}>
+              <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+              <input
+                className="input"
+                value={cardSearch}
+                onChange={e => setCardSearch(e.target.value)}
+                placeholder="Search cards by title, text, URL, tags…"
+                style={{ paddingLeft: 36, paddingRight: cardSearch ? 32 : 12, fontSize: '13px' }}
+              />
+              {cardSearch && (
+                <button
+                  onClick={() => setCardSearch('')}
+                  style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+            <SortSelector value={cardSortMode} onChange={setCardSortMode} />
           </div>
           {activeTag && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
@@ -1050,7 +1106,7 @@ export default function CollectionDetail() {
               </button>
             )}
           </div>
-        ) : (
+        ) : cardSortMode === 'custom' ? (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={displayedCards.map(c => c.id)} strategy={rectSortingStrategy}>
               <div style={{
@@ -1076,6 +1132,28 @@ export default function CollectionDetail() {
               </div>
             </SortableContext>
           </DndContext>
+        ) : (
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+            gap: '16px',
+          }}>
+            {displayedCards.map(card => (
+              <StaticCardItem
+                key={card.id}
+                card={card}
+                isMenuOpen={openMenuId === card.id}
+                onMenuToggle={() => toggleMenu(card.id)}
+                onEdit={() => { setEditingCard(card); setOpenMenuId(null); }}
+                onDelete={() => handleDeleteCard(card.id)}
+                onStar={handleStarCard}
+                isExpanded={expandedIds.has(card.id)}
+                onToggleExpand={() => toggleExpand(card.id)}
+                activeTag={activeTag}
+                onTagClick={handleTagClick}
+              />
+            ))}
+          </div>
         )
       )}
 

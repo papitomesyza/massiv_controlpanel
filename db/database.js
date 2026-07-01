@@ -572,6 +572,20 @@ function initDb() {
     CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
   `);
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS standalone_tasks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      notes TEXT,
+      due_date TEXT,
+      priority TEXT DEFAULT 'normal',
+      done INTEGER DEFAULT 0,
+      completed_at TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_standalone_tasks_done ON standalone_tasks(done);
+  `);
+
   // Password migration — run once on boot
   migratePassword();
 }
