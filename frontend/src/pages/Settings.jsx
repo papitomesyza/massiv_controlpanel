@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Plus, Trash2, Palette, Image as ImageIcon, Receipt, Sliders } from 'lucide-react';
-import { api } from '../api';
+import { api, fmtDate } from '../api';
 import { useNavigate } from 'react-router-dom';
 import SetupWizard from '../components/SetupWizard';
 
@@ -16,6 +16,7 @@ export default function Settings() {
   const [pwMsg, setPwMsg] = useState('');
   const [loading, setLoading] = useState(true);
   const [showSetupWizard, setShowSetupWizard] = useState(false);
+  const [backupLast, setBackupLast] = useState(null);
 
   const [taxRate, setTaxRate] = useState('18');
   const [taxLabel, setTaxLabel] = useState('Tax');
@@ -98,16 +99,18 @@ export default function Settings() {
   }
 
   async function load() {
-    const [ec, pc, cr, tax] = await Promise.all([
+    const [ec, pc, cr, tax, backup] = await Promise.all([
       api.get('/settings/expense-categories'),
       api.get('/settings/project-categories'),
       api.get('/settings/crew-roles'),
       api.get('/settings/tax'),
+      api.get('/settings/backup_last_success').catch(() => ({ value: null })),
     ]);
     setExpCats(ec); setProjCats(pc); setCrewRoles(cr);
     setTaxRate(String(tax.tax_rate ?? 18));
     setTaxLabel(tax.tax_label || 'Tax');
     setTaxEnabled(tax.tax_enabled !== false);
+    setBackupLast(backup && backup.value ? backup.value : null);
     setLoading(false);
   }
 
@@ -181,6 +184,16 @@ export default function Settings() {
   }, {});
 
   const groupOptions = [...new Set(['Video Production','Photography','Post Production','Branding & Digital', ...projCats.map(c => c.group_name)])];
+
+  const backupStatus = (() => {
+    if (!backupLast) return { ok: false, label: 'No off-site backup yet' };
+    const ts = Date.parse(backupLast);
+    if (isNaN(ts)) return { ok: false, label: 'No off-site backup yet' };
+    const ageHours = (Date.now() - ts) / 3600000;
+    const when = fmtDate(backupLast);
+    if (ageHours < 26) return { ok: true, label: `Last off-site backup: ${when}` };
+    return { ok: false, label: `Last off-site backup ${when} — over ${Math.floor(ageHours)}h ago` };
+  })();
 
   if (loading) return <div className="loading">Loading...</div>;
 
@@ -454,6 +467,15 @@ export default function Settings() {
           <div className="section-title" style={{ marginBottom: '12px' }}>Data Management</div>
           <div style={{ fontSize: '12px', color: '#888', marginBottom: '14px' }}>
             Download a full backup of the database file. Keep this safe — it contains all your project data.
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px', fontSize: '12px' }}>
+            <span style={{
+              width: '9px', height: '9px', borderRadius: '50%',
+              background: backupStatus.ok ? '#22C55E' : '#FF4444', flexShrink: 0,
+            }} />
+            <span style={{ color: backupStatus.ok ? '#aaa' : '#FF4444' }}>
+              {backupStatus.ok ? backupStatus.label : `⚠ ${backupStatus.label}`}
+            </span>
           </div>
           <button className="btn btn-ghost" onClick={downloadBackup}>
             Download Backup

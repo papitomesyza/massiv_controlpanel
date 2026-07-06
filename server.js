@@ -7,6 +7,10 @@ const { initDb, db } = require('./db/database');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Behind Zeabur's reverse proxy — trust the first proxy hop so rate limiters
+// (login, public expense) see the real client IP instead of the proxy IP.
+app.set('trust proxy', 1);
+
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 
@@ -15,6 +19,9 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 }
 
 initDb();
+
+// Automated off-site backups (dormant unless configured; never blocks/crashes boot)
+require('./db/backup').start();
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOADS_DIR),
