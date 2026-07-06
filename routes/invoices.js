@@ -356,12 +356,9 @@ router.delete('/:id', (req, res) => {
   // Remove tax record
   db.prepare('DELETE FROM invoice_tax_records WHERE invoice_id = ?').run(inv.id);
 
-  // Remove payment record if this invoice was marked paid
-  if (inv.status === 'paid' && inv.project_id && inv.invoice_number) {
-    db.prepare(
-      "DELETE FROM client_payments WHERE project_id = ? AND notes LIKE ? AND status = 'received'"
-    ).run(inv.project_id, `Invoice ${inv.invoice_number}%`);
-  }
+  // Unlink any payment tied to this invoice but keep the row — received money
+  // stays recorded even after the invoice is deleted.
+  db.prepare('UPDATE client_payments SET invoice_id = NULL WHERE invoice_id = ?').run(inv.id);
 
   db.prepare('DELETE FROM invoices WHERE id = ?').run(inv.id);
   res.json({ ok: true });
@@ -403,22 +400,24 @@ router.post('/:id/paid', (req, res) => {
   const prevStatus = inv.status;
   db.prepare("UPDATE invoices SET status='paid' WHERE id=?").run(inv.id);
 
-  // Create one client_payment for the linked project, only once
+  // Create one client_payment for the linked project, only once. Linkage is by
+  // invoice_id; the note text is kept only for human-readable display.
   if (inv.project_id && prevStatus !== 'paid') {
-    const noteStr = `Invoice ${inv.invoice_number || inv.id} - ${(inv.client_name || '').trim()}`.trim();
     const existing = db.prepare(
-      "SELECT id FROM client_payments WHERE project_id = ? AND notes = ? AND status = 'received'"
-    ).get(inv.project_id, noteStr);
+      'SELECT id FROM client_payments WHERE invoice_id = ?'
+    ).get(inv.id);
 
     if (!existing) {
+      const noteStr = `Invoice ${inv.invoice_number || inv.id} - ${(inv.client_name || '').trim()}`.trim();
       db.prepare(`
-        INSERT INTO client_payments (project_id, amount, date, method, notes, status)
-        VALUES (?, ?, ?, 'bank_transfer', ?, 'received')
+        INSERT INTO client_payments (project_id, amount, date, method, notes, status, invoice_id)
+        VALUES (?, ?, ?, 'bank_transfer', ?, 'received', ?)
       `).run(
         inv.project_id,
         inv.amount_due,
         new Date().toISOString().split('T')[0],
         noteStr,
+        inv.id,
       );
     }
   }
@@ -436,12 +435,10 @@ router.post('/:id/unpaid', (req, res) => {
   const targetStatus = inv.invoice_number ? 'issued' : 'draft';
   db.prepare('UPDATE invoices SET status=? WHERE id=?').run(targetStatus, inv.id);
 
-  // Remove the payment that was created on mark-paid
-  if (prevStatus === 'paid' && inv.project_id && inv.invoice_number) {
-    const noteStr = `Invoice ${inv.invoice_number} - ${(inv.client_name || '').trim()}`.trim();
-    db.prepare(
-      "DELETE FROM client_payments WHERE project_id = ? AND notes = ? AND status = 'received'"
-    ).run(inv.project_id, noteStr);
+  // Remove the payment that was created on mark-paid, matched by invoice_id only.
+  // If no payment carries this invoice_id, do nothing (no note-based fallback).
+  if (prevStatus === 'paid') {
+    db.prepare('DELETE FROM client_payments WHERE invoice_id = ?').run(inv.id);
   }
 
   res.json({ ok: true });

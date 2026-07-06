@@ -7,6 +7,12 @@ const os = require('os');
 const fs = require('fs');
 const { db } = require('../db/database');
 
+// Keys that must never be read or written through the generic settings API.
+const PROTECTED_KEYS = ['password_hash'];
+// Keys that may be updated with a real value but must never be deleted via the
+// empty-value path (deleting them would corrupt invoicing / tax config).
+const NO_DELETE_KEYS = ['invoice_next_num', 'invoice_year', 'tax_rate', 'tax_enabled', 'tax_label'];
+
 router.get('/expense-categories', (req, res) => {
   res.json(db.prepare('SELECT * FROM expense_categories ORDER BY name').all());
 });
@@ -115,7 +121,9 @@ router.get('/logo', (req, res) => {
 router.post('/', (req, res) => {
   const { key, value } = req.body;
   if (!key) return res.status(400).json({ error: 'key required' });
+  if (PROTECTED_KEYS.includes(key)) return res.status(403).json({ error: 'Forbidden' });
   if (value === null || value === undefined || value === '') {
+    if (NO_DELETE_KEYS.includes(key)) return res.status(403).json({ error: 'This setting cannot be deleted' });
     db.prepare('DELETE FROM settings WHERE key = ?').run(key);
   } else {
     db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value);
@@ -124,7 +132,9 @@ router.post('/', (req, res) => {
 });
 
 router.get('/', (req, res) => {
-  const rows = db.prepare('SELECT key, value FROM settings').all();
+  const rows = db.prepare(
+    `SELECT key, value FROM settings WHERE key NOT IN (${PROTECTED_KEYS.map(() => '?').join(',')})`
+  ).all(...PROTECTED_KEYS);
   const result = {};
   rows.forEach(r => { result[r.key] = r.value; });
   res.json(result);
@@ -174,6 +184,7 @@ router.post('/profile', (req, res) => {
 });
 
 router.get('/:key', (req, res) => {
+  if (PROTECTED_KEYS.includes(req.params.key)) return res.status(403).json({ error: 'Forbidden' });
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(req.params.key);
   res.json({ value: row ? row.value : null });
 });

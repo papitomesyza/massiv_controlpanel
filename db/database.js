@@ -493,6 +493,7 @@ function initDb() {
     'ALTER TABLE mind_accounts ADD COLUMN password_cipher TEXT',
     'ALTER TABLE mind_accounts ADD COLUMN password_iv TEXT',
     "ALTER TABLE mind_accounts ADD COLUMN auth_method TEXT DEFAULT 'password'",
+    'ALTER TABLE client_payments ADD COLUMN invoice_id INTEGER',
   ].forEach(sql => { try { db.exec(sql); } catch (_) {} });
 
   // collection_share_links table
@@ -535,6 +536,29 @@ function initDb() {
   // Backfill: any existing expense with no status gets confirmed
   try {
     db.exec("UPDATE expenses SET status = 'confirmed' WHERE status IS NULL");
+  } catch (_) {}
+
+  // Backfill client_payments.invoice_id by matching the legacy note string that
+  // the mark-paid endpoint generates ("Invoice {number} - {client name}").
+  // The invoice_id IS NULL guard makes this a no-op on every later boot.
+  try {
+    const invoices = db.prepare(
+      "SELECT id, invoice_number, project_id, client_name FROM invoices WHERE invoice_number IS NOT NULL AND invoice_number != '' AND project_id IS NOT NULL"
+    ).all();
+    const findPayment = db.prepare(
+      "SELECT id FROM client_payments WHERE project_id = ? AND status = 'received' AND invoice_id IS NULL AND notes = ?"
+    );
+    const linkPayment = db.prepare('UPDATE client_payments SET invoice_id = ? WHERE id = ?');
+    for (const inv of invoices) {
+      const noteStr = `Invoice ${inv.invoice_number} - ${(inv.client_name || '').trim()}`.trim();
+      const pay = findPayment.get(inv.project_id, noteStr);
+      if (pay) linkPayment.run(inv.id, pay.id);
+    }
+  } catch (_) {}
+
+  // Session cleanup — drop any sessions whose expiry is already in the past
+  try {
+    db.prepare("DELETE FROM sessions WHERE expires_at < datetime('now')").run();
   } catch (_) {}
 
   // Indexes — created only if missing
