@@ -4,7 +4,7 @@ import {
   ArrowLeft, Plus, X, Trash2, GripVertical, ChevronDown, ChevronRight,
   Image as ImageIcon, Upload, Settings2, Globe, EyeOff, Copy, Check,
   Smartphone, Monitor, Type, Quote, LayoutGrid, Columns2, Grid3x3,
-  ListChecks, Users, Megaphone, ImagePlus, Loader2,
+  ListChecks, Users, Megaphone, ImagePlus, Loader2, Sparkles, Smartphone as PhoneIcon,
 } from 'lucide-react';
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors,
@@ -23,7 +23,7 @@ const CATEGORIES = [
 
 const ACCENT_PRESETS = ['#723CEB', '#E8C1A0', '#4FC3F7', '#FF902F', '#A78BFA', '#C7FF2E', '#FF4444', '#4CAF50'];
 
-// The nine section types — labels, icons and default content shapes
+// The ten section types — labels, icons and default content shapes
 const SECTION_TYPES = {
   hero:         { label: 'Hero',          icon: ImageIcon,  hint: 'Full-screen opener with title',
     defaults: { eyebrow: 'Photography Concept', title: 'Title', subtitle: '', image: '', overlay_strength: 45 } },
@@ -43,6 +43,8 @@ const SECTION_TYPES = {
     defaults: { heading: 'The team', members: [] } },
   cta:          { label: 'Call to Action', icon: Megaphone, hint: 'Closing pitch + branding',
     defaults: { heading: '', body: '', show_agency_branding: true } },
+  social_post:  { label: 'Social Post',    icon: PhoneIcon, hint: 'Instagram / Facebook mockup',
+    defaults: { platform: 'instagram', handle: '', display_name: '', avatar: '', image: '', caption: '', likes_label: '' } },
 };
 
 function thumbFor(filename) {
@@ -61,14 +63,84 @@ function Field({ label, children }) {
   );
 }
 
-function TextField({ label, value, onChange, placeholder, textarea }) {
+// AI polish availability is checked once on editor load and shared down the tree
+const AiContext = React.createContext({ enabled: false, notifyNotConfigured: () => {} });
+
+// "Fix with Opus" — proposes a corrected version in an inline card. Never
+// auto-replaces: the writer chooses Use or Discard, and the field is locked
+// while a request is in flight so nothing is overwritten underneath it.
+function PolishControl({ value, onChange, loading, setLoading }) {
+  const { enabled, notifyNotConfigured } = React.useContext(AiContext);
+  const [proposal, setProposal] = useState(null);
+  const [error, setError] = useState('');
+
+  if (!enabled) return null;
+  const text = (value || '').trim();
+
+  async function run() {
+    if (loading || !text) return;
+    setLoading(true);
+    setProposal(null);
+    setError('');
+    try {
+      const res = await api.post('/pitches/ai-polish', { text });
+      setProposal(res.text || '');
+    } catch (err) {
+      const msg = err && err.message;
+      if (msg === 'not_configured') notifyNotConfigured();
+      else if (msg === 'polish_failed') setError('Could not reach Opus. Try again.');
+      else setError(msg || 'Polish failed');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div style={{ marginTop: '5px' }}>
+      <button
+        type="button"
+        className="btn-ghost"
+        onClick={run}
+        disabled={loading || !text}
+        style={{ padding: '3px 8px', fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '5px', opacity: text ? 1 : 0.45 }}
+        title="Fix grammar and clarity with Opus"
+      >
+        {loading ? <Loader2 size={11} className="pitch-spin" /> : <Sparkles size={11} />}
+        {loading ? 'Polishing…' : 'Fix with Opus'}
+      </button>
+      {error && <div style={{ fontSize: '11px', color: 'var(--danger)', marginTop: '5px' }}>{error}</div>}
+      {proposal !== null && (
+        <div className="pitch-polish-card">
+          <div className="pitch-polish-label">Suggested</div>
+          <div className="pitch-polish-text">{proposal}</div>
+          <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => { onChange(proposal); setProposal(null); }}
+            >
+              Use
+            </button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setProposal(null)}>
+              Discard
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TextField({ label, value, onChange, placeholder, textarea, polish = true }) {
+  const [loading, setLoading] = useState(false);
   return (
     <Field label={label}>
       {textarea ? (
-        <textarea className="input" value={value || ''} onChange={e => onChange(e.target.value)} placeholder={placeholder} rows={3} />
+        <textarea className="input" value={value || ''} onChange={e => onChange(e.target.value)} placeholder={placeholder} rows={3} disabled={loading} />
       ) : (
-        <input className="input" value={value || ''} onChange={e => onChange(e.target.value)} placeholder={placeholder} />
+        <input className="input" value={value || ''} onChange={e => onChange(e.target.value)} placeholder={placeholder} disabled={loading} />
       )}
+      {polish && <PolishControl value={value} onChange={onChange} loading={loading} setLoading={setLoading} />}
     </Field>
   );
 }
@@ -196,6 +268,43 @@ function ImageListField({ label, values, onChange, max }) {
   );
 }
 
+// One row of a RowListField. Prose fields (marked polish on the field spec)
+// carry their own Fix with Opus control; proper-noun fields like a crew
+// member's name do not — there is nothing to correct there.
+function RowEditor({ row, fields, onFieldChange, onRemove }) {
+  const [loadingKey, setLoadingKey] = useState(null);
+  const polishField = fields.find(f => f.polish);
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+        {fields.map(f => (
+          <input
+            key={f.key}
+            className="input"
+            style={{ flex: f.flex || 1, fontSize: '12px', padding: '7px 10px' }}
+            value={row[f.key] || ''}
+            placeholder={f.placeholder}
+            disabled={loadingKey === f.key}
+            onChange={e => onFieldChange(f.key, e.target.value)}
+          />
+        ))}
+        <button type="button" className="btn-ghost" style={{ padding: '4px 6px', color: 'var(--danger)', flexShrink: 0 }} onClick={onRemove}>
+          <X size={13} />
+        </button>
+      </div>
+      {polishField && (
+        <PolishControl
+          value={row[polishField.key]}
+          onChange={v => onFieldChange(polishField.key, v)}
+          loading={loadingKey === polishField.key}
+          setLoading={on => setLoadingKey(on ? polishField.key : null)}
+        />
+      )}
+    </div>
+  );
+}
+
 function RowListField({ label, rows, onChange, fields, addLabel }) {
   const list = Array.isArray(rows) ? rows : [];
 
@@ -215,21 +324,13 @@ function RowListField({ label, rows, onChange, fields, addLabel }) {
     <Field label={label}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
         {list.map((row, i) => (
-          <div key={i} style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-            {fields.map(f => (
-              <input
-                key={f.key}
-                className="input"
-                style={{ flex: f.flex || 1, fontSize: '12px', padding: '7px 10px' }}
-                value={row[f.key] || ''}
-                placeholder={f.placeholder}
-                onChange={e => updateRow(i, f.key, e.target.value)}
-              />
-            ))}
-            <button type="button" className="btn-ghost" style={{ padding: '4px 6px', color: 'var(--danger)', flexShrink: 0 }} onClick={() => removeRow(i)}>
-              <X size={13} />
-            </button>
-          </div>
+          <RowEditor
+            key={i}
+            row={row}
+            fields={fields}
+            onFieldChange={(key, value) => updateRow(i, key, value)}
+            onRemove={() => removeRow(i)}
+          />
         ))}
         <button type="button" className="btn btn-ghost btn-sm" style={{ alignSelf: 'flex-start' }} onClick={addRow}>
           <Plus size={13} /> {addLabel}
@@ -311,7 +412,7 @@ function SectionFields({ type, content, onChange }) {
             label="Items" rows={content.items} onChange={v => set('items', v)} addLabel="Add item"
             fields={[
               { key: 'title', placeholder: 'e.g. 12 hero images', flex: 1 },
-              { key: 'detail', placeholder: 'Detail', flex: 1.4 },
+              { key: 'detail', placeholder: 'Detail', flex: 1.4, polish: true },
             ]}
           />
         </>
@@ -345,6 +446,21 @@ function SectionFields({ type, content, onChange }) {
               Show agency name + logo
             </label>
           </Field>
+        </>
+      );
+    case 'social_post':
+      return (
+        <>
+          <SelectField label="Platform" value={content.platform === 'facebook' ? 'facebook' : 'instagram'} onChange={v => set('platform', v)}
+            options={[{ value: 'instagram', label: 'Instagram' }, { value: 'facebook', label: 'Facebook' }]} />
+          <TextField label="Handle" value={content.handle} onChange={v => set('handle', v)} placeholder="@client" polish={false} />
+          {content.platform === 'facebook' && (
+            <TextField label="Display name" value={content.display_name} onChange={v => set('display_name', v)} placeholder="Client Name" polish={false} />
+          )}
+          <ImageField label="Avatar" value={content.avatar} onChange={v => set('avatar', v)} />
+          <ImageField label="Post image" value={content.image} onChange={v => set('image', v)} />
+          <TextField label="Caption" value={content.caption} onChange={v => set('caption', v)} textarea placeholder="The caption under the post" />
+          <TextField label="Likes label" value={content.likes_label} onChange={v => set('likes_label', v)} placeholder="e.g. 2,481 likes" polish={false} />
         </>
       );
     default:
@@ -422,6 +538,8 @@ export default function PitchEditor() {
   const [publishedSlug, setPublishedSlug] = useState(null); // set after a publish to show the link modal
   const [copied, setCopied] = useState(false);
   const [working, setWorking] = useState(false);
+  const [aiEnabled, setAiEnabled] = useState(false);
+  const [toast, setToast] = useState('');
 
   const dirtySections = useRef(new Map());
   const dirtyPres = useRef(null);
@@ -443,6 +561,25 @@ export default function PitchEditor() {
       .catch(() => navigate('/pitches'))
       .finally(() => setLoading(false));
   }, [id]);
+
+  // Checked once per editor load — when the server has no key the feature hides entirely
+  useEffect(() => {
+    api.get('/pitches/ai-status')
+      .then(s => setAiEnabled(!!s.enabled))
+      .catch(() => setAiEnabled(false));
+  }, []);
+
+  // One toast at a time; a second trigger just restarts the timer
+  const notifyNotConfigured = useCallback(() => {
+    setAiEnabled(false);
+    setToast('Add ANTHROPIC_API_KEY on the server to enable Opus polish.');
+  }, []);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(''), 5000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   const bumpPreview = useCallback(() => {
     clearTimeout(previewTimer.current);
@@ -590,7 +727,9 @@ export default function PitchEditor() {
   const publicUrl = pres.slug ? `${window.location.origin}/p/${pres.slug}` : null;
 
   return (
+    <AiContext.Provider value={{ enabled: aiEnabled, notifyNotConfigured }}>
     <div>
+      {toast && <div className="pitch-toast">{toast}</div>}
       {/* Header */}
       <div className="pitch-editor-header">
         <button className="btn-ghost" style={{ padding: '6px 8px', flexShrink: 0 }} onClick={() => navigate('/pitches')} title="Back to pitches">
@@ -772,6 +911,7 @@ export default function PitchEditor() {
         </Modal>
       )}
     </div>
+    </AiContext.Provider>
   );
 }
 

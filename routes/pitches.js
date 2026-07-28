@@ -69,6 +69,90 @@ router.post('/upload', upload.single('image'), async (req, res) => {
   }
 });
 
+// ── AI copy polish (Opus) ─────────────────────────────────────────────────────
+// Declared before the /:id routes so "ai-status" is never read as an id.
+
+const POLISH_SYSTEM = [
+  'You are a copy editor for premium photography and film production pitches.',
+  'Fix grammar, spelling and clarity. Preserve the meaning and the approximate length of the text.',
+  'Keep the tone confident, minimal and premium.',
+  'Inputs arrive in English or Albanian, and a single text may mix both. Always reply in the language of the input: English input gets English output, Albanian input gets Albanian output. If a text mixes languages, keep each part in its original language. Never translate in either direction. Apply the same fixes with native fluency in both languages. Albanian output uses proper Albanian orthography, including ë and ç, even when the input was typed without diacritics.',
+  'Never use em dashes or en dashes anywhere in the output. Restructure with commas, periods, or shorter sentences instead. If the input contains them, remove them in the rewrite.',
+  'Return ONLY the corrected text. No preamble, no quotes, no commentary.',
+].join(' ');
+
+// Belt and suspenders: whatever the model returns, this endpoint is physically
+// incapable of emitting a long dash.
+function scrubDashes(text) {
+  let out = String(text == null ? '' : text);
+  out = out.replace(/[ \t]*[—―][ \t]*/g, ', ');     // em dash / horizontal bar
+  out = out.replace(/(\d)[ \t]*–[ \t]*(\d)/g, '$1-$2');  // en dash between digits
+  out = out.replace(/[ \t]*–[ \t]*/g, ', ');             // any remaining en dash
+  out = out.replace(/[ \t]{2,}/g, ' ');                            // doubled spaces
+  out = out.replace(/,[ \t]*,/g, ',');                             // ", ," artifacts
+  out = out.replace(/[ \t]+([,.!?;:])/g, '$1');
+  out = out.replace(/^[ \t,]+/, '');
+  return out.trim();
+}
+
+router.get('/ai-status', (req, res) => {
+  try {
+    res.json({ enabled: !!process.env.ANTHROPIC_API_KEY });
+  } catch (_) {
+    res.json({ enabled: false });
+  }
+});
+
+router.post('/ai-polish', async (req, res) => {
+  try {
+    const text = req.body && typeof req.body.text === 'string' ? req.body.text : '';
+    if (!text.trim()) return res.status(400).json({ error: 'text required' });
+    if (text.length > 2000) return res.status(400).json({ error: 'text too long (max 2000 characters)' });
+
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) return res.status(501).json({ error: 'not_configured' });
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20000);
+    let upstream;
+    try {
+      upstream = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: 'claude-opus-4-8',
+          max_tokens: 1024,
+          system: POLISH_SYSTEM,
+          messages: [{ role: 'user', content: text }],
+        }),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (!upstream.ok) {
+      console.error('AI polish upstream error:', upstream.status);
+      return res.status(502).json({ error: 'polish_failed' });
+    }
+
+    const data = await upstream.json();
+    const blocks = Array.isArray(data && data.content) ? data.content : [];
+    const raw = blocks.filter(b => b && b.type === 'text').map(b => b.text || '').join('').trim();
+    if (!raw) return res.status(502).json({ error: 'polish_failed' });
+
+    res.json({ text: scrubDashes(raw) });
+  } catch (err) {
+    // Never log the user's text content
+    console.error('AI polish failed:', err && err.name ? err.name : 'error');
+    res.status(502).json({ error: 'polish_failed' });
+  }
+});
+
 // ── Presentations CRUD ────────────────────────────────────────────────────────
 
 router.get('/', (req, res) => {
@@ -258,7 +342,8 @@ router.get('/:id/preview', (req, res) => {
   const pres = db.prepare('SELECT * FROM presentations WHERE id = ?').get(req.params.id);
   if (!pres) return res.status(404).json({ error: 'Presentation not found' });
   const origin = `${req.protocol}://${req.get('host')}`;
-  const html = renderPresentation(pres, getSections(pres.id), { origin, agency: getAgency() });
+  // isPreview: empty image slots show dashed placeholders here and nowhere else
+  const html = renderPresentation(pres, getSections(pres.id), { origin, agency: getAgency(), isPreview: true });
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.send(html);
