@@ -22,6 +22,8 @@ import PublicMind from './pages/PublicMind';
 import Collections from './pages/Collections';
 import CollectionDetail from './pages/CollectionDetail';
 import MindAccounts from './pages/MindAccounts';
+import Pitches from './pages/Pitches';
+import PitchEditor from './pages/PitchEditor';
 import { AgencyProvider } from './context/AgencyContext';
 
 function applyFavicon() {
@@ -90,6 +92,8 @@ export default function App() {
           <Route path="collections" element={<Collections />} />
           <Route path="collections/:id" element={<CollectionDetail />} />
           <Route path="accounts" element={<MindAccounts />} />
+          <Route path="pitches" element={<Pitches />} />
+          <Route path="pitches/:id" element={<PitchEditor />} />
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>

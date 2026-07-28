@@ -103,6 +103,21 @@ app.use('/api/mind-accounts', requireAuth, require('./routes/mind-accounts'));
 app.use('/api/vault', requireAuth, require('./routes/vault'));
 app.use('/api/standalone-tasks', requireAuth, require('./routes/standalone-tasks'));
 
+// Pitches — the preview endpoint is embedded in an iframe that cannot send an
+// Authorization header, so that ONE route authenticates via a ?token= query
+// parameter validated against the sessions table exactly like requireAuth.
+// Everything else on the router goes through requireAuth as normal.
+app.use('/api/pitches', (req, res, next) => {
+  if (req.method === 'GET' && /^\/\d+\/preview\/?$/.test(req.path)) {
+    const token = req.query.token;
+    if (!token) return res.status(401).json({ error: 'Unauthorized' });
+    const session = db.prepare("SELECT id FROM sessions WHERE token = ? AND expires_at > datetime('now')").get(token);
+    if (!session) return res.status(401).json({ error: 'Unauthorized' });
+    return next();
+  }
+  return requireAuth(req, res, next);
+}, require('./routes/pitches'));
+
 // Projects — inject multer for expense upload endpoints
 app.use('/api/projects', requireAuth, (req, res, next) => {
   if ((req.method === 'POST' || req.method === 'PUT') && /\/expenses/.test(req.path)) {
@@ -110,6 +125,56 @@ app.use('/api/projects', requireAuth, (req, res, next) => {
   }
   next();
 }, require('./routes/projects'));
+
+// Public pitch media — no auth (public presentations must load these).
+// Filenames are timestamp-unique, so long immutable caching is safe.
+const PRESENTATION_MEDIA_DIR = path.join(DATA_DIR, 'presentation-media');
+app.get('/p-media/:filename', (req, res) => {
+  const filename = req.params.filename;
+  // Reject path traversal attempts
+  if (/[/\\]/.test(filename) || filename.includes('..')) {
+    return res.status(400).json({ error: 'Invalid filename' });
+  }
+  const filePath = path.join(PRESENTATION_MEDIA_DIR, filename);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Not found' });
+
+  const ext = path.extname(filename).toLowerCase();
+  const mimeMap = {
+    '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+    '.png': 'image/png', '.webp': 'image/webp',
+  };
+  res.setHeader('Content-Type', mimeMap[ext] || 'application/octet-stream');
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  res.sendFile(filePath);
+});
+
+// Public pitch presentations — published only; drafts and unknown slugs fall
+// through to the SPA's generic behavior, revealing nothing. Must be registered
+// BEFORE the static middleware and the SPA catch-all.
+app.get('/p/:slug', (req, res, next) => {
+  const presentation = db.prepare(
+    "SELECT * FROM presentations WHERE slug = ? AND status = 'published' AND is_template = 0"
+  ).get(req.params.slug);
+  if (!presentation) return next();
+
+  const sections = db.prepare(
+    'SELECT * FROM presentation_sections WHERE presentation_id = ? ORDER BY sort_order ASC, id ASC'
+  ).all(presentation.id);
+
+  const { renderPresentation } = require('./lib/renderPresentation');
+  const agencyRows = db.prepare("SELECT key, value FROM settings WHERE key IN ('agency_name', 'agency_logo')").all();
+  const agencyMap = {};
+  agencyRows.forEach(r => { agencyMap[r.key] = r.value; });
+
+  const html = renderPresentation(presentation, sections, {
+    origin: `${req.protocol}://${req.get('host')}`,
+    agency: { name: agencyMap.agency_name || null, logo: agencyMap.agency_logo || null },
+  });
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  // No caching — post-publish edits must appear immediately (media stays long-cached)
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.send(html);
+});
 
 app.use(express.static(path.join(__dirname, 'dist')));
 app.get('*', (req, res) => {

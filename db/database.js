@@ -611,6 +611,66 @@ function initDb() {
     CREATE INDEX IF NOT EXISTS idx_standalone_tasks_done ON standalone_tasks(done);
   `);
 
+  // ── Pitches (presentation builder) ──
+  // Ordering: creates, then alters, then backfills, then indexes, then seeds.
+
+  // Creates
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS presentations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      slug TEXT UNIQUE,
+      category TEXT,
+      status TEXT DEFAULT 'draft',
+      accent_color TEXT DEFAULT '#723CEB',
+      is_template INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      published_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS presentation_sections (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      presentation_id INTEGER NOT NULL,
+      type TEXT NOT NULL,
+      sort_order INTEGER DEFAULT 0,
+      content TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (presentation_id) REFERENCES presentations(id) ON DELETE CASCADE
+    );
+  `);
+
+  // Indexes
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_presentations_slug ON presentations(slug);
+    CREATE INDEX IF NOT EXISTS idx_presentation_sections_presentation ON presentation_sections(presentation_id);
+  `);
+
+  // Seeds — templates are inserted exactly once; user edits to them must
+  // survive every boot, so the guard key is checked before touching anything.
+  try {
+    const seeded = db.prepare("SELECT value FROM settings WHERE key = 'pitches_templates_seeded'").get();
+    if (!seeded) {
+      const templates = require('./pitch-templates');
+      const insertPres = db.prepare(
+        "INSERT INTO presentations (title, category, accent_color, is_template, status) VALUES (?, ?, ?, 1, 'draft')"
+      );
+      const insertSection = db.prepare(
+        'INSERT INTO presentation_sections (presentation_id, type, sort_order, content) VALUES (?, ?, ?, ?)'
+      );
+      const seedAll = db.transaction(() => {
+        templates.forEach(tpl => {
+          const r = insertPres.run(tpl.title, tpl.category, tpl.accent_color);
+          tpl.sections.forEach((s, i) => insertSection.run(r.lastInsertRowid, s.type, i, JSON.stringify(s.content)));
+        });
+        db.prepare("INSERT INTO settings (key, value) VALUES ('pitches_templates_seeded', '1')").run();
+      });
+      seedAll();
+    }
+  } catch (err) {
+    console.error('Pitch template seeding failed:', err.message);
+  }
+
   // Password migration — run once on boot
   migratePassword();
 }

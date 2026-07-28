@@ -1,0 +1,267 @@
+const express = require('express');
+const router = express.Router();
+const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
+const multer = require('multer');
+const sharp = require('sharp');
+const { db } = require('../db/database');
+const { renderPresentation, SECTION_TYPES } = require('../lib/renderPresentation');
+
+function getMediaDir() {
+  return path.join(process.env.DATA_DIR || path.join(__dirname, '..', 'data'), 'presentation-media');
+}
+
+function touch(id) {
+  db.prepare("UPDATE presentations SET updated_at = datetime('now') WHERE id = ?").run(id);
+}
+
+function getAgency() {
+  const rows = db.prepare("SELECT key, value FROM settings WHERE key IN ('agency_name', 'agency_logo')").all();
+  const map = {};
+  rows.forEach(r => { map[r.key] = r.value; });
+  return { name: map.agency_name || null, logo: map.agency_logo || null };
+}
+
+function getSections(presentationId) {
+  return db.prepare(
+    'SELECT * FROM presentation_sections WHERE presentation_id = ? ORDER BY sort_order ASC, id ASC'
+  ).all(presentationId);
+}
+
+function parseSection(row) {
+  let content = {};
+  try { content = JSON.parse(row.content || '{}'); } catch (_) {}
+  return { id: row.id, type: row.type, sort_order: row.sort_order, content };
+}
+
+// ── Media upload — images only, sharp produces web + thumb, original discarded ──
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: (req, file, cb) => {
+    cb(null, ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'].includes(file.mimetype));
+  },
+  limits: { fileSize: 25 * 1024 * 1024 },
+});
+
+router.post('/upload', upload.single('image'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Image file required (jpeg, png or webp, max 25MB)' });
+  const mediaDir = getMediaDir();
+  if (!fs.existsSync(mediaDir)) fs.mkdirSync(mediaDir, { recursive: true });
+
+  const base = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+  const webName = `${base}-web.jpg`;
+  const thumbName = `${base}-thumb.jpg`;
+  try {
+    const image = sharp(req.file.buffer, { failOn: 'none' }).rotate();
+    await image.clone()
+      .resize(2000, 2000, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 82, mozjpeg: true })
+      .toFile(path.join(mediaDir, webName));
+    await image.clone()
+      .resize(640, 640, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 78, mozjpeg: true })
+      .toFile(path.join(mediaDir, thumbName));
+    res.json({ filename: webName, thumb: thumbName });
+  } catch (err) {
+    res.status(400).json({ error: `Could not process image: ${err.message}` });
+  }
+});
+
+// ── Presentations CRUD ────────────────────────────────────────────────────────
+
+router.get('/', (req, res) => {
+  const rows = db.prepare(`
+    SELECT p.*, (SELECT COUNT(*) FROM presentation_sections s WHERE s.presentation_id = p.id) AS section_count
+    FROM presentations p ORDER BY p.updated_at DESC
+  `).all();
+  res.json({
+    templates: rows.filter(r => r.is_template),
+    pitches: rows.filter(r => !r.is_template),
+  });
+});
+
+router.post('/', (req, res) => {
+  const { title, category, accent_color } = req.body;
+  if (!title || !title.trim()) return res.status(400).json({ error: 'Title required' });
+  const result = db.prepare(
+    "INSERT INTO presentations (title, category, accent_color, status) VALUES (?, ?, ?, 'draft')"
+  ).run(title.trim(), category || null, accent_color || '#723CEB');
+  res.json({ id: result.lastInsertRowid });
+});
+
+router.get('/:id', (req, res) => {
+  const pres = db.prepare('SELECT * FROM presentations WHERE id = ?').get(req.params.id);
+  if (!pres) return res.status(404).json({ error: 'Presentation not found' });
+  res.json({ ...pres, sections: getSections(pres.id).map(parseSection) });
+});
+
+router.put('/:id', (req, res) => {
+  const pres = db.prepare('SELECT * FROM presentations WHERE id = ?').get(req.params.id);
+  if (!pres) return res.status(404).json({ error: 'Presentation not found' });
+
+  const { title, category, accent_color, slug } = req.body;
+  if (title !== undefined && (!title || !title.trim())) {
+    return res.status(400).json({ error: 'Title cannot be empty' });
+  }
+  if (accent_color !== undefined && !/^#[0-9a-fA-F]{3,8}$/.test(accent_color)) {
+    return res.status(400).json({ error: 'Invalid accent color' });
+  }
+
+  let newSlug = pres.slug;
+  if (slug !== undefined && slug !== pres.slug) {
+    if (slug === null || slug === '') {
+      newSlug = null;
+    } else {
+      const cleaned = String(slug).toLowerCase().trim().replace(/[^a-z0-9-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+      if (!cleaned) return res.status(400).json({ error: 'Invalid slug' });
+      const clash = db.prepare('SELECT id FROM presentations WHERE slug = ? AND id != ?').get(cleaned, pres.id);
+      if (clash) return res.status(400).json({ error: 'Slug already in use' });
+      newSlug = cleaned;
+    }
+  }
+
+  db.prepare(`
+    UPDATE presentations SET title = ?, category = ?, accent_color = ?, slug = ?, updated_at = datetime('now') WHERE id = ?
+  `).run(
+    title !== undefined ? title.trim() : pres.title,
+    category !== undefined ? (category || null) : pres.category,
+    accent_color !== undefined ? accent_color : pres.accent_color,
+    newSlug,
+    pres.id
+  );
+  res.json({ ok: true, slug: newSlug });
+});
+
+router.delete('/:id', (req, res) => {
+  // DB rows only — media file cleanup is out of scope for phase 1
+  db.prepare('DELETE FROM presentations WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
+});
+
+// Duplicate — used by "new from template" and general duplication.
+// Media files are referenced, not copied.
+router.post('/:id/duplicate', (req, res) => {
+  const original = db.prepare('SELECT * FROM presentations WHERE id = ?').get(req.params.id);
+  if (!original) return res.status(404).json({ error: 'Presentation not found' });
+
+  const { title } = req.body || {};
+  const newTitle = (title && title.trim()) || `${original.title} Copy`;
+
+  const duplicate = db.transaction(() => {
+    const r = db.prepare(
+      "INSERT INTO presentations (title, category, accent_color, status, slug, is_template) VALUES (?, ?, ?, 'draft', NULL, 0)"
+    ).run(newTitle, original.category, original.accent_color);
+    const newId = r.lastInsertRowid;
+    const insert = db.prepare(
+      'INSERT INTO presentation_sections (presentation_id, type, sort_order, content) VALUES (?, ?, ?, ?)'
+    );
+    getSections(original.id).forEach(s => insert.run(newId, s.type, s.sort_order, s.content));
+    return newId;
+  });
+  res.json({ id: duplicate() });
+});
+
+// ── Sections ──────────────────────────────────────────────────────────────────
+
+router.post('/:id/sections', (req, res) => {
+  const pres = db.prepare('SELECT id FROM presentations WHERE id = ?').get(req.params.id);
+  if (!pres) return res.status(404).json({ error: 'Presentation not found' });
+
+  const { type, content } = req.body;
+  if (!SECTION_TYPES.includes(type)) return res.status(400).json({ error: 'Invalid section type' });
+  if (content === undefined || typeof content !== 'object' || content === null || Array.isArray(content)) {
+    return res.status(400).json({ error: 'content object required' });
+  }
+
+  const maxRow = db.prepare('SELECT COALESCE(MAX(sort_order), -1) AS m FROM presentation_sections WHERE presentation_id = ?').get(pres.id);
+  const result = db.prepare(
+    'INSERT INTO presentation_sections (presentation_id, type, sort_order, content) VALUES (?, ?, ?, ?)'
+  ).run(pres.id, type, maxRow.m + 1, JSON.stringify(content));
+  touch(pres.id);
+  res.json({ id: result.lastInsertRowid });
+});
+
+// Reorder — ordered id array, transaction (same pattern as tasks reorder)
+router.patch('/:id/sections/reorder', (req, res) => {
+  const { sectionIds } = req.body;
+  if (!Array.isArray(sectionIds)) return res.status(400).json({ error: 'sectionIds array required' });
+  const update = db.prepare('UPDATE presentation_sections SET sort_order = ? WHERE id = ? AND presentation_id = ?');
+  const updateAll = db.transaction(ids => {
+    ids.forEach((sid, index) => update.run(index, sid, req.params.id));
+  });
+  updateAll(sectionIds);
+  touch(req.params.id);
+  res.json({ ok: true });
+});
+
+router.put('/:id/sections/:sectionId', (req, res) => {
+  const { content } = req.body;
+  if (content === undefined || typeof content !== 'object' || content === null || Array.isArray(content)) {
+    return res.status(400).json({ error: 'content object required' });
+  }
+  const r = db.prepare('UPDATE presentation_sections SET content = ? WHERE id = ? AND presentation_id = ?')
+    .run(JSON.stringify(content), req.params.sectionId, req.params.id);
+  if (r.changes === 0) return res.status(404).json({ error: 'Section not found' });
+  touch(req.params.id);
+  res.json({ ok: true });
+});
+
+router.delete('/:id/sections/:sectionId', (req, res) => {
+  db.prepare('DELETE FROM presentation_sections WHERE id = ? AND presentation_id = ?')
+    .run(req.params.sectionId, req.params.id);
+  touch(req.params.id);
+  res.json({ ok: true });
+});
+
+// ── Publish / unpublish ───────────────────────────────────────────────────────
+
+function generateSlug(title, excludeId) {
+  const base = String(title).toLowerCase().trim()
+    .replace(/[^a-z0-9]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'pitch';
+  let slug = base;
+  let n = 2;
+  const exists = db.prepare('SELECT id FROM presentations WHERE slug = ? AND id != ?');
+  while (exists.get(slug, excludeId)) {
+    slug = `${base}-${n}`;
+    n++;
+  }
+  return slug;
+}
+
+router.post('/:id/publish', (req, res) => {
+  const pres = db.prepare('SELECT * FROM presentations WHERE id = ?').get(req.params.id);
+  if (!pres) return res.status(404).json({ error: 'Presentation not found' });
+  const count = db.prepare('SELECT COUNT(*) AS c FROM presentation_sections WHERE presentation_id = ?').get(pres.id).c;
+  if (count === 0) return res.status(400).json({ error: 'Add at least one section before publishing' });
+
+  const slug = pres.slug || generateSlug(pres.title, pres.id);
+  db.prepare(`
+    UPDATE presentations SET status = 'published', slug = ?, published_at = datetime('now'), updated_at = datetime('now') WHERE id = ?
+  `).run(slug, pres.id);
+  res.json({ ok: true, slug });
+});
+
+router.post('/:id/unpublish', (req, res) => {
+  const r = db.prepare("UPDATE presentations SET status = 'draft', updated_at = datetime('now') WHERE id = ?").run(req.params.id);
+  if (r.changes === 0) return res.status(404).json({ error: 'Presentation not found' });
+  res.json({ ok: true });
+});
+
+// ── Preview — same rendered HTML as the public route, drafts included ─────────
+// The builder embeds this in an iframe which cannot send an Authorization
+// header, so server.js authenticates this one route via a ?token= query
+// parameter validated against the sessions table (the only endpoint allowed
+// to do query-token auth).
+router.get('/:id/preview', (req, res) => {
+  const pres = db.prepare('SELECT * FROM presentations WHERE id = ?').get(req.params.id);
+  if (!pres) return res.status(404).json({ error: 'Presentation not found' });
+  const origin = `${req.protocol}://${req.get('host')}`;
+  const html = renderPresentation(pres, getSections(pres.id), { origin, agency: getAgency() });
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.send(html);
+});
+
+module.exports = router;
