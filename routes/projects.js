@@ -3,6 +3,7 @@ const router = express.Router();
 const fs = require('fs');
 const path = require('path');
 const { db } = require('../db/database');
+const { syncPayment, removePayment } = require('../lib/flowSync');
 
 const PHASES = ['Development', 'Pre-Production', 'Production', 'Post-Production'];
 const PRODUCTION_GROUPS = ['Video Production', 'Photography'];
@@ -465,6 +466,7 @@ router.post('/:id/payments', (req, res) => {
   if (err) return res.status(400).json({ error: err });
   const result = db.prepare('INSERT INTO client_payments (project_id, amount, date, method, notes, status) VALUES (?, ?, ?, ?, ?, ?)')
     .run(req.params.id, amount, date, method || 'bank_transfer', notes || null, status || 'pending');
+  syncPayment(result.lastInsertRowid);
   res.json({ id: result.lastInsertRowid });
 });
 
@@ -474,11 +476,13 @@ router.put('/:id/payments/:payId', (req, res) => {
   if (err) return res.status(400).json({ error: err });
   db.prepare('UPDATE client_payments SET amount=?, date=?, method=?, notes=?, status=? WHERE id=? AND project_id=?')
     .run(amount, date, method, notes || null, status, req.params.payId, req.params.id);
+  syncPayment(Number(req.params.payId));
   res.json({ ok: true });
 });
 
 router.delete('/:id/payments/:payId', (req, res) => {
   db.prepare('DELETE FROM client_payments WHERE id = ? AND project_id = ?').run(req.params.payId, req.params.id);
+  removePayment(Number(req.params.payId));
   res.json({ ok: true });
 });
 

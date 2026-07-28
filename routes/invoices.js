@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { db } = require('../db/database');
+const { syncPayment, removePayment } = require('../lib/flowSync');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -409,7 +410,7 @@ router.post('/:id/paid', (req, res) => {
 
     if (!existing) {
       const noteStr = `Invoice ${inv.invoice_number || inv.id} - ${(inv.client_name || '').trim()}`.trim();
-      db.prepare(`
+      const result = db.prepare(`
         INSERT INTO client_payments (project_id, amount, date, method, notes, status, invoice_id)
         VALUES (?, ?, ?, 'bank_transfer', ?, 'received', ?)
       `).run(
@@ -419,6 +420,9 @@ router.post('/:id/paid', (req, res) => {
         noteStr,
         inv.id,
       );
+      syncPayment(result.lastInsertRowid);
+    } else {
+      syncPayment(existing.id);
     }
   }
 
@@ -438,7 +442,9 @@ router.post('/:id/unpaid', (req, res) => {
   // Remove the payment that was created on mark-paid, matched by invoice_id only.
   // If no payment carries this invoice_id, do nothing (no note-based fallback).
   if (prevStatus === 'paid') {
+    const payment = db.prepare('SELECT id FROM client_payments WHERE invoice_id = ?').get(inv.id);
     db.prepare('DELETE FROM client_payments WHERE invoice_id = ?').run(inv.id);
+    if (payment) removePayment(payment.id);
   }
 
   res.json({ ok: true });
