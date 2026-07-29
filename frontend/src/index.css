@@ -2514,3 +2514,8 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
   color: var(--text-primary);
   box-shadow: 0 8px 28px rgba(0,0,0,0.45);
 }
+.pitch-polish-card.pitch-polish-clean {
+  background: rgba(255,255,255,0.03);
+  border-color: var(--border-default);
+}
+.pitch-polish-clean .pitch-polish-text { color: var(--text-secondary); }

@@ -69,9 +69,16 @@ const AiContext = React.createContext({ enabled: false, notifyNotConfigured: () 
 // "Fix with Opus" — proposes a corrected version in an inline card. Never
 // auto-replaces: the writer chooses Use or Discard, and the field is locked
 // while a request is in flight so nothing is overwritten underneath it.
+// Whitespace-insensitive compare, so a copy that only differs by spacing
+// still counts as "no change" rather than a meaningless suggestion.
+function sameCopy(a, b) {
+  const norm = s => String(s || '').replace(/\s+/g, ' ').trim();
+  return norm(a) === norm(b);
+}
+
 function PolishControl({ value, onChange, loading, setLoading }) {
   const { enabled, notifyNotConfigured } = React.useContext(AiContext);
-  const [proposal, setProposal] = useState(null);
+  const [result, setResult] = useState(null); // { proposal, unchanged }
   const [error, setError] = useState('');
 
   if (!enabled) return null;
@@ -80,11 +87,14 @@ function PolishControl({ value, onChange, loading, setLoading }) {
   async function run() {
     if (loading || !text) return;
     setLoading(true);
-    setProposal(null);
+    setResult(null);
     setError('');
     try {
       const res = await api.post('/pitches/ai-polish', { text });
-      setProposal(res.text || '');
+      const proposal = res.text || '';
+      // Opus returning the text untouched means the copy is already correct;
+      // say so instead of offering an identical suggestion.
+      setResult({ proposal, unchanged: sameCopy(proposal, text) });
     } catch (err) {
       const msg = err && err.message;
       if (msg === 'not_configured') notifyNotConfigured();
@@ -109,19 +119,29 @@ function PolishControl({ value, onChange, loading, setLoading }) {
         {loading ? 'Polishing…' : 'Fix with Opus'}
       </button>
       {error && <div style={{ fontSize: '11px', color: 'var(--danger)', marginTop: '5px' }}>{error}</div>}
-      {proposal !== null && (
+      {result && result.unchanged && (
+        <div className="pitch-polish-card pitch-polish-clean">
+          <div className="pitch-polish-text" style={{ fontSize: '12px' }}>
+            Opus read this and found nothing to fix. The copy is already clean.
+          </div>
+          <div style={{ marginTop: '8px' }}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setResult(null)}>Dismiss</button>
+          </div>
+        </div>
+      )}
+      {result && !result.unchanged && (
         <div className="pitch-polish-card">
           <div className="pitch-polish-label">Suggested</div>
-          <div className="pitch-polish-text">{proposal}</div>
+          <div className="pitch-polish-text">{result.proposal}</div>
           <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
             <button
               type="button"
               className="btn btn-primary btn-sm"
-              onClick={() => { onChange(proposal); setProposal(null); }}
+              onClick={() => { onChange(result.proposal); setResult(null); }}
             >
               Use
             </button>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setProposal(null)}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setResult(null)}>
               Discard
             </button>
           </div>
