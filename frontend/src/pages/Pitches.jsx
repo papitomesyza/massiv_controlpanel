@@ -158,11 +158,13 @@ function UseTemplateModal({ template, onClose, onCreated }) {
   );
 }
 
-function PitchCard({ pitch, onDelete, onDuplicate }) {
+function PitchCard({ pitch, onDelete, onDuplicate, pitchBase }) {
   const navigate = useNavigate();
   const [copied, setCopied] = useState(false);
   const isPublished = pitch.status === 'published';
-  const publicUrl = pitch.slug ? `${window.location.origin}/p/${pitch.slug}` : null;
+  // Built from the server's public base, never window.location — the link you
+  // copy is the client-facing one even when the panel lives on another host.
+  const publicUrl = pitch.slug ? `${pitchBase.base}/p/${pitch.slug}` : null;
 
   async function copyLink(e) {
     e.stopPropagation();
@@ -197,7 +199,7 @@ function PitchCard({ pitch, onDelete, onDuplicate }) {
         </span>
         {isPublished && publicUrl && (
           <span style={{ fontSize: '11px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            /p/{pitch.slug}
+            {pitchBase.host}/p/{pitch.slug}
           </span>
         )}
         <div style={{ display: 'flex', gap: '4px', marginTop: 'auto', paddingTop: '8px' }} onClick={e => e.stopPropagation()}>
@@ -208,9 +210,15 @@ function PitchCard({ pitch, onDelete, onDuplicate }) {
             <Copy size={13} />
           </button>
           {isPublished && publicUrl && (
-            <button className="btn-ghost" style={{ padding: '5px 7px', color: copied ? 'var(--success)' : undefined }} title="Copy public link" onClick={copyLink}>
-              {copied ? <Check size={13} /> : <Link2 size={13} />}
-            </button>
+            <>
+              <button className="btn-ghost" style={{ padding: '5px 7px', color: copied ? 'var(--success)' : undefined }} title={`Copy public link (${pitchBase.host})`} onClick={copyLink}>
+                {copied ? <Check size={13} /> : <Link2 size={13} />}
+              </button>
+              {/* Which domain the copied link points at, at a glance */}
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)', alignSelf: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '50%' }}>
+                {pitchBase.host}
+              </span>
+            </>
           )}
           <button className="btn-ghost" style={{ padding: '5px 7px', color: 'var(--danger)', marginLeft: 'auto' }} title="Delete" onClick={() => onDelete(pitch)}>
             <Trash2 size={13} />
@@ -227,6 +235,17 @@ export default function Pitches() {
   const [pitches, setPitches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [templateInUse, setTemplateInUse] = useState(null);
+  // Falls back to the current origin until the server answers, which is also
+  // exactly what the server reports when no pitch domain is configured.
+  const [pitchBase, setPitchBase] = useState({
+    base: window.location.origin, host: window.location.host, custom: false,
+  });
+
+  useEffect(() => {
+    api.get('/pitches/public-base')
+      .then(b => { if (b && b.base) setPitchBase(b); })
+      .catch(() => {});
+  }, []);
 
   async function loadData() {
     try {
@@ -299,7 +318,7 @@ export default function Pitches() {
         ) : (
           <div className="pitch-card-grid">
             {pitches.map(p => (
-              <PitchCard key={p.id} pitch={p} onDelete={handleDelete} onDuplicate={handleDuplicate} />
+              <PitchCard key={p.id} pitch={p} onDelete={handleDelete} onDuplicate={handleDuplicate} pitchBase={pitchBase} />
             ))}
           </div>
         )}

@@ -549,6 +549,11 @@ export default function PitchEditor() {
   const [working, setWorking] = useState(false);
   const [aiEnabled, setAiEnabled] = useState(false);
   const [toast, setToast] = useState('');
+  // The client-facing base for public links (a configured pitch domain when
+  // there is one), so what gets copied is never the panel's own origin.
+  const [pitchBase, setPitchBase] = useState({
+    base: window.location.origin, host: window.location.host, custom: false,
+  });
 
   const dirtySections = useRef(new Map());
   const dirtyPres = useRef(null);
@@ -579,6 +584,12 @@ export default function PitchEditor() {
     api.get('/pitches/ai-status')
       .then(s => setAiEnabled(!!s.enabled))
       .catch(() => setAiEnabled(false));
+  }, []);
+
+  useEffect(() => {
+    api.get('/pitches/public-base')
+      .then(b => { if (b && b.base) setPitchBase(b); })
+      .catch(() => {});
   }, []);
 
   // One toast at a time; a second trigger just restarts the timer
@@ -763,7 +774,7 @@ export default function PitchEditor() {
   const token = localStorage.getItem('massiv_auth');
   const previewSrc = `/api/pitches/${id}/preview?token=${encodeURIComponent(token || '')}&r=${previewKey}`;
   const isPublished = pres.status === 'published';
-  const publicUrl = pres.slug ? `${window.location.origin}/p/${pres.slug}` : null;
+  const publicUrl = pres.slug ? `${pitchBase.base}/p/${pres.slug}` : null;
 
   return (
     <AiContext.Provider value={{ enabled: aiEnabled, notifyNotConfigured }}>
@@ -803,9 +814,10 @@ export default function PitchEditor() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', fontSize: '12px', color: 'var(--text-secondary)' }}>
           <Globe size={12} color="var(--success)" />
           <a href={publicUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--text-secondary)' }}>{publicUrl}</a>
-          <button className="btn-ghost" style={{ padding: '3px 5px', color: copied ? 'var(--success)' : undefined }} onClick={() => copyText(publicUrl)} title="Copy link">
+          <button className="btn-ghost" style={{ padding: '3px 5px', color: copied ? 'var(--success)' : undefined }} onClick={() => copyText(publicUrl)} title={`Copy link (${pitchBase.host})`}>
             {copied ? <Check size={12} /> : <Copy size={12} />}
           </button>
+          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{pitchBase.host}</span>
         </div>
       )}
 
@@ -938,14 +950,17 @@ export default function PitchEditor() {
             <input
               className="input"
               readOnly
-              value={`${window.location.origin}/p/${publishedSlug}`}
+              value={`${pitchBase.base}/p/${publishedSlug}`}
               style={{ flex: 1, fontSize: '12px' }}
               onFocus={e => e.target.select()}
             />
-            <button className="btn btn-primary" style={{ flexShrink: 0, minWidth: 84 }} onClick={() => copyText(`${window.location.origin}/p/${publishedSlug}`)}>
+            <button className="btn btn-primary" style={{ flexShrink: 0, minWidth: 84 }} onClick={() => copyText(`${pitchBase.base}/p/${publishedSlug}`)}>
               {copied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy</>}
             </button>
           </div>
+          <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: '8px 0 0' }}>
+            Served from {pitchBase.host}
+          </p>
           <div className="modal-footer">
             <button className="btn btn-ghost" onClick={() => setPublishedSlug(null)}>Close</button>
           </div>

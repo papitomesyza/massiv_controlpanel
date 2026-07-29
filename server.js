@@ -38,6 +38,13 @@ const fileFilter = (req, file, cb) => {
 
 const upload = multer({ storage, fileFilter, limits: { fileSize: 10 * 1024 * 1024 } });
 
+// Pitch domain routing — dormant unless PUBLIC_PITCH_DOMAIN is set. Registered
+// FIRST, ahead of every API router, the static middleware and the SPA
+// catch-all, so on the pitch host nothing but /p, /p-media, /favicon.ico and
+// /robots.txt can ever be reached.
+const { pitchDomainGuard, isPitchHost, sendPitch404, requestOrigin, logBootStatus } = require('./lib/pitchDomain');
+app.use(pitchDomainGuard);
+
 app.use(express.json({ limit: '50mb' }));
 
 // Public: agency branding (no auth needed for public expense page)
@@ -152,28 +159,43 @@ app.get('/p-media/:filename', (req, res) => {
 // through to the SPA's generic behavior, revealing nothing. Must be registered
 // BEFORE the static middleware and the SPA catch-all.
 app.get('/p/:slug', (req, res, next) => {
-  const presentation = db.prepare(
-    "SELECT * FROM presentations WHERE slug = ? AND status = 'published' AND is_template = 0"
-  ).get(req.params.slug);
-  if (!presentation) return next();
+  // On the pitch domain a miss is a dead end (the minimal 404); on the panel
+  // domain it keeps falling through to the SPA exactly as before.
+  const onPitchHost = isPitchHost(req);
+  const miss = () => (onPitchHost ? sendPitch404(req, res) : next());
 
-  const sections = db.prepare(
-    'SELECT * FROM presentation_sections WHERE presentation_id = ? ORDER BY sort_order ASC, id ASC'
-  ).all(presentation.id);
+  try {
+    const presentation = db.prepare(
+      "SELECT * FROM presentations WHERE slug = ? AND status = 'published' AND is_template = 0"
+    ).get(req.params.slug);
+    if (!presentation) return miss();
 
-  const { renderPresentation } = require('./lib/renderPresentation');
-  const agencyRows = db.prepare("SELECT key, value FROM settings WHERE key IN ('agency_name', 'agency_logo')").all();
-  const agencyMap = {};
-  agencyRows.forEach(r => { agencyMap[r.key] = r.value; });
+    const sections = db.prepare(
+      'SELECT * FROM presentation_sections WHERE presentation_id = ? ORDER BY sort_order ASC, id ASC'
+    ).all(presentation.id);
 
-  const html = renderPresentation(presentation, sections, {
-    origin: `${req.protocol}://${req.get('host')}`,
-    agency: { name: agencyMap.agency_name || null, logo: agencyMap.agency_logo || null },
-  });
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  // No caching — post-publish edits must appear immediately (media stays long-cached)
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
-  res.send(html);
+    const { renderPresentation } = require('./lib/renderPresentation');
+    const agencyRows = db.prepare("SELECT key, value FROM settings WHERE key IN ('agency_name', 'agency_logo')").all();
+    const agencyMap = {};
+    agencyRows.forEach(r => { agencyMap[r.key] = r.value; });
+
+    const html = renderPresentation(presentation, sections, {
+      // Built from the incoming host, so a pitch opened on the pitch domain
+      // advertises that domain and never the panel's.
+      origin: requestOrigin(req),
+      agency: { name: agencyMap.agency_name || null, logo: agencyMap.agency_logo || null },
+    });
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    // No caching — post-publish edits must appear immediately (media stays long-cached)
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.send(html);
+  } catch (err) {
+    // No global error handler here — on the pitch domain a failure must render
+    // the same blank 404 rather than Express's default stack page.
+    console.error('Public pitch render failed:', err && err.message ? err.message : err);
+    if (onPitchHost) return sendPitch404(req, res);
+    return next();
+  }
 });
 
 app.use(express.static(path.join(__dirname, 'dist')));
@@ -184,4 +206,5 @@ app.get('*', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`MASSIV TV running on http://localhost:${PORT}`);
+  logBootStatus();
 });

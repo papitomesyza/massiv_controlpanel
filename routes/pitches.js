@@ -7,6 +7,7 @@ const multer = require('multer');
 const sharp = require('sharp');
 const { db } = require('../db/database');
 const { renderPresentation, SECTION_TYPES } = require('../lib/renderPresentation');
+const { publicPitchBase } = require('../lib/pitchDomain');
 
 function getMediaDir() {
   return path.join(process.env.DATA_DIR || path.join(__dirname, '..', 'data'), 'presentation-media');
@@ -135,6 +136,20 @@ function parseVariants(raw) {
   }
   return out;
 }
+
+// ── Public link base ──────────────────────────────────────────────────────────
+// Declared before the /:id routes so "public-base" is never read as an id.
+// The panel builds every client-facing pitch URL from this, so a configured
+// PUBLIC_PITCH_DOMAIN is what gets copied and sent, not the panel's origin.
+
+router.get('/public-base', (req, res) => {
+  try {
+    res.json(publicPitchBase(req));
+  } catch (_) {
+    const host = req.get('host') || '';
+    res.json({ base: `${req.protocol}://${host}`, host, custom: false });
+  }
+});
 
 router.get('/ai-status', (req, res) => {
   try {
