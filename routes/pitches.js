@@ -73,12 +73,14 @@ router.post('/upload', upload.single('image'), async (req, res) => {
 // Declared before the /:id routes so "ai-status" is never read as an id.
 
 const POLISH_SYSTEM = [
-  'You are a copy editor for premium photography and film production pitches.',
-  'Fix grammar, spelling and clarity. Preserve the meaning and the approximate length of the text.',
-  'Keep the tone confident, minimal and premium.',
+  'You are a copywriter and copy editor for premium photography and film production pitches.',
+  'Given one piece of pitch copy, write THREE alternative versions of it for the writer to choose from.',
+  'Every version fixes any grammar and spelling mistakes, reads clearly, and preserves the original meaning and approximate length.',
+  'Make the three genuinely different from one another in phrasing, rhythm or emphasis, not the same sentence with one word swapped. Keep the tone confident, minimal and premium.',
   'Inputs arrive in English or Albanian, and a single text may mix both. Always reply in the language of the input: English input gets English output, Albanian input gets Albanian output. If a text mixes languages, keep each part in its original language. Never translate in either direction. Apply the same fixes with native fluency in both languages. Albanian output uses proper Albanian orthography, including ë and ç, even when the input was typed without diacritics.',
   'Never use em dashes or en dashes anywhere in the output. Restructure with commas, periods, or shorter sentences instead. If the input contains them, remove them in the rewrite.',
-  'Return ONLY the corrected text. No preamble, no quotes, no commentary.',
+  'Return ONLY a JSON array of exactly three strings, for example ["first version","second version","third version"].',
+  'No preamble, no commentary, no markdown code fences, no numbering, no object keys.',
 ].join(' ');
 
 // Belt and suspenders: whatever the model returns, this endpoint is physically
@@ -93,6 +95,45 @@ function scrubDashes(text) {
   out = out.replace(/[ \t]+([,.!?;:])/g, '$1');
   out = out.replace(/^[ \t,]+/, '');
   return out.trim();
+}
+
+// The model is asked for a bare JSON array. Parse defensively anyway: strip
+// code fences, fall back to the first bracketed block, then to a numbered or
+// line-separated list, so a chatty response still yields usable options.
+function parseVariants(raw) {
+  let s = String(raw || '').trim()
+    .replace(/^```(?:json)?[ \t]*\r?\n?/i, '')
+    .replace(/```\s*$/, '')
+    .trim();
+
+  let arr = null;
+  try {
+    const p = JSON.parse(s);
+    if (Array.isArray(p)) arr = p;
+  } catch (_) {}
+  if (!arr) {
+    const m = s.match(/\[[\s\S]*\]/);
+    if (m) {
+      try {
+        const p = JSON.parse(m[0]);
+        if (Array.isArray(p)) arr = p;
+      } catch (_) {}
+    }
+  }
+  if (!arr) {
+    arr = s.split(/\r?\n+/)
+      .map(l => l.replace(/^[ \t]*(?:\d+[.)]|[-*•])[ \t]*/, '').replace(/^["']|["',]+$/g, '').trim())
+      .filter(Boolean);
+  }
+
+  const out = [];
+  for (const v of arr) {
+    if (typeof v !== 'string') continue;
+    const t = scrubDashes(v);
+    if (t && !out.includes(t)) out.push(t);
+    if (out.length === 3) break;
+  }
+  return out;
 }
 
 router.get('/ai-status', (req, res) => {
@@ -113,7 +154,8 @@ router.post('/ai-polish', async (req, res) => {
     if (!apiKey) return res.status(501).json({ error: 'not_configured' });
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 20000);
+    // Three variants of a long field take longer than a single rewrite did
+    const timer = setTimeout(() => controller.abort(), 30000);
     let upstream;
     try {
       upstream = await fetch('https://api.anthropic.com/v1/messages', {
@@ -125,7 +167,8 @@ router.post('/ai-polish', async (req, res) => {
         },
         body: JSON.stringify({
           model: 'claude-opus-4-8',
-          max_tokens: 1024,
+          // room for three rewrites of a 2000-character field plus JSON syntax
+          max_tokens: 3000,
           system: POLISH_SYSTEM,
           messages: [{ role: 'user', content: text }],
         }),
@@ -145,7 +188,10 @@ router.post('/ai-polish', async (req, res) => {
     const raw = blocks.filter(b => b && b.type === 'text').map(b => b.text || '').join('').trim();
     if (!raw) return res.status(502).json({ error: 'polish_failed' });
 
-    res.json({ text: scrubDashes(raw) });
+    const variants = parseVariants(raw);
+    if (variants.length === 0) return res.status(502).json({ error: 'polish_failed' });
+
+    res.json({ variants });
   } catch (err) {
     // Never log the user's text content
     console.error('AI polish failed:', err && err.name ? err.name : 'error');
@@ -225,13 +271,22 @@ router.delete('/:id', (req, res) => {
 });
 
 // Duplicate — used by "new from template" and general duplication.
-// Media files are referenced, not copied.
+// Media files are referenced, not copied. An optional sectionIds array copies
+// only those sections (order preserved); omitted means every section.
 router.post('/:id/duplicate', (req, res) => {
   const original = db.prepare('SELECT * FROM presentations WHERE id = ?').get(req.params.id);
   if (!original) return res.status(404).json({ error: 'Presentation not found' });
 
-  const { title } = req.body || {};
+  const { title, sectionIds } = req.body || {};
   const newTitle = (title && title.trim()) || `${original.title} Copy`;
+
+  let sections = getSections(original.id);
+  if (sectionIds !== undefined) {
+    if (!Array.isArray(sectionIds)) return res.status(400).json({ error: 'sectionIds must be an array' });
+    const wanted = new Set(sectionIds.map(Number));
+    sections = sections.filter(s => wanted.has(s.id));
+    if (sections.length === 0) return res.status(400).json({ error: 'Select at least one section' });
+  }
 
   const duplicate = db.transaction(() => {
     const r = db.prepare(
@@ -241,7 +296,8 @@ router.post('/:id/duplicate', (req, res) => {
     const insert = db.prepare(
       'INSERT INTO presentation_sections (presentation_id, type, sort_order, content) VALUES (?, ?, ?, ?)'
     );
-    getSections(original.id).forEach(s => insert.run(newId, s.type, s.sort_order, s.content));
+    // Re-index so a partial selection has no gaps in sort_order
+    sections.forEach((s, i) => insert.run(newId, s.type, i, s.content));
     return newId;
   });
   res.json({ id: duplicate() });

@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Presentation, Edit2, Trash2, Copy, Link2, Check, Sparkles,
+  Presentation, Edit2, Trash2, Copy, Link2, Check, Sparkles, X,
 } from 'lucide-react';
 import { api, fmtDate } from '../api';
+import { SECTION_LABELS, sectionSummary } from '../lib/pitchSections';
 
 const STATUS_BADGE = {
   draft: 'badge badge-pending',
@@ -33,6 +34,125 @@ function TemplateCard({ template, onUse, using }) {
         >
           {using ? 'Creating…' : 'Use template'}
         </button>
+      </div>
+    </div>
+  );
+}
+
+// "Use template" opens this first: name the pitch, then choose which of the
+// template's sections to carry over. Nothing is created until Create is clicked.
+function UseTemplateModal({ template, onClose, onCreated }) {
+  const [title, setTitle] = useState('');
+  const [sections, setSections] = useState(null);
+  const [picked, setPicked] = useState(() => new Set());
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    api.get(`/pitches/${template.id}`)
+      .then(d => {
+        const secs = d.sections || [];
+        setSections(secs);
+        setPicked(new Set(secs.map(s => s.id))); // everything on by default
+      })
+      .catch(() => setError('Could not load the template.'))
+      .finally(() => setLoading(false));
+  }, [template.id]);
+
+  function toggle(id) {
+    setPicked(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  const allOn = sections && picked.size === sections.length;
+
+  async function create(e) {
+    e.preventDefault();
+    if (!title.trim()) { setError('Give the pitch a name'); return; }
+    if (picked.size === 0) { setError('Pick at least one section'); return; }
+    setCreating(true); setError('');
+    try {
+      const ordered = sections.filter(s => picked.has(s.id)).map(s => s.id);
+      const res = await api.post(`/pitches/${template.id}/duplicate`, {
+        title: title.trim(),
+        sectionIds: ordered,
+      });
+      onCreated(res.id);
+    } catch (err) {
+      setError(err.message || 'Could not create the pitch');
+      setCreating(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal-box" style={{ maxWidth: 560 }}>
+        <div className="modal-header">
+          <span className="modal-title">New pitch from “{template.title}”</span>
+          <button className="modal-close" onClick={onClose}><X size={18} /></button>
+        </div>
+        <form onSubmit={create}>
+          <div className="form-row">
+            <label className="form-label">Pitch name *</label>
+            <input
+              className="input"
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              placeholder="e.g. Nike SS26 Editorial"
+              autoFocus
+            />
+          </div>
+
+          <div className="form-row">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <label className="form-label" style={{ margin: 0 }}>
+                Sections to include {sections ? `(${picked.size}/${sections.length})` : ''}
+              </label>
+              {sections && sections.length > 0 && (
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  style={{ padding: '3px 8px', fontSize: '11px' }}
+                  onClick={() => setPicked(allOn ? new Set() : new Set(sections.map(s => s.id)))}
+                >
+                  {allOn ? 'Clear all' : 'Select all'}
+                </button>
+              )}
+            </div>
+
+            {loading && <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Loading sections…</p>}
+
+            {sections && (
+              <div className="pitch-section-picker">
+                {sections.map(s => (
+                  <label key={s.id} className={`pitch-section-row${picked.has(s.id) ? ' on' : ''}`}>
+                    <input
+                      type="checkbox"
+                      checked={picked.has(s.id)}
+                      onChange={() => toggle(s.id)}
+                      style={{ accentColor: 'var(--accent)', width: 15, height: 15, flexShrink: 0 }}
+                    />
+                    <span className="pitch-section-type">{SECTION_LABELS[s.type] || s.type}</span>
+                    <span className="pitch-section-sum">{sectionSummary(s.type, s.content)}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {error && <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 12px' }}>{error}</p>}
+
+          <div className="modal-footer">
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={creating || loading}>
+              {creating ? 'Creating…' : 'Create pitch'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
@@ -106,7 +226,7 @@ export default function Pitches() {
   const [templates, setTemplates] = useState([]);
   const [pitches, setPitches] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [usingId, setUsingId] = useState(null);
+  const [templateInUse, setTemplateInUse] = useState(null);
 
   async function loadData() {
     try {
@@ -120,15 +240,10 @@ export default function Pitches() {
     loadData().finally(() => setLoading(false));
   }, []);
 
-  async function handleUseTemplate(template) {
-    setUsingId(template.id);
-    try {
-      const res = await api.post(`/pitches/${template.id}/duplicate`, { title: `${template.title} Pitch` });
-      navigate(`/pitches/${res.id}`);
-    } catch (err) {
-      alert(err.message || 'Failed to create pitch');
-      setUsingId(null);
-    }
+  // Naming and section selection happen in the modal; nothing is created until
+  // the writer confirms there.
+  function handleUseTemplate(template) {
+    setTemplateInUse(template);
   }
 
   async function handleDuplicate(pitch) {
@@ -165,7 +280,7 @@ export default function Pitches() {
         </h2>
         <div className="pitch-card-grid">
           {templates.map(t => (
-            <TemplateCard key={t.id} template={t} onUse={handleUseTemplate} using={usingId === t.id} />
+            <TemplateCard key={t.id} template={t} onUse={handleUseTemplate} using={false} />
           ))}
         </div>
       </section>
@@ -189,6 +304,14 @@ export default function Pitches() {
           </div>
         )}
       </section>
+
+      {templateInUse && (
+        <UseTemplateModal
+          template={templateInUse}
+          onClose={() => setTemplateInUse(null)}
+          onCreated={id => navigate(`/pitches/${id}`)}
+        />
+      )}
     </div>
   );
 }

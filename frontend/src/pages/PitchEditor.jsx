@@ -69,16 +69,9 @@ const AiContext = React.createContext({ enabled: false, notifyNotConfigured: () 
 // "Fix with Opus" — proposes a corrected version in an inline card. Never
 // auto-replaces: the writer chooses Use or Discard, and the field is locked
 // while a request is in flight so nothing is overwritten underneath it.
-// Whitespace-insensitive compare, so a copy that only differs by spacing
-// still counts as "no change" rather than a meaningless suggestion.
-function sameCopy(a, b) {
-  const norm = s => String(s || '').replace(/\s+/g, ' ').trim();
-  return norm(a) === norm(b);
-}
-
 function PolishControl({ value, onChange, loading, setLoading }) {
   const { enabled, notifyNotConfigured } = React.useContext(AiContext);
-  const [result, setResult] = useState(null); // { proposal, unchanged }
+  const [variants, setVariants] = useState(null);
   const [error, setError] = useState('');
 
   if (!enabled) return null;
@@ -87,14 +80,13 @@ function PolishControl({ value, onChange, loading, setLoading }) {
   async function run() {
     if (loading || !text) return;
     setLoading(true);
-    setResult(null);
+    setVariants(null);
     setError('');
     try {
       const res = await api.post('/pitches/ai-polish', { text });
-      const proposal = res.text || '';
-      // Opus returning the text untouched means the copy is already correct;
-      // say so instead of offering an identical suggestion.
-      setResult({ proposal, unchanged: sameCopy(proposal, text) });
+      const list = Array.isArray(res.variants) ? res.variants.filter(Boolean) : [];
+      if (list.length === 0) setError('Opus returned nothing usable. Try again.');
+      else setVariants(list);
     } catch (err) {
       const msg = err && err.message;
       if (msg === 'not_configured') notifyNotConfigured();
@@ -116,32 +108,29 @@ function PolishControl({ value, onChange, loading, setLoading }) {
         title="Fix grammar and clarity with Opus"
       >
         {loading ? <Loader2 size={11} className="pitch-spin" /> : <Sparkles size={11} />}
-        {loading ? 'Polishing…' : 'Fix with Opus'}
+        {loading ? 'Writing options…' : 'Fix with Opus'}
       </button>
       {error && <div style={{ fontSize: '11px', color: 'var(--danger)', marginTop: '5px' }}>{error}</div>}
-      {result && result.unchanged && (
-        <div className="pitch-polish-card pitch-polish-clean">
-          <div className="pitch-polish-text" style={{ fontSize: '12px' }}>
-            Opus read this and found nothing to fix. The copy is already clean.
-          </div>
-          <div style={{ marginTop: '8px' }}>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setResult(null)}>Dismiss</button>
-          </div>
-        </div>
-      )}
-      {result && !result.unchanged && (
+      {variants && (
         <div className="pitch-polish-card">
-          <div className="pitch-polish-label">Suggested</div>
-          <div className="pitch-polish-text">{result.proposal}</div>
-          <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              onClick={() => { onChange(result.proposal); setResult(null); }}
-            >
-              Use
-            </button>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setResult(null)}>
+          <div className="pitch-polish-label">
+            {variants.length === 1 ? 'Option' : `${variants.length} options`}
+          </div>
+          {variants.map((v, i) => (
+            <div key={i} className="pitch-variant">
+              <div className="pitch-variant-num">{i + 1}</div>
+              <div className="pitch-polish-text pitch-variant-text">{v}</div>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm pitch-variant-use"
+                onClick={() => { onChange(v); setVariants(null); }}
+              >
+                Use
+              </button>
+            </div>
+          ))}
+          <div style={{ marginTop: '10px' }}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setVariants(null)}>
               Discard
             </button>
           </div>
@@ -565,6 +554,9 @@ export default function PitchEditor() {
   const dirtyPres = useRef(null);
   const saveTimer = useRef(null);
   const previewTimer = useRef(null);
+  const previewRef = useRef(null);
+  const previewScroll = useRef(0);
+  const expandedRef = useRef(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -601,10 +593,37 @@ export default function PitchEditor() {
     return () => clearTimeout(t);
   }, [toast]);
 
+  // Mirrored into a ref so the iframe load handler can read it without
+  // being rebound on every expand/collapse.
+  useEffect(() => { expandedRef.current = expandedId; }, [expandedId]);
+
+  // Refreshing the preview must not throw the reader back to the top of the
+  // deck. Record where the preview is looking, then restore it on load —
+  // preferring the section currently open in the editor.
   const bumpPreview = useCallback(() => {
     clearTimeout(previewTimer.current);
-    previewTimer.current = setTimeout(() => setPreviewKey(k => k + 1), 400);
+    previewTimer.current = setTimeout(() => {
+      try {
+        const win = previewRef.current && previewRef.current.contentWindow;
+        previewScroll.current = win ? win.scrollY || 0 : 0;
+      } catch (_) { previewScroll.current = 0; }
+      setPreviewKey(k => k + 1);
+    }, 400);
   }, []);
+
+  function handlePreviewLoad() {
+    const win = previewRef.current && previewRef.current.contentWindow;
+    if (!win) return;
+    try {
+      const target = expandedRef.current
+        ? win.document.querySelector(`[data-sec="${expandedRef.current}"]`)
+        : null;
+      if (target) target.scrollIntoView({ block: 'start' });
+      else if (previewScroll.current) win.scrollTo(0, previewScroll.current);
+    } catch (_) {
+      // Cross-origin or not-yet-parsed document: leave the preview where it is
+    }
+  }
 
   const flush = useCallback(async () => {
     const entries = [...dirtySections.current.entries()];
@@ -859,7 +878,9 @@ export default function PitchEditor() {
             </button>
           </div>
           <div className={`pitch-preview-wrap${phoneView ? ' phone' : ''}`}>
-            <iframe key={previewKey} src={previewSrc} title="Pitch preview" />
+            {/* No key: changing src navigates the same element, so the
+                iframe keeps its scroll position instead of remounting. */}
+            <iframe ref={previewRef} src={previewSrc} title="Pitch preview" onLoad={handlePreviewLoad} />
           </div>
         </div>
       </div>
