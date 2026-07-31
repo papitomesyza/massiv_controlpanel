@@ -33,7 +33,7 @@ export default function Login() {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      background: '#131313',
+      background: '#f5f5f5',
       padding: '20px',
     }}>
       <div style={{ width: '100%', maxWidth: '380px' }}>
@@ -61,18 +61,18 @@ export default function Login() {
                 alignItems: 'center',
                 justifyContent: 'center',
                 margin: '0 auto 20px',
-                boxShadow: '0 8px 32px rgba(199,255,46,0.25)',
+                boxShadow: '0 8px 32px rgba(10,10,10,0.06)',
                 fontSize: '24px',
                 fontWeight: 800,
-                color: '#0F0F0F',
+                color: '#fafafa',
                 letterSpacing: '-1px',
               }}>
                 {(agencyName || 'M').charAt(0).toUpperCase()}
               </div>
-              <h1 style={{ fontSize: '32px', fontWeight: 700, letterSpacing: '-0.5px', marginBottom: '8px', color: '#ffffff' }}>
+              <h1 style={{ fontSize: '32px', fontWeight: 700, letterSpacing: '-0.5px', marginBottom: '8px', color: '#0a0a0a' }}>
                 {agencyName}
               </h1>
-              <p style={{ color: '#888888', fontSize: '14px' }}>{tagline || 'Creative Agency OS'}</p>
+              <p style={{ color: '#737373', fontSize: '14px' }}>{tagline || 'Creative Agency OS'}</p>
             </>
           )}
         </div>
@@ -101,7 +101,7 @@ export default function Login() {
           </button>
         </div>
 
-        <p style={{ textAlign: 'center', color: '#444444', fontSize: '11px', marginTop: '24px' }}>
+        <p style={{ textAlign: 'center', color: '#737373', fontSize: '11px', marginTop: '24px' }}>
           built by year28
         </p>
       </div>

@@ -23,9 +23,9 @@ function createProjectIcon() {
     className: '',
     html: `<div style="
       width:20px;height:20px;border-radius:50%;
-      background:linear-gradient(135deg,#C7FF2E,#7BA01A);
-      border:2px solid #fff;
-      box-shadow:0 2px 8px rgba(0,0,0,0.5);
+      background:linear-gradient(135deg,#0a0a0a,#0a0a0a);
+      border:2px solid #e5e5e5;
+      box-shadow:0 2px 8px rgba(10,10,10,0.10);
     "></div>`,
     iconSize: [20, 20],
     iconAnchor: [10, 10],
@@ -62,7 +62,7 @@ function FitBoundsButton({ positions }) {
       className="btn btn-secondary btn-sm"
       style={{
         position: 'absolute', top: '12px', right: '12px', zIndex: 1000,
-        boxShadow: '0 2px 12px rgba(0,0,0,0.5)',
+        boxShadow: '0 2px 12px rgba(10,10,10,0.10)',
         borderRadius: '10px',
       }}
     >
@@ -133,7 +133,7 @@ export default function Map() {
               key={s}
               onClick={() => setStatusFilter(s)}
               className={`btn btn-sm ${statusFilter === s ? 'btn-primary' : 'btn-ghost'}`}
-              style={{ borderRadius: '50px', padding: '4px 14px', fontSize: '12px' }}
+              style={{ borderRadius: '18px', padding: '4px 14px', fontSize: '12px' }}
             >
               {s}
             </button>
@@ -157,14 +157,14 @@ export default function Map() {
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '4px' }}>
           <button
             className={`btn btn-sm ${mapMode === 'pins' ? 'btn-primary' : 'btn-ghost'}`}
-            style={{ borderRadius: '50px', padding: '4px 14px', fontSize: '12px' }}
+            style={{ borderRadius: '18px', padding: '4px 14px', fontSize: '12px' }}
             onClick={() => setMapMode('pins')}
           >
             Pins
           </button>
           <button
             className={`btn btn-sm ${mapMode === 'heat' ? 'btn-primary' : 'btn-ghost'}`}
-            style={{ borderRadius: '50px', padding: '4px 14px', fontSize: '12px' }}
+            style={{ borderRadius: '18px', padding: '4px 14px', fontSize: '12px' }}
             onClick={() => setMapMode('heat')}
           >
             Heatmap
@@ -173,12 +173,12 @@ export default function Map() {
       </div>
 
       {/* Map */}
-      <div className="map-container" style={{ flex: 1, borderRadius: '16px', overflow: 'hidden', position: 'relative' }}>
+      <div className="map-container" style={{ flex: 1, borderRadius: '24px', overflow: 'hidden', position: 'relative' }}>
         {!loading && (
           <MapContainer
             center={defaultCenter}
             zoom={defaultZoom}
-            style={{ height: '100%', width: '100%', background: '#131313' }}
+            style={{ height: '100%', width: '100%', background: '#f5f5f5' }}
             zoomControl={true}
           >
             <TileLayer
@@ -195,11 +195,11 @@ export default function Map() {
                   className: '',
                   html: `<div style="
                     width:36px;height:36px;border-radius:50%;
-                    background:linear-gradient(135deg,#C7FF2E,#7BA01A);
-                    border:2px solid #fff;
-                    box-shadow:0 2px 8px rgba(0,0,0,0.5);
+                    background:linear-gradient(135deg,#0a0a0a,#0a0a0a);
+                    border:2px solid #e5e5e5;
+                    box-shadow:0 2px 8px rgba(10,10,10,0.10);
                     display:flex;align-items:center;justify-content:center;
-                    color:#fff;font-size:13px;font-weight:700;
+                    color:#0a0a0a;font-size:13px;font-weight:700;
                   ">${cluster.getChildCount()}</div>`,
                   iconSize: [36, 36],
                   iconAnchor: [18, 18],
@@ -212,16 +212,16 @@ export default function Map() {
                     icon={projectIcon}
                   >
                     <Popup>
-                      <div style={{ background: '#1e1e1e', minWidth: '200px', padding: '4px 0' }}>
-                        <div style={{ fontWeight: 700, color: '#fff', marginBottom: '6px', fontSize: '14px' }}>{p.title}</div>
-                        {p.client_name && <div style={{ color: '#888', fontSize: '12px', marginBottom: '4px' }}>{p.client_name}</div>}
+                      <div style={{ background: '#fafafa', minWidth: '200px', padding: '4px 0' }}>
+                        <div style={{ fontWeight: 700, color: '#0a0a0a', marginBottom: '6px', fontSize: '14px' }}>{p.title}</div>
+                        {p.client_name && <div style={{ color: '#737373', fontSize: '12px', marginBottom: '4px' }}>{p.client_name}</div>}
                         <div style={{ display: 'flex', gap: '6px', marginBottom: '8px', flexWrap: 'wrap' }}>
                           {p.category_name && (
-                            <span style={{ background: 'rgba(199,255,46,0.12)', color: 'var(--accent)', padding: '2px 8px', borderRadius: '50px', fontSize: '11px' }}>
+                            <span style={{ background: 'rgba(10,10,10,0.05)', color: 'var(--accent)', padding: '2px 8px', borderRadius: '18px', fontSize: '11px' }}>
                               {p.category_name}
                             </span>
                           )}
-                          <span style={{ background: 'rgba(255,255,255,0.08)', color: '#ccc', padding: '2px 8px', borderRadius: '50px', fontSize: '11px' }}>
+                          <span style={{ background: 'rgba(10,10,10,0.05)', color: '#171717', padding: '2px 8px', borderRadius: '18px', fontSize: '11px' }}>
                             {p.status?.replace(/-/g, ' ')}
                           </span>
                         </div>
@@ -234,7 +234,7 @@ export default function Map() {
                           onClick={() => navigate(`/projects/${p.id}`)}
                           style={{
                             background: 'var(--gradient-card)',
-                            color: '#0F0F0F', border: 'none', borderRadius: '8px',
+                            color: '#fafafa', border: 'none', borderRadius: '10px',
                             padding: '5px 12px', fontSize: '12px', cursor: 'pointer', fontWeight: 600,
                           }}
                         >
@@ -256,19 +256,20 @@ export default function Map() {
         {!loading && mappable.length === 0 && (
           <div style={{
             position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
-            zIndex: 1000, background: 'rgba(19,19,19,0.9)', border: '1px solid rgba(255,255,255,0.1)',
-            borderRadius: '16px', padding: '32px 40px', textAlign: 'center', maxWidth: '360px',
+            zIndex: 1000, background: '#ffffff', border: '1px solid #e5e5e5',
+            boxShadow: 'var(--shadow-overlay)',
+            borderRadius: 'var(--radius-cards)', padding: '32px 40px', textAlign: 'center', maxWidth: '360px',
           }}>
-            <MapPin size={32} style={{ color: '#444', marginBottom: '12px' }} />
-            <div style={{ color: '#fff', fontWeight: 600, marginBottom: '8px' }}>No project locations yet</div>
-            <div style={{ color: '#666', fontSize: '13px' }}>
+            <MapPin size={32} style={{ color: '#737373', marginBottom: '12px' }} />
+            <div style={{ color: '#0a0a0a', fontWeight: 600, marginBottom: '8px' }}>No project locations yet</div>
+            <div style={{ color: '#737373', fontSize: '13px' }}>
               Add shoot locations to your projects to see them here.
             </div>
           </div>
         )}
       </div>
 
-      <footer style={{ marginTop: '12px', textAlign: 'center', fontSize: '11px', color: '#444', flexShrink: 0 }}>built by year28</footer>
+      <footer style={{ marginTop: '12px', textAlign: 'center', fontSize: '11px', color: '#737373', flexShrink: 0 }}>built by year28</footer>
     </div>
   );
 }

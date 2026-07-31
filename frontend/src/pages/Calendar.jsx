@@ -6,15 +6,16 @@ import { CSS } from '@dnd-kit/utilities';
 import { api } from '../api';
 
 const EVENT_TYPE_COLORS = {
-  shoot: '#7BA01A',
-  meeting: '#3B82F6',
-  deadline: '#FF902F',
-  task: '#22D3EE',
-  standalone_task: '#E879F9',
-  other: '#888888',
+  shoot: '#0a0a0a',
+  meeting: '#737373',
+  deadline: '#171717',
+  task: '#737373',
+  standalone_task: '#737373',
+  other: '#737373',
 };
 
-const PRESET_COLORS = ['#C7FF2E', '#7BA01A', '#4CAF50', '#FF4444', '#3B82F6', '#888888'];
+/* Event marks step down the achromatic ramp; ember stays the alert slot. */
+const PRESET_COLORS = ['#0a0a0a', '#404040', '#737373', '#a3a3a3', '#d4d4d4', '#e7000b'];
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -212,19 +213,19 @@ export default function Calendar() {
         <button className="btn btn-ghost btn-sm" style={{ padding: '6px 8px' }} onClick={prevMonth}>
           <ChevronLeft size={16} />
         </button>
-        <h2 style={{ fontSize: '20px', fontWeight: 700, color: '#fff', minWidth: '160px', textAlign: 'center' }}>
+        <h2 style={{ fontSize: '20px', fontWeight: 700, color: '#0a0a0a', minWidth: '160px', textAlign: 'center' }}>
           {MONTH_NAMES[month]} {year}
         </h2>
         <button className="btn btn-ghost btn-sm" style={{ padding: '6px 8px' }} onClick={nextMonth}>
           <ChevronRight size={16} />
         </button>
-        <button className="btn btn-ghost btn-sm" onClick={goToday} style={{ marginLeft: '4px', borderRadius: '50px', padding: '5px 14px', fontSize: '12px' }}>
+        <button className="btn btn-ghost btn-sm" onClick={goToday} style={{ marginLeft: '4px', borderRadius: '18px', padding: '5px 14px', fontSize: '12px' }}>
           Today
         </button>
       </div>
 
       {dragError && (
-        <div style={{ padding: '8px 12px', background: '#3a1a1a', border: '1px solid #f44', borderRadius: '6px', color: '#f44', fontSize: '12px', marginBottom: '12px' }}>
+        <div style={{ padding: '8px 12px', background: '#fef2f2', border: '1px solid rgba(231,0,11,0.35)', borderRadius: '6px', color: '#e7000b', fontSize: '12px', marginBottom: '12px' }}>
           {dragError}
         </div>
       )}
@@ -252,7 +253,7 @@ export default function Calendar() {
         </DndContext>
       </div>
 
-      <footer style={{ marginTop: '32px', textAlign: 'center', fontSize: '11px', color: '#444' }}>built by year28</footer>
+      <footer style={{ marginTop: '32px', textAlign: 'center', fontSize: '11px', color: '#737373' }}>built by year28</footer>
 
       {addModal && (
         <EventModal
@@ -301,16 +302,16 @@ function DroppableDayCell({ cell, onClickEmpty, onClickEvent }) {
       onClick={onClickEmpty}
       className="calendar-day-cell"
       style={{
-        background: isOver ? '#252525' : '#1e1e1e',
-        border: isToday ? '1px solid var(--accent)' : '1px solid rgba(255,255,255,0.06)',
-        borderRadius: '8px',
+        background: isOver ? '#fafafa' : '#fafafa',
+        border: isToday ? '1px solid var(--accent)' : '1px solid #e5e5e5',
+        borderRadius: '10px',
         padding: '6px',
         cursor: 'pointer',
         position: 'relative',
         transition: 'background 0.15s',
       }}
     >
-      <div style={{ fontSize: '13px', color: isCurrentMonth ? '#fff' : '#555', fontWeight: isToday ? 700 : 400, marginBottom: '4px' }}>
+      <div style={{ fontSize: '13px', color: isCurrentMonth ? '#0a0a0a' : '#a3a3a3', fontWeight: isToday ? 700 : 400, marginBottom: '4px' }}>
         {cellDay}
       </div>
       {visible.map(ev => (
@@ -321,7 +322,7 @@ function DroppableDayCell({ cell, onClickEmpty, onClickEvent }) {
         />
       ))}
       {overflow > 0 && (
-        <div style={{ fontSize: '10px', color: '#888', marginTop: '1px' }}>+{overflow} more</div>
+        <div style={{ fontSize: '10px', color: '#737373', marginTop: '1px' }}>+{overflow} more</div>
       )}
     </div>
   );
@@ -338,11 +339,11 @@ function DraggableEventChip({ ev, onClick }) {
       onClick={onClick}
       className="calendar-event-chip"
       style={{
-        background: ev.color || '#7BA01A',
-        borderRadius: '4px',
+        background: ev.color || '#0a0a0a',
+        borderRadius: '6px',
         padding: '1px 5px',
         fontSize: '11px',
-        color: '#fff',
+        color: '#0a0a0a',
         marginBottom: '2px',
         cursor: isDragging ? 'grabbing' : 'grab',
         maxWidth: '100%',
@@ -378,7 +379,7 @@ function EventDetailModal({ event, onClose, onEdit, onDelete }) {
       <div className="modal-box" style={{ maxWidth: '480px' }}>
         <div className="modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: event.color || '#7BA01A', flexShrink: 0 }} />
+            <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: event.color || '#0a0a0a', flexShrink: 0 }} />
             <span className="modal-title">{event.title}</span>
           </div>
           <button className="modal-close" onClick={onClose}><X size={18} /></button>
@@ -414,7 +415,7 @@ function EventDetailModal({ event, onClose, onEdit, onDelete }) {
             </div>
           )}
           {event.notes && (
-            <div style={{ marginTop: '12px', padding: '10px 12px', background: 'rgba(255,255,255,0.04)', borderRadius: '8px', fontSize: '13px', color: '#aaa' }}>
+            <div style={{ marginTop: '12px', padding: '10px 12px', background: 'rgba(10,10,10,0.03)', borderRadius: '10px', fontSize: '13px', color: '#737373' }}>
               {event.notes}
             </div>
           )}
@@ -459,7 +460,7 @@ function EventModal({ mode, event, initialDate, projects, onClose, onSaved }) {
   function f(k, v) {
     setForm(p => {
       const next = { ...p, [k]: v };
-      if (k === 'event_type') next.color = EVENT_TYPE_COLORS[v] || '#888888';
+      if (k === 'event_type') next.color = EVENT_TYPE_COLORS[v] || '#737373';
       if (k === 'project_id' && v) {
         const proj = projects.find(pr => String(pr.id) === String(v));
         if (proj) {
@@ -562,7 +563,7 @@ function EventModal({ mode, event, initialDate, projects, onClose, onSaved }) {
                 style={{
                   width: '26px', height: '26px', borderRadius: '50%',
                   background: c, cursor: 'pointer',
-                  border: form.color === c ? '3px solid #fff' : '3px solid transparent',
+                  border: form.color === c ? '3px solid #0a0a0a' : '3px solid transparent',
                   boxSizing: 'border-box',
                   transition: 'border 0.15s',
                 }}

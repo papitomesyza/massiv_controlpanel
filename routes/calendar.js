@@ -47,7 +47,7 @@ router.post('/', (req, res) => {
     end_time || null,
     location || null,
     notes || null,
-    color || '#723CEB',
+    color || '#0a0a0a',
   );
   res.json({ id: result.lastInsertRowid });
 });
@@ -110,7 +110,7 @@ router.put('/:id', (req, res) => {
     end_time || null,
     location || null,
     notes || null,
-    color || '#723CEB',
+    color || '#0a0a0a',
     req.params.id,
   );
   res.json({ ok: true });

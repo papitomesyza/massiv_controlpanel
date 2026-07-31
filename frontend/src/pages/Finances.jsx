@@ -9,14 +9,16 @@ import {
 } from 'lucide-react';
 import { api, fmt, fmtDate } from '../api';
 import StatCard from '../components/StatCard';
+import { seriesColors, seriesColor, CHART_GRID, CHART_AXIS } from '../lib/chartColors';
 
 const MONTHS_LIST = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'));
-const PIE_COLORS = ['#C7FF2E', '#7BA01A', '#3B82F6', '#06B6D4', '#FF4444', '#4CAF50', '#00BCD4', '#E91E63'];
+/* Ageing is ordered, so the buckets darken with severity and only the
+   oldest one earns the ember. */
 const BUCKET_META = {
-  current:  { label: 'Current (0–30d)',  color: '#4CAF50', bg: 'rgba(76,175,80,0.10)' },
-  '31-60':  { label: '31–60 Days',       color: '#FF902F', bg: 'rgba(255,144,47,0.10)' },
-  '61-90':  { label: '61–90 Days',       color: '#FF6B2B', bg: 'rgba(255,107,43,0.10)' },
-  '90+':    { label: '90+ Days',         color: '#FF4444', bg: 'rgba(255,68,68,0.10)' },
+  current:  { label: 'Current (0–30d)',  color: '#737373', bg: '#f5f5f5' },
+  '31-60':  { label: '31–60 Days',       color: '#171717', bg: '#f5f5f5' },
+  '61-90':  { label: '61–90 Days',       color: '#0a0a0a', bg: '#e5e5e5' },
+  '90+':    { label: '90+ Days',         color: '#e7000b', bg: 'rgba(231,0,11,0.07)' },
 };
 
 function getCurrentMonth() {
@@ -32,8 +34,8 @@ function getYears() {
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
   return (
-    <div style={{ background: '#1a1a1a', border: '1px solid rgba(255,255,255,0.10)', borderRadius: '12px', padding: '10px 14px', fontSize: '12px' }}>
-      <div style={{ marginBottom: '4px', color: '#888' }}>{label}</div>
+    <div style={{ background: '#ffffff', border: '1px solid #e5e5e5', borderRadius: '10px', padding: '10px 14px', fontSize: '12px', boxShadow: 'var(--shadow-raised)' }}>
+      <div style={{ marginBottom: '4px', color: '#737373' }}>{label}</div>
       {payload.map(p => (
         <div key={p.name} style={{ color: p.color }}>{p.name}: {fmt(p.value)}</div>
       ))}
@@ -137,15 +139,15 @@ function OverviewTab({ month, setMonth, filterCat, setFilterCat, filterClient, s
             <div className="card card-pad">
               <div className="section-title" style={{ marginBottom: '16px' }}>Revenue vs Expenses (Last 6 Months)</div>
               <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={chart} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#888' }} />
-                  <YAxis tick={{ fontSize: 11, fill: '#888' }} tickFormatter={v => `€${(v / 1000).toFixed(0)}k`} />
+                <BarChart data={chart} margin={{ top: 0, right: 0, bottom: 0, left: 0 }} barGap={2}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} vertical={false} />
+                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: CHART_AXIS }} />
+                  <YAxis tick={{ fontSize: 11, fill: CHART_AXIS }} tickFormatter={v => `€${(v / 1000).toFixed(0)}k`} />
                   <Tooltip content={<CustomTooltip />} />
-                  <Legend wrapperStyle={{ fontSize: '12px', color: '#888' }} />
-                  <Bar dataKey="revenue" name="Revenue" fill="#ffffff" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="expenses" name="Expenses" fill="#C7FF2E" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="crewCosts" name="Crew" fill="#FF902F" radius={[4, 4, 0, 0]} />
+                  <Legend wrapperStyle={{ fontSize: '12px', color: CHART_AXIS }} />
+                  <Bar dataKey="revenue" name="Revenue" fill={seriesColors(3)[0]} radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="expenses" name="Expenses" fill={seriesColors(3)[1]} radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="crewCosts" name="Crew" fill={seriesColors(3)[2]} radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -159,9 +161,11 @@ function OverviewTab({ month, setMonth, filterCat, setFilterCat, filterClient, s
                     <Pie data={catData} dataKey="total_revenue" nameKey="name" cx="50%" cy="50%" outerRadius={80}
                       label={({ name, percent }) => `${name.split('/')[0].trim()} ${Math.round(percent * 100)}%`}
                       labelLine={false} fontSize={10}>
-                      {catData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                      {catData.map((_, i) => (
+                        <Cell key={i} fill={seriesColor(i, catData.length)} stroke="#ffffff" strokeWidth={2} />
+                      ))}
                     </Pie>
-                    <Tooltip formatter={v => fmt(v)} contentStyle={{ background: '#1a1a1a', border: '1px solid rgba(255,255,255,0.10)', borderRadius: '12px', fontSize: '12px' }} />
+                    <Tooltip formatter={v => fmt(v)} contentStyle={{ background: '#ffffff', border: '1px solid #e5e5e5', borderRadius: '10px', fontSize: '12px' }} />
                   </PieChart>
                 </ResponsiveContainer>
               )}
@@ -276,12 +280,12 @@ function PLTab() {
         <div className="flex-center gap-1">
           <button
             className={`btn btn-sm ${viewMode === 'year' ? 'btn-primary' : 'btn-ghost'}`}
-            style={{ borderRadius: '50px', padding: '5px 16px' }}
+            style={{ borderRadius: '18px', padding: '5px 16px' }}
             onClick={() => setViewMode('year')}
           >Full Year</button>
           <button
             className={`btn btn-sm ${viewMode === 'month' ? 'btn-primary' : 'btn-ghost'}`}
-            style={{ borderRadius: '50px', padding: '5px 16px' }}
+            style={{ borderRadius: '18px', padding: '5px 16px' }}
             onClick={() => setViewMode('month')}
           >Month</button>
         </div>
@@ -319,13 +323,13 @@ function PLTab() {
 
                 {/* Cost of Services */}
                 <div style={{ padding: '12px 0', borderBottom: '1px solid var(--border)' }}>
-                  <div style={{ fontSize: '10px', color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '10px' }}>Cost of Services</div>
+                  <div style={{ fontSize: '10px', color: '#737373', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '10px' }}>Cost of Services</div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 16px', fontSize: '13px' }}>
-                    <span style={{ color: '#aaa' }}>Crew Costs</span>
+                    <span style={{ color: '#737373' }}>Crew Costs</span>
                     <span>{fmt(statement.crewCosts)}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 16px', fontSize: '13px' }}>
-                    <span style={{ color: '#aaa' }}>Expenses</span>
+                    <span style={{ color: '#737373' }}>Expenses</span>
                     <span>{fmt(statement.expenses)}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 0', marginTop: '6px', borderTop: '1px solid var(--border)', fontWeight: 600, fontSize: '13px' }}>
@@ -337,19 +341,19 @@ function PLTab() {
                 {/* Gross Profit */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '2px solid var(--border)' }}>
                   <span style={{ fontWeight: 700, fontSize: '14px' }}>Gross Profit</span>
-                  <span style={{ fontWeight: 700, fontSize: '14px', color: grossProfit < 0 ? '#FF4444' : '#4CAF50' }}>{fmt(grossProfit)}</span>
+                  <span style={{ fontWeight: 700, fontSize: '14px', color: grossProfit < 0 ? '#e7000b' : '#0a0a0a' }}>{fmt(grossProfit)}</span>
                 </div>
 
                 {/* Net Profit */}
                 <div style={{
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                   padding: '14px 20px', margin: '12px -24px -24px',
-                  background: statement.netProfit < 0 ? 'rgba(255,68,68,0.06)' : 'rgba(76,175,80,0.06)',
-                  borderTop: '2px solid ' + (statement.netProfit < 0 ? 'rgba(255,68,68,0.2)' : 'rgba(76,175,80,0.2)'),
-                  borderRadius: '0 0 16px 16px',
+                  background: statement.netProfit < 0 ? 'rgba(231,0,11,0.05)' : 'rgba(10,10,10,0.04)',
+                  borderTop: '2px solid ' + (statement.netProfit < 0 ? 'rgba(231,0,11,0.20)' : '#e5e5e5'),
+                  borderRadius: '0 0 24px 24px',
                 }}>
                   <span style={{ fontWeight: 700, fontSize: '16px', letterSpacing: '0.02em' }}>NET PROFIT</span>
-                  <span style={{ fontWeight: 800, fontSize: '18px', color: statement.netProfit < 0 ? '#FF4444' : '#4CAF50' }}>{fmt(statement.netProfit)}</span>
+                  <span style={{ fontWeight: 800, fontSize: '18px', color: statement.netProfit < 0 ? '#e7000b' : '#0a0a0a' }}>{fmt(statement.netProfit)}</span>
                 </div>
               </div>
             )}
@@ -378,12 +382,12 @@ function PLTab() {
                         const isEmpty = m.revenue === 0 && m.expenses === 0 && m.crewCosts === 0;
                         const isSelected = viewMode === 'month' && m.month === selMonth;
                         return (
-                          <tr key={m.month} style={isSelected ? { background: 'rgba(199,255,46,0.08)' } : {}}>
-                            <td data-label="Month" style={{ color: isEmpty ? '#444' : '#fff', fontWeight: isSelected ? 700 : 400 }}>{m.label}</td>
-                            <td data-label="Revenue" style={{ textAlign: 'right', color: isEmpty ? '#444' : '#fff' }}>{isEmpty ? '—' : fmt(m.revenue)}</td>
-                            <td data-label="Crew" style={{ textAlign: 'right', color: isEmpty ? '#444' : '#aaa' }}>{isEmpty ? '—' : fmt(m.crewCosts)}</td>
-                            <td data-label="Expenses" style={{ textAlign: 'right', color: isEmpty ? '#444' : '#aaa' }}>{isEmpty ? '—' : fmt(m.expenses)}</td>
-                            <td data-label="Net" style={{ textAlign: 'right', fontWeight: 600, color: isEmpty ? '#444' : m.netProfit < 0 ? '#FF4444' : '#4CAF50' }}>
+                          <tr key={m.month} style={isSelected ? { background: 'rgba(10,10,10,0.05)' } : {}}>
+                            <td data-label="Month" style={{ color: isEmpty ? '#a3a3a3' : '#0a0a0a', fontWeight: isSelected ? 700 : 400 }}>{m.label}</td>
+                            <td data-label="Revenue" style={{ textAlign: 'right', color: isEmpty ? '#a3a3a3' : '#0a0a0a' }}>{isEmpty ? '—' : fmt(m.revenue)}</td>
+                            <td data-label="Crew" style={{ textAlign: 'right', color: isEmpty ? '#a3a3a3' : '#737373' }}>{isEmpty ? '—' : fmt(m.crewCosts)}</td>
+                            <td data-label="Expenses" style={{ textAlign: 'right', color: isEmpty ? '#a3a3a3' : '#737373' }}>{isEmpty ? '—' : fmt(m.expenses)}</td>
+                            <td data-label="Net" style={{ textAlign: 'right', fontWeight: 600, color: isEmpty ? '#a3a3a3' : m.netProfit < 0 ? '#e7000b' : '#0a0a0a' }}>
                               {isEmpty ? '—' : fmt(m.netProfit)}
                             </td>
                           </tr>
@@ -392,9 +396,9 @@ function PLTab() {
                       <tr style={{ borderTop: '2px solid var(--border)', fontWeight: 700 }}>
                         <td data-label="Month">TOTAL</td>
                         <td data-label="Revenue" style={{ textAlign: 'right' }}>{fmt(plData.totals.revenue)}</td>
-                        <td data-label="Crew" style={{ textAlign: 'right', color: '#aaa' }}>{fmt(plData.totals.crewCosts)}</td>
-                        <td data-label="Expenses" style={{ textAlign: 'right', color: '#aaa' }}>{fmt(plData.totals.expenses)}</td>
-                        <td data-label="Net" style={{ textAlign: 'right', fontWeight: 700, color: plData.totals.netProfit < 0 ? '#FF4444' : '#4CAF50' }}>{fmt(plData.totals.netProfit)}</td>
+                        <td data-label="Crew" style={{ textAlign: 'right', color: '#737373' }}>{fmt(plData.totals.crewCosts)}</td>
+                        <td data-label="Expenses" style={{ textAlign: 'right', color: '#737373' }}>{fmt(plData.totals.expenses)}</td>
+                        <td data-label="Net" style={{ textAlign: 'right', fontWeight: 700, color: plData.totals.netProfit < 0 ? '#e7000b' : '#0a0a0a' }}>{fmt(plData.totals.netProfit)}</td>
                       </tr>
                     </tbody>
                   </table>
@@ -477,7 +481,7 @@ function ReceivablesTab() {
         <div className="ar-buckets-grid">
           {Object.entries(BUCKET_META).map(([key, meta]) => (
             <div key={key} className="card card-pad" style={{ borderTop: `3px solid ${meta.color}`, textAlign: 'center' }}>
-              <div style={{ fontSize: '11px', color: '#888', marginBottom: '6px' }}>{meta.label}</div>
+              <div style={{ fontSize: '11px', color: '#737373', marginBottom: '6px' }}>{meta.label}</div>
               <div style={{ fontSize: '20px', fontWeight: 700, color: meta.color }}>{fmt(arData?.buckets[key] || 0)}</div>
             </div>
           ))}
@@ -485,15 +489,15 @@ function ReceivablesTab() {
 
         {/* Total band */}
         {arData?.total > 0 && (
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,144,47,0.06)', border: '1px solid rgba(255,144,47,0.15)', borderRadius: '12px', padding: '12px 20px', marginBottom: '16px' }}>
-            <span style={{ color: '#888', fontSize: '13px' }}>Total Outstanding</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(10,10,10,0.04)', border: '1px solid #e5e5e5', borderRadius: '10px', padding: '12px 20px', marginBottom: '16px' }}>
+            <span style={{ color: '#737373', fontSize: '13px' }}>Total Outstanding</span>
             <span style={{ fontWeight: 700, fontSize: '18px', color: 'var(--warning)' }}>{fmt(arData.total)}</span>
           </div>
         )}
 
         {/* AR table */}
         {!arData?.rows?.length ? (
-          <div className="card card-pad empty" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#4CAF50' }}>
+          <div className="card card-pad empty" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#0a0a0a' }}>
             <CheckCircle size={15} /> No outstanding receivables
           </div>
         ) : (
@@ -530,7 +534,7 @@ function ReceivablesTab() {
                           {row.source === 'payment' ? (
                             <button
                               className="btn btn-ghost btn-sm"
-                              style={{ fontSize: '11px', color: '#4CAF50', borderRadius: '50px', border: '1px solid rgba(76,175,80,0.3)' }}
+                              style={{ fontSize: '11px', color: '#0a0a0a', borderRadius: '18px', border: '1px solid #e5e5e5' }}
                               onClick={() => markReceived(row)}
                             >
                               <CheckCircle size={11} /> Mark Received
@@ -557,7 +561,7 @@ function ReceivablesTab() {
             {taxLabel} Obligations
           </div>
           <div className="flex-center gap-2">
-            <span style={{ fontSize: '12px', color: '#888' }}>Year:</span>
+            <span style={{ fontSize: '12px', color: '#737373' }}>Year:</span>
             <select className="select" value={taxYear} onChange={e => setTaxYear(e.target.value)}>
               {years.map(y => <option key={y} value={y}>{y}</option>)}
             </select>
@@ -568,11 +572,11 @@ function ReceivablesTab() {
           <div className="card card-pad empty">Tax tracking is disabled. Enable it in Settings.</div>
         ) : taxRecords.length === 0 ? (
           <div className="card card-pad" style={{ textAlign: 'center', padding: '40px 24px' }}>
-            <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'rgba(199,255,46,0.10)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+            <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'rgba(10,10,10,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
               <Receipt size={22} style={{ color: 'var(--accent)' }} />
             </div>
             <div style={{ fontWeight: 600, marginBottom: '6px' }}>No {taxLabel} records for {taxYear}</div>
-            <div style={{ fontSize: '12px', color: '#666', maxWidth: '340px', margin: '0 auto' }}>
+            <div style={{ fontSize: '12px', color: '#737373', maxWidth: '340px', margin: '0 auto' }}>
               {taxLabel} obligations will appear here once invoices are issued. This section tracks which invoices have their tax settled.
             </div>
           </div>
@@ -580,13 +584,13 @@ function ReceivablesTab() {
           <>
             {/* Tax summary */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
-              <div className="card card-pad" style={{ borderLeft: '3px solid #FF4444' }}>
-                <div style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>{taxLabel} Owed (Unpaid)</div>
-                <div style={{ fontSize: '22px', fontWeight: 700, color: '#FF4444' }}>{fmt(taxOwed)}</div>
+              <div className="card card-pad" style={{ borderLeft: '3px solid rgba(231,0,11,0.35)' }}>
+                <div style={{ fontSize: '11px', color: '#737373', marginBottom: '4px' }}>{taxLabel} Owed (Unpaid)</div>
+                <div style={{ fontSize: '22px', fontWeight: 700, color: '#e7000b' }}>{fmt(taxOwed)}</div>
               </div>
-              <div className="card card-pad" style={{ borderLeft: '3px solid #4CAF50' }}>
-                <div style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>{taxLabel} Paid</div>
-                <div style={{ fontSize: '22px', fontWeight: 700, color: '#4CAF50' }}>{fmt(taxPaid)}</div>
+              <div className="card card-pad" style={{ borderLeft: '3px solid #0a0a0a' }}>
+                <div style={{ fontSize: '11px', color: '#737373', marginBottom: '4px' }}>{taxLabel} Paid</div>
+                <div style={{ fontSize: '22px', fontWeight: 700, color: '#0a0a0a' }}>{fmt(taxPaid)}</div>
               </div>
             </div>
 
@@ -610,19 +614,19 @@ function ReceivablesTab() {
                       <tr key={r.id}>
                         <td data-label="Invoice" className="text-sm">{r.invoice_number || `#${r.id}`}</td>
                         <td data-label="Total" style={{ textAlign: 'right' }}>{fmt(r.invoice_total)}</td>
-                        <td data-label="Rate" style={{ textAlign: 'right', color: '#888' }}>{r.tax_rate_applied}%</td>
-                        <td data-label={taxLabel} style={{ textAlign: 'right', fontWeight: 600, color: r.tax_status === 'paid' ? '#4CAF50' : 'var(--warning)' }}>{fmt(r.tax_amount)}</td>
+                        <td data-label="Rate" style={{ textAlign: 'right', color: '#737373' }}>{r.tax_rate_applied}%</td>
+                        <td data-label={taxLabel} style={{ textAlign: 'right', fontWeight: 600, color: r.tax_status === 'paid' ? '#0a0a0a' : 'var(--warning)' }}>{fmt(r.tax_amount)}</td>
                         <td data-label="Status">
                           <span className={`badge badge-${r.tax_status === 'paid' ? 'paid' : 'unpaid'}`}>{r.tax_status}</span>
                         </td>
                         <td data-label="Paid" className="text-xs text-2">{r.paid_date ? fmtDate(r.paid_date) : '—'}</td>
                         <td className="mobile-actions">
                           {r.tax_status === 'unpaid' ? (
-                            <button className="btn btn-ghost btn-sm" style={{ fontSize: '11px', color: '#4CAF50', borderRadius: '50px', border: '1px solid rgba(76,175,80,0.3)' }} onClick={() => markTaxPaid(r.id)}>
+                            <button className="btn btn-ghost btn-sm" style={{ fontSize: '11px', color: '#0a0a0a', borderRadius: '18px', border: '1px solid #e5e5e5' }} onClick={() => markTaxPaid(r.id)}>
                               Mark Paid
                             </button>
                           ) : (
-                            <button className="btn btn-ghost btn-sm" style={{ fontSize: '11px', color: '#888', borderRadius: '50px' }} onClick={() => markTaxUnpaid(r.id)}>
+                            <button className="btn btn-ghost btn-sm" style={{ fontSize: '11px', color: '#737373', borderRadius: '18px' }} onClick={() => markTaxUnpaid(r.id)}>
                               Mark Unpaid
                             </button>
                           )}
@@ -681,7 +685,7 @@ export default function Finances() {
           <button
             key={t.key}
             className={`btn btn-sm ${activeTab === t.key ? 'btn-primary' : 'btn-ghost'}`}
-            style={{ borderRadius: '50px', padding: '6px 20px', fontWeight: activeTab === t.key ? 600 : 400 }}
+            style={{ borderRadius: '18px', padding: '6px 20px', fontWeight: activeTab === t.key ? 600 : 400 }}
             onClick={() => setActiveTab(t.key)}
           >
             {t.label}

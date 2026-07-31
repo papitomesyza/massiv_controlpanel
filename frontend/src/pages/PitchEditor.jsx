@@ -21,7 +21,7 @@ const CATEGORIES = [
   'Music Video Photography',
 ];
 
-const ACCENT_PRESETS = ['#723CEB', '#E8C1A0', '#4FC3F7', '#FF902F', '#A78BFA', '#C7FF2E', '#FF4444', '#4CAF50'];
+const ACCENT_PRESETS = ['#737373', '#737373', '#737373', '#171717', '#737373', '#0a0a0a', '#e7000b', '#0a0a0a'];
 
 // The ten section types — labels, icons and default content shapes
 const SECTION_TYPES = {
@@ -250,7 +250,7 @@ function ImageListField({ label, values, onChange, max }) {
               style={{
                 position: 'absolute', top: -6, right: -6, width: 18, height: 18,
                 borderRadius: '50%', background: 'var(--danger)', border: 'none',
-                color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
+                color: '#0a0a0a', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
               }}
             >
               <X size={10} />
@@ -912,7 +912,7 @@ export default function PitchEditor() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
               <input
                 type="color"
-                value={/^#[0-9a-fA-F]{6}$/.test(pres.accent_color || '') ? pres.accent_color : '#723CEB'}
+                value={/^#[0-9a-fA-F]{6}$/.test(pres.accent_color || '') ? pres.accent_color : '#737373'}
                 onChange={e => handlePresChange({ accent_color: e.target.value })}
                 style={{ width: 40, height: 32, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}
               />
@@ -924,7 +924,7 @@ export default function PitchEditor() {
                   title={c}
                   style={{
                     width: 22, height: 22, borderRadius: '50%', background: c, cursor: 'pointer',
-                    border: pres.accent_color === c ? '2px solid #fff' : '2px solid transparent',
+                    border: pres.accent_color === c ? '2px solid #0a0a0a' : '2px solid transparent',
                   }}
                 />
               ))}

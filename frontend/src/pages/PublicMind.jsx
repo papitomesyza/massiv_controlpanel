@@ -50,14 +50,14 @@ function InstagramPlaceholder({ url }) {
   return (
     <div style={{
       position: 'absolute', inset: 0,
-      background: 'linear-gradient(135deg, #833ab4 0%, #fd1d1d 50%, #fcb045 100%)',
+      background: 'linear-gradient(135deg, #737373 0%, #e7000b 50%, #737373 100%)',
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
       gap: '8px',
     }}>
-      <Instagram size={38} color="rgba(255,255,255,0.95)" strokeWidth={1.5} />
+      <Instagram size={38} color="#0a0a0a" strokeWidth={1.5} />
       <div style={{ textAlign: 'center', lineHeight: 1.4 }}>
-        <div style={{ fontSize: '11px', fontWeight: 700, color: 'rgba(255,255,255,0.9)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{postType}</div>
-        {username && <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.72)', marginTop: '3px' }}>@{username}</div>}
+        <div style={{ fontSize: '11px', fontWeight: 700, color: '#0a0a0a', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{postType}</div>
+        {username && <div style={{ fontSize: '11px', color: '#0a0a0a', marginTop: '3px' }}>@{username}</div>}
       </div>
     </div>
   );
@@ -66,11 +66,11 @@ function InstagramPlaceholder({ url }) {
 function TikTokPlaceholder() {
   return (
     <div style={{
-      position: 'absolute', inset: 0, background: '#010101',
+      position: 'absolute', inset: 0, background: '#f5f5f5',
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px',
     }}>
-      <Music2 size={38} color="rgba(255,255,255,0.90)" strokeWidth={1.5} />
-      <div style={{ fontSize: '11px', fontWeight: 700, color: 'rgba(255,255,255,0.65)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>TikTok</div>
+      <Music2 size={38} color="#0a0a0a" strokeWidth={1.5} />
+      <div style={{ fontSize: '11px', fontWeight: 700, color: '#0a0a0a', textTransform: 'uppercase', letterSpacing: '0.08em' }}>TikTok</div>
     </div>
   );
 }
@@ -79,7 +79,7 @@ function FaviconPlaceholder({ url }) {
   const domain = getDomain(url);
   const [failed, setFailed] = useState(false);
   return (
-    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px', background: '#1a1a1a' }}>
+    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px', background: '#fafafa' }}>
       {!failed ? (
         <img
           src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=128`}
@@ -88,9 +88,9 @@ function FaviconPlaceholder({ url }) {
           style={{ width: 48, height: 48, borderRadius: 10, objectFit: 'contain' }}
         />
       ) : (
-        <Globe size={36} color="#555" />
+        <Globe size={36} color="#a3a3a3" />
       )}
-      <span style={{ fontSize: '12px', color: '#888', fontWeight: 500, maxWidth: '90%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center' }}>{domain}</span>
+      <span style={{ fontSize: '12px', color: '#737373', fontWeight: 500, maxWidth: '90%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center' }}>{domain}</span>
     </div>
   );
 }
@@ -106,7 +106,7 @@ function PublicCardThumbnail({ card }) {
   const isTikTok = card.source === 'tiktok';
 
   return (
-    <div style={{ position: 'relative', width: '100%', paddingBottom: '56.25%', background: '#1a1a1a', flexShrink: 0 }}>
+    <div style={{ position: 'relative', width: '100%', paddingBottom: '56.25%', background: '#fafafa', flexShrink: 0 }}>
       {hasThumbnail ? (
         <img src={card.thumbnail_url} alt={card.title || ''} onError={() => setImgFailed(true)} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} loading="lazy" />
       ) : isInstagram ? (
@@ -117,8 +117,8 @@ function PublicCardThumbnail({ card }) {
         <FaviconPlaceholder url={card.url || ''} />
       )}
       {isVideo && hasThumbnail && (
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.22)' }}>
-          <div style={{ width: 46, height: 46, borderRadius: '50%', background: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(10,10,10,0.08)' }}>
+          <div style={{ width: 46, height: 46, borderRadius: '50%', background: 'rgba(10,10,10,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Play size={18} color="white" fill="white" style={{ marginLeft: 2 }} />
           </div>
         </div>
@@ -132,27 +132,27 @@ function PublicLinkCard({ card }) {
   const domain = getDomain(card.url);
   return (
     <div
-      style={{ background: '#2E2E2E', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16, overflow: 'hidden', cursor: 'pointer', display: 'flex', flexDirection: 'column', transition: 'transform 0.15s, box-shadow 0.15s', breakInside: 'avoid', marginBottom: 16 }}
+      style={{ background: '#ffffff', border: '1px solid #e5e5e5', borderRadius: 24, overflow: 'hidden', cursor: 'pointer', display: 'flex', flexDirection: 'column', transition: 'transform 0.15s, box-shadow 0.15s', breakInside: 'avoid', marginBottom: 16 }}
       onClick={() => window.open(card.url, '_blank', 'noopener,noreferrer')}
-      onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 32px rgba(0,0,0,0.45)'; }}
+      onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 32px rgba(10,10,10,0.10)'; }}
       onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = ''; }}
       title={card.url}
     >
       <PublicCardThumbnail card={card} />
       <div style={{ padding: '11px 14px 13px', display: 'flex', flexDirection: 'column', gap: '5px', flex: 1 }}>
         {card.title ? (
-          <p style={{ fontSize: '13px', fontWeight: 600, lineHeight: 1.4, margin: 0, color: '#fff', wordBreak: 'break-word' }}>{card.title}</p>
+          <p style={{ fontSize: '13px', fontWeight: 600, lineHeight: 1.4, margin: 0, color: '#0a0a0a', wordBreak: 'break-word' }}>{card.title}</p>
         ) : (
-          <p style={{ fontSize: '12px', color: '#888', margin: 0, wordBreak: 'break-all' }}>{domain}</p>
+          <p style={{ fontSize: '12px', color: '#737373', margin: 0, wordBreak: 'break-all' }}>{domain}</p>
         )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#888', fontSize: '11px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#737373', fontSize: '11px' }}>
           <Globe size={10} />
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{domain}</span>
         </div>
         {tags.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '3px' }}>
             {tags.map(tag => (
-              <span key={tag} style={{ padding: '2px 9px', borderRadius: 50, fontSize: '11px', fontWeight: 600, background: 'rgba(199,255,46,0.08)', color: '#C7FF2E' }}>{tag}</span>
+              <span key={tag} style={{ padding: '2px 9px', borderRadius: 18, fontSize: '11px', fontWeight: 600, background: 'rgba(10,10,10,0.05)', color: '#0a0a0a' }}>{tag}</span>
             ))}
           </div>
         )}
@@ -166,25 +166,25 @@ function PublicNoteCard({ card }) {
   const tags = parseTags(card.tags);
   const isLong = (card.note_text || '').length > 250;
   return (
-    <div style={{ background: 'rgba(199,255,46,0.04)', border: '1px solid rgba(199,255,46,0.11)', borderRadius: 16, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '9px', breakInside: 'avoid', marginBottom: 16 }}>
+    <div style={{ background: 'rgba(10,10,10,0.03)', border: '1px solid #e5e5e5', borderRadius: 24, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '9px', breakInside: 'avoid', marginBottom: 16 }}>
       {card.title && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-          <FileText size={12} color="#C7FF2E" style={{ flexShrink: 0 }} />
-          <span style={{ fontSize: '13px', fontWeight: 700, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{card.title}</span>
+          <FileText size={12} color="#0a0a0a" style={{ flexShrink: 0 }} />
+          <span style={{ fontSize: '13px', fontWeight: 700, color: '#0a0a0a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{card.title}</span>
         </div>
       )}
-      <p style={{ fontSize: '13px', lineHeight: 1.65, color: '#888', margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: expanded ? 'unset' : 5, WebkitBoxOrient: 'vertical' }}>
+      <p style={{ fontSize: '13px', lineHeight: 1.65, color: '#737373', margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: expanded ? 'unset' : 5, WebkitBoxOrient: 'vertical' }}>
         {card.note_text}
       </p>
       {isLong && (
-        <button onClick={() => setExpanded(p => !p)} style={{ alignSelf: 'flex-start', fontSize: '11px', fontWeight: 700, color: '#C7FF2E', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+        <button onClick={() => setExpanded(p => !p)} style={{ alignSelf: 'flex-start', fontSize: '11px', fontWeight: 700, color: '#0a0a0a', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
           {expanded ? 'Collapse ↑' : 'Read more ↓'}
         </button>
       )}
       {tags.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
           {tags.map(tag => (
-            <span key={tag} style={{ padding: '2px 9px', borderRadius: 50, fontSize: '11px', fontWeight: 600, background: 'rgba(199,255,46,0.08)', color: '#C7FF2E' }}>{tag}</span>
+            <span key={tag} style={{ padding: '2px 9px', borderRadius: 18, fontSize: '11px', fontWeight: 600, background: 'rgba(10,10,10,0.05)', color: '#0a0a0a' }}>{tag}</span>
           ))}
         </div>
       )}
@@ -202,34 +202,34 @@ function PublicCollectionTile({ collection, onClick }) {
 
   return (
     <div
-      style={{ background: '#2E2E2E', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16, overflow: 'hidden', cursor: 'pointer', display: 'flex', flexDirection: 'column', transition: 'transform 0.15s, box-shadow 0.15s' }}
+      style={{ background: '#ffffff', border: '1px solid #e5e5e5', borderRadius: 24, overflow: 'hidden', cursor: 'pointer', display: 'flex', flexDirection: 'column', transition: 'transform 0.15s, box-shadow 0.15s' }}
       onClick={onClick}
-      onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 32px rgba(0,0,0,0.45)'; }}
+      onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 32px rgba(10,10,10,0.10)'; }}
       onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = ''; }}
     >
-      <div style={{ width: '100%', height: 118, background: '#1a1a1a', flexShrink: 0, overflow: 'hidden' }}>
+      <div style={{ width: '100%', height: 118, background: '#fafafa', flexShrink: 0, overflow: 'hidden' }}>
         {hasCover ? (
           <img src={collection.cover_thumbnail} alt="" onError={() => setImgFailed(true)} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} loading="lazy" />
         ) : isInstagramCover ? (
-          <div style={{ width: '100%', height: '100%', background: 'linear-gradient(135deg, #833ab4 0%, #fd1d1d 50%, #fcb045 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Instagram size={28} color="rgba(255,255,255,0.92)" strokeWidth={1.5} />
+          <div style={{ width: '100%', height: '100%', background: 'linear-gradient(135deg, #737373 0%, #e7000b 50%, #737373 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Instagram size={28} color="#0a0a0a" strokeWidth={1.5} />
           </div>
         ) : isTikTokCover ? (
-          <div style={{ width: '100%', height: '100%', background: '#010101', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Music2 size={28} color="rgba(255,255,255,0.85)" strokeWidth={1.5} />
+          <div style={{ width: '100%', height: '100%', background: '#f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Music2 size={28} color="#0a0a0a" strokeWidth={1.5} />
           </div>
         ) : (
           <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Library size={26} color="#555" />
+            <Library size={26} color="#a3a3a3" />
           </div>
         )}
       </div>
       <div style={{ padding: '12px 14px 14px', display: 'flex', flexDirection: 'column', gap: 5 }}>
-        <span style={{ fontWeight: 600, fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#fff' }}>{collection.name}</span>
+        <span style={{ fontWeight: 600, fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#0a0a0a' }}>{collection.name}</span>
         {collection.description && (
-          <p style={{ fontSize: '12px', color: '#888', lineHeight: 1.4, margin: 0, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{collection.description}</p>
+          <p style={{ fontSize: '12px', color: '#737373', lineHeight: 1.4, margin: 0, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{collection.description}</p>
         )}
-        <span style={{ fontSize: '11px', color: '#555' }}>{collection.card_count} {collection.card_count === 1 ? 'card' : 'cards'}</span>
+        <span style={{ fontSize: '11px', color: '#737373' }}>{collection.card_count} {collection.card_count === 1 ? 'card' : 'cards'}</span>
       </div>
     </div>
   );
@@ -264,19 +264,19 @@ export default function PublicMind() {
   }, [token]);
 
   const page = {
-    minHeight: '100vh', background: '#0F0F0F',
+    minHeight: '100vh', background: '#f5f5f5',
     display: 'flex', flexDirection: 'column',
     padding: '0 16px 48px',
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-    color: '#fff',
+    color: '#0a0a0a',
   };
   const container = { maxWidth: 1100, margin: '0 auto', width: '100%' };
-  const sectionLabel = { fontSize: '11px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#555', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' };
+  const sectionLabel = { fontSize: '11px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#737373', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' };
 
   if (state === 'loading') {
     return (
       <div style={{ ...page, alignItems: 'center', justifyContent: 'center' }}>
-        <p style={{ color: '#888' }}>Loading…</p>
+        <p style={{ color: '#737373' }}>Loading…</p>
       </div>
     );
   }
@@ -285,16 +285,16 @@ export default function PublicMind() {
     return (
       <div style={{ ...page, alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ textAlign: 'center' }}>
-          <XCircle size={40} color="#e53e3e" style={{ marginBottom: 16 }} />
+          <XCircle size={40} color="#e7000b" style={{ marginBottom: 16 }} />
           <p style={{ fontSize: '18px', fontWeight: 700, marginBottom: 8 }}>This link is no longer available.</p>
-          <p style={{ color: '#888', fontSize: '14px' }}>The shared collections link is invalid or has been revoked.</p>
+          <p style={{ color: '#737373', fontSize: '14px' }}>The shared collections link is invalid or has been revoked.</p>
         </div>
       </div>
     );
   }
 
   const brandHeader = (
-    <div style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', marginBottom: 32, paddingTop: 24, paddingBottom: 20 }}>
+    <div style={{ borderBottom: '1px solid #e5e5e5', marginBottom: 32, paddingTop: 24, paddingBottom: 20 }}>
       <div style={container}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -304,7 +304,7 @@ export default function PublicMind() {
               <span style={{ fontWeight: 800, fontSize: '16px', letterSpacing: '-0.5px' }}>{agency.agency_name || 'MASSIV TV'}</span>
             )}
           </div>
-          <span style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#555', background: 'rgba(255,255,255,0.06)', borderRadius: 50, padding: '4px 12px' }}>
+          <span style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#737373', background: 'rgba(10,10,10,0.04)', borderRadius: 18, padding: '4px 12px' }}>
             Shared Collections
           </span>
         </div>
@@ -322,7 +322,7 @@ export default function PublicMind() {
         <div style={container}>
           <button
             onClick={() => setSelectedCollection(null)}
-            style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '13px', fontWeight: 600, padding: '0 0 20px', letterSpacing: 0 }}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'none', border: 'none', color: '#737373', cursor: 'pointer', fontSize: '13px', fontWeight: 600, padding: '0 0 20px', letterSpacing: 0 }}
           >
             <ChevronLeft size={15} /> Back to collections
           </button>
@@ -330,15 +330,15 @@ export default function PublicMind() {
           <div style={{ marginBottom: 28 }}>
             <h1 style={{ fontSize: '26px', fontWeight: 700, letterSpacing: '-0.5px', margin: '0 0 8px' }}>{selectedCollection.name}</h1>
             {selectedCollection.description && (
-              <p style={{ fontSize: '14px', color: '#888', margin: 0, lineHeight: 1.6 }}>{selectedCollection.description}</p>
+              <p style={{ fontSize: '14px', color: '#737373', margin: 0, lineHeight: 1.6 }}>{selectedCollection.description}</p>
             )}
-            <p style={{ fontSize: '12px', color: '#555', marginTop: 8 }}>
+            <p style={{ fontSize: '12px', color: '#737373', marginTop: 8 }}>
               {cards.length} {cards.length === 1 ? 'card' : 'cards'} · read-only view
             </p>
           </div>
 
           {cards.length === 0 ? (
-            <div style={{ padding: '48px 20px', textAlign: 'center', color: '#555', fontSize: '14px' }}>This collection has no cards yet.</div>
+            <div style={{ padding: '48px 20px', textAlign: 'center', color: '#737373', fontSize: '14px' }}>This collection has no cards yet.</div>
           ) : (
             <div style={{ columnWidth: '300px', columnGap: '16px' }}>
               {cards.map(card => (
@@ -366,11 +366,11 @@ export default function PublicMind() {
           return (
             <section key={cat} style={{ marginBottom: '40px' }}>
               <h2 style={sectionLabel}>
-                <Icon size={13} color="#555" />
+                <Icon size={13} color="#a3a3a3" />
                 {section.label}
               </h2>
               {section.collections.length === 0 ? (
-                <div style={{ padding: '18px 20px', background: '#1e1e1e', borderRadius: 14, color: '#555', fontSize: '13px' }}>
+                <div style={{ padding: '18px 20px', background: '#fafafa', borderRadius: 10, color: '#737373', fontSize: '13px' }}>
                   No collections in this category.
                 </div>
               ) : (

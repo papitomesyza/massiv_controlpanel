@@ -187,14 +187,14 @@ export default function Projects() {
       <div style={{ display: 'flex', gap: '4px', marginBottom: '16px' }}>
         <button
           className={`btn btn-sm ${activeTab === 'active' ? 'btn-primary' : 'btn-ghost'}`}
-          style={{ borderRadius: '50px', padding: '5px 18px' }}
+          style={{ borderRadius: '18px', padding: '5px 18px' }}
           onClick={() => switchTab('active')}
         >
           Active
         </button>
         <button
           className={`btn btn-sm ${activeTab === 'completed' ? 'btn-primary' : 'btn-ghost'}`}
-          style={{ borderRadius: '50px', padding: '5px 18px' }}
+          style={{ borderRadius: '18px', padding: '5px 18px' }}
           onClick={() => switchTab('completed')}
         >
           Completed
@@ -244,7 +244,7 @@ export default function Projects() {
             <span className="leads-section-label">LEADS</span>
             <span className="leads-count-badge">{leads.length}</span>
           </div>
-          {leadsOpen ? <ChevronUp size={14} color="#888" /> : <ChevronDown size={14} color="#888" />}
+          {leadsOpen ? <ChevronUp size={14} color="#737373" /> : <ChevronDown size={14} color="#737373" />}
         </div>
 
         {leadsOpen && (
@@ -307,7 +307,7 @@ function ProjectRowCard({ p }) {
         {/* Row 2: Client · Category + margin */}
         <div className="project-row-meta">
           {p.client_name && <span>{p.client_name}</span>}
-          {p.client_name && p.category_name && <span style={{ color: '#333' }}>·</span>}
+          {p.client_name && p.category_name && <span style={{ color: '#d4d4d4' }}>·</span>}
           {p.category_name && <span>{p.category_name}</span>}
           <span style={{ marginLeft: 'auto' }}><MarginBadge p={p} /></span>
         </div>
@@ -440,7 +440,7 @@ function GanttView({ projects }) {
     <div className="card card-pad gantt-wrap">
       <div style={{ position: 'relative', height: '22px', marginLeft: '180px', marginBottom: '8px' }}>
         {months.map((m, i) => (
-          <div key={i} style={{ position: 'absolute', left: `${m.pos}%`, fontSize: '10px', color: '#888', whiteSpace: 'nowrap', transform: 'translateX(-50%)' }}>
+          <div key={i} style={{ position: 'absolute', left: `${m.pos}%`, fontSize: '10px', color: '#737373', whiteSpace: 'nowrap', transform: 'translateX(-50%)' }}>
             {m.label}
           </div>
         ))}
@@ -451,7 +451,7 @@ function GanttView({ projects }) {
           <div key={i} style={{
             position: 'absolute', top: 0, bottom: 0,
             left: `calc(180px + ${m.pos}% * (100% - 180px) / 100)`,
-            width: '1px', background: 'rgba(255,255,255,0.05)', pointerEvents: 'none',
+            width: '1px', background: 'rgba(10,10,10,0.03)', pointerEvents: 'none',
           }} />
         ))}
 
@@ -460,9 +460,9 @@ function GanttView({ projects }) {
           const end      = p.shoot_date ? new Date(p.shoot_date + 'T00:00:00') : now;
           const isOverdue = p.shoot_date && end < now && p.status !== 'completed';
           const color    = p.status === 'completed'
-            ? '#333333'
+            ? '#d4d4d4'
             : isOverdue
-              ? 'rgba(255,68,68,0.55)'
+              ? '#e7000b'
               : 'var(--gradient-card)';
           const opacity  = p.status === 'completed' ? 0.5 : 0.9;
           const left     = posPercent(start);
@@ -471,7 +471,7 @@ function GanttView({ projects }) {
 
           return (
             <div key={p.id} style={{ display: 'flex', alignItems: 'center', marginBottom: '8px', height: '30px' }}>
-              <div style={{ width: '180px', flexShrink: 0, paddingRight: '12px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', fontSize: '12px', color: '#ccc' }}>
+              <div style={{ width: '180px', flexShrink: 0, paddingRight: '12px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', fontSize: '12px', color: '#171717' }}>
                 <Link to={`/projects/${p.id}`} className="link" style={{ color: 'inherit', fontSize: '12px' }}>{p.title}</Link>
               </div>
               <div style={{ flex: 1, position: 'relative', height: '20px' }}>
@@ -486,10 +486,10 @@ function GanttView({ projects }) {
         })}
       </div>
 
-      <div className="flex-center gap-2" style={{ marginTop: '16px', fontSize: '11px', color: '#888' }}>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '8px', background: 'var(--gradient-card)', borderRadius: '2px', display: 'inline-block' }} /> Active</span>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '8px', background: '#333333', borderRadius: '2px', display: 'inline-block' }} /> Completed</span>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '8px', background: 'rgba(255,68,68,0.55)', borderRadius: '2px', display: 'inline-block' }} /> Overdue</span>
+      <div className="flex-center gap-2" style={{ marginTop: '16px', fontSize: '11px', color: '#737373' }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '8px', background: 'var(--gradient-card)', borderRadius: '6px', display: 'inline-block' }} /> Active</span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '8px', background: '#f5f5f5', borderRadius: '6px', display: 'inline-block' }} /> Completed</span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '8px', background: 'rgba(231,0,11,0.10)', borderRadius: '6px', display: 'inline-block' }} /> Overdue</span>
       </div>
     </div>
   );

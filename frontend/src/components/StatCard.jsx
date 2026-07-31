@@ -29,7 +29,7 @@ function SparkLine({ data, dataKey, color, uid }) {
   );
 }
 
-function RingGauge({ percent, color }) {
+function RingGauge({ percent, color, track }) {
   const size = 54;
   const sw = 5;
   const r = (size - sw) / 2;
@@ -39,9 +39,9 @@ function RingGauge({ percent, color }) {
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
       <circle cx={size/2} cy={size/2} r={r} fill="none"
-        stroke="rgba(255,255,255,0.08)" strokeWidth={sw} />
+        stroke={track || '#e5e5e5'} strokeWidth={sw} />
       <circle cx={size/2} cy={size/2} r={r} fill="none"
-        stroke={color || '#C7FF2E'} strokeWidth={sw}
+        stroke={color || '#0a0a0a'} strokeWidth={sw}
         strokeDasharray={`${filled} ${circ - filled}`}
         strokeLinecap="round"
         transform={`rotate(-90 ${size/2} ${size/2})`}
@@ -59,9 +59,10 @@ export default function StatCard({
 }) {
   const uid = useId().replace(/[^a-z0-9]/gi, '');
   const valueStyle = warn && !danger ? { color: 'var(--warning)' } : undefined;
+  // Marks invert along with the card they sit on.
   const sparkColor = gradient
-    ? 'rgba(255,255,255,0.75)'
-    : (danger ? '#FF4444' : '#C7FF2E');
+    ? 'rgba(255,255,255,0.80)'
+    : (danger ? '#e7000b' : '#0a0a0a');
 
   return (
     <div
@@ -76,7 +77,11 @@ export default function StatCard({
       )}
       {ring !== undefined && (
         <div style={{ position: 'absolute', top: '18px', right: '18px' }}>
-          <RingGauge percent={ring} color={ringColor || '#C7FF2E'} />
+          <RingGauge
+            percent={ring}
+            color={ringColor || (gradient ? '#fafafa' : '#0a0a0a')}
+            track={gradient ? 'rgba(255,255,255,0.18)' : '#e5e5e5'}
+          />
         </div>
       )}
       <div className="stat-label">{label}</div>

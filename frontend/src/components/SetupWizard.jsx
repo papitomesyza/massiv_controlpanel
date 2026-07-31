@@ -203,7 +203,7 @@ export default function SetupWizard({ onComplete, onSkip, onDismissPermanently }
             </button>
           )}
           <div style={{ flex: 1 }} />
-          <button className="btn btn-ghost btn-sm" style={{ marginRight: '8px', fontSize: '12px', color: '#666' }} onClick={onSkip}>
+          <button className="btn btn-ghost btn-sm" style={{ marginRight: '8px', fontSize: '12px', color: '#737373' }} onClick={onSkip}>
             Skip for now
           </button>
           {step < 3 ? (

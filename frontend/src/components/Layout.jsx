@@ -158,7 +158,7 @@ export default function Layout() {
             <div>
               <div>{name}</div>
               {tagline && (
-                <div style={{ fontSize: '10px', color: '#888888', fontWeight: 400, marginTop: '2px', letterSpacing: '0' }}>
+                <div style={{ fontSize: '10px', color: '#737373', fontWeight: 400, marginTop: '2px', letterSpacing: '0' }}>
                   {tagline}
                 </div>
               )}
@@ -185,7 +185,7 @@ export default function Layout() {
               ))}
             </div>
 
-            <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', margin: '4px 16px' }} />
+            <div style={{ height: '1px', background: 'rgba(10,10,10,0.04)', margin: '4px 16px' }} />
 
             {/* DATABASE */}
             <button
@@ -204,7 +204,7 @@ export default function Layout() {
               ))}
             </div>
 
-            <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', margin: '4px 16px' }} />
+            <div style={{ height: '1px', background: 'rgba(10,10,10,0.04)', margin: '4px 16px' }} />
 
             {/* THE MIND */}
             <button
@@ -223,7 +223,7 @@ export default function Layout() {
               ))}
             </div>
 
-            <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', margin: '4px 16px' }} />
+            <div style={{ height: '1px', background: 'rgba(10,10,10,0.04)', margin: '4px 16px' }} />
 
             {/* PITCHES */}
             <button
@@ -248,7 +248,7 @@ export default function Layout() {
               <div className="sidebar-upcoming-title">Upcoming</div>
               {upcoming.map(ev => (
                 <div key={ev.id} className="sidebar-upcoming-item">
-                  <span className="sidebar-upcoming-dot" style={{ background: ev.color || '#7BA01A' }} />
+                  <span className="sidebar-upcoming-dot" style={{ background: ev.color || '#0a0a0a' }} />
                   <div className="sidebar-upcoming-info">
                     <span className="sidebar-upcoming-name">{ev.title.length > 22 ? ev.title.slice(0, 22) + '…' : ev.title}</span>
                     <span className="sidebar-upcoming-date">{fmtShortDate(ev.start_date)}</span>

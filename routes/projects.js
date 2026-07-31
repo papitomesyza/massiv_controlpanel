@@ -190,7 +190,7 @@ function syncProjectCalendarEvents(projectId, title, deadline, shootDate, shootL
 
   if (shootDate && PRODUCTION_GROUPS.includes(groupName)) {
     db.prepare(
-      "INSERT INTO calendar_events (project_id, title, event_type, start_date, location, start_time, end_time, color) VALUES (?, ?, 'shoot', ?, ?, ?, ?, '#723CEB')"
+      "INSERT INTO calendar_events (project_id, title, event_type, start_date, location, start_time, end_time, color) VALUES (?, ?, 'shoot', ?, ?, ?, ?, '#0a0a0a')"
     ).run(projectId, title, shootDate, shootLocation || null, shootStartTime || null, shootEndTime || null);
   }
 }
