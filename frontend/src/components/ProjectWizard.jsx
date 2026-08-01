@@ -64,7 +64,7 @@ export function LocationPicker({ value, lat, lng, onChange }) {
   return (
     <div ref={wrapRef} style={{ position: 'relative' }}>
       <div style={{ position: 'relative' }}>
-        <Search size={14} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#737373', pointerEvents: 'none' }} />
+        <Search size={14} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-mid-gray)', pointerEvents: 'none' }} />
         <input
           className="input"
           style={{ paddingLeft: '34px', paddingRight: lat ? '34px' : '12px' }}
@@ -77,33 +77,33 @@ export function LocationPicker({ value, lat, lng, onChange }) {
           <button
             type="button"
             onClick={clearLocation}
-            style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#737373', padding: '2px' }}
+            style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-mid-gray)', padding: '2px' }}
           >
             <X size={14} />
           </button>
         )}
       </div>
       {lat && (
-        <div style={{ fontSize: '11px', color: '#0a0a0a', marginTop: '4px' }}>
+        <div style={{ fontSize: '11px', color: 'var(--color-ink)', marginTop: '4px' }}>
           ✓ Location saved ({parseFloat(lat).toFixed(4)}, {parseFloat(lng).toFixed(4)})
         </div>
       )}
-      {loading && <div style={{ fontSize: '11px', color: '#737373', marginTop: '4px' }}>Searching...</div>}
+      {loading && <div style={{ fontSize: '11px', color: 'var(--color-mid-gray)', marginTop: '4px' }}>Searching...</div>}
       {open && results.length > 0 && (
         <div style={{
           position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 2000,
-          background: '#ffffff', border: '1px solid #e5e5e5', borderRadius: '10px',
-          boxShadow: '0 8px 24px rgba(10,10,10,0.10)', overflow: 'hidden',
+          background: 'var(--surface-card)', border: '1px solid var(--color-hairline)', borderRadius: '10px',
+          boxShadow: '0 8px 24px var(--overlay-07)', overflow: 'hidden',
         }}>
           {results.map((r, i) => (
             <div
               key={i}
               onClick={() => select(r)}
               style={{
-                padding: '10px 14px', cursor: 'pointer', fontSize: '12px', color: '#171717',
-                borderBottom: i < results.length - 1 ? '1px solid #e5e5e5' : 'none',
+                padding: '10px 14px', cursor: 'pointer', fontSize: '12px', color: 'var(--color-ink-soft)',
+                borderBottom: i < results.length - 1 ? '1px solid var(--color-hairline)' : 'none',
               }}
-              onMouseEnter={e => e.currentTarget.style.background = 'rgba(10,10,10,0.05)'}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--overlay-04)'}
               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
             >
               {r.display_name}
@@ -367,10 +367,10 @@ export default function ProjectWizard({ onClose, onCreated, prefill }) {
             return (
               <React.Fragment key={i}>
                 <div className={`wizard-step-item ${i === step ? 'current' : i < step ? 'done' : ''} ${isSkipped ? 'skipped' : ''}`}>
-                  <div className="wizard-step-dot" style={isSkipped ? { background: '#f5f5f5', borderColor: '#e5e5e5' } : {}}>
-                    {isSkipped ? <X size={10} style={{ color: '#737373' }} /> : i < step ? <Check size={10} /> : <span>{i + 1}</span>}
+                  <div className="wizard-step-dot" style={isSkipped ? { background: 'var(--surface-input-fill)', borderColor: 'var(--color-hairline)' } : {}}>
+                    {isSkipped ? <X size={10} style={{ color: 'var(--color-mid-gray)' }} /> : i < step ? <Check size={10} /> : <span>{i + 1}</span>}
                   </div>
-                  <span className="wizard-step-label" style={isSkipped ? { color: '#737373' } : {}}>{label}</span>
+                  <span className="wizard-step-label" style={isSkipped ? { color: 'var(--color-mid-gray)' } : {}}>{label}</span>
                 </div>
                 {i < STEP_LABELS.length - 1 && <div className="wizard-step-connector" />}
               </React.Fragment>
@@ -574,12 +574,12 @@ export function PhaseTaskStep({ phaseName, tasks, onToggle, onCrewChange, onAddC
     return (
       <div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-          <span className="section-title" style={{ color: '#737373' }}>{phaseName} Phase</span>
+          <span className="section-title" style={{ color: 'var(--color-mid-gray)' }}>{phaseName} Phase</span>
           {onSkip && (
             <button
               className="btn btn-ghost btn-sm"
               onClick={onSkip}
-              style={{ fontSize: '11px', color: '#737373' }}
+              style={{ fontSize: '11px', color: 'var(--color-mid-gray)' }}
             >
               Restore phase
             </button>
@@ -587,9 +587,9 @@ export function PhaseTaskStep({ phaseName, tasks, onToggle, onCrewChange, onAddC
         </div>
         <div style={{
           padding: '24px', textAlign: 'center', borderRadius: '10px',
-          background: 'rgba(10,10,10,0.02)', border: '1px dashed #e5e5e5',
+          background: 'var(--overlay-01)', border: '1px dashed var(--color-hairline)',
         }}>
-          <SkipForward size={20} style={{ color: '#737373', marginBottom: '8px' }} />
+          <SkipForward size={20} style={{ color: 'var(--color-mid-gray)', marginBottom: '8px' }} />
           <div className="text-2 text-sm">This phase will be skipped</div>
           <div className="text-xs text-2" style={{ marginTop: '4px' }}>No phase or tasks will be created for {phaseName}</div>
         </div>
@@ -610,7 +610,7 @@ export function PhaseTaskStep({ phaseName, tasks, onToggle, onCrewChange, onAddC
           <button
             className="btn btn-ghost btn-sm"
             onClick={onSkip}
-            style={{ fontSize: '11px', color: '#737373' }}
+            style={{ fontSize: '11px', color: 'var(--color-mid-gray)' }}
           >
             <SkipForward size={12} /> Skip phase
           </button>
@@ -629,7 +629,7 @@ export function PhaseTaskStep({ phaseName, tasks, onToggle, onCrewChange, onAddC
             <div className="task-select-top">
               <label className="task-select-check" onClick={() => onToggle(idx)}>
                 <div className={`task-card-checkbox ${task.included ? 'checked' : ''}`}>
-                  {task.included && <Check size={10} color="#0a0a0a" />}
+                  {task.included && <Check size={10} color="var(--color-ink)" />}
                 </div>
                 <span className="task-select-name">{task.title}</span>
               </label>
@@ -666,8 +666,8 @@ export function PhaseTaskStep({ phaseName, tasks, onToggle, onCrewChange, onAddC
                 key={i}
                 onClick={() => onAddCustom(title)}
                 style={{
-                  background: 'rgba(10,10,10,0.04)', border: '1px solid #e5e5e5',
-                  borderRadius: '18px', padding: '4px 12px', fontSize: '11px', color: '#171717',
+                  background: 'var(--overlay-03)', border: '1px solid var(--color-hairline)',
+                  borderRadius: '18px', padding: '4px 12px', fontSize: '11px', color: 'var(--color-ink-soft)',
                   cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px',
                 }}
               >
@@ -729,7 +729,7 @@ function StepReview({ basicInfo, phaseTasks, clients, categories, skippedPhases 
             <div className="text-xs text-2" style={{ textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>{phase}</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
               {selected.map((t, i) => (
-                <span key={i} style={{ background: 'rgba(10,10,10,0.05)', border: '1px solid #e5e5e5', borderRadius: '18px', padding: '3px 10px', fontSize: '11px', color: 'var(--accent)' }}>{t.title}</span>
+                <span key={i} style={{ background: 'var(--overlay-04)', border: '1px solid var(--color-hairline)', borderRadius: '18px', padding: '3px 10px', fontSize: '11px', color: 'var(--accent)' }}>{t.title}</span>
               ))}
             </div>
           </div>
@@ -738,7 +738,7 @@ function StepReview({ basicInfo, phaseTasks, clients, categories, skippedPhases 
 
       {skippedPhases.size > 0 && [...skippedPhases].map(phase => (
         <div key={phase} style={{ marginBottom: '10px', opacity: 0.4 }}>
-          <div className="text-xs" style={{ textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px', color: '#737373' }}>{phase} — skipped</div>
+          <div className="text-xs" style={{ textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px', color: 'var(--color-mid-gray)' }}>{phase} — skipped</div>
         </div>
       ))}
 

@@ -103,20 +103,20 @@ export default function PublicExpense() {
   }
 
   const cardStyle = {
-    background: '#fafafa',
+    background: 'var(--color-surface-alt)',
     borderRadius: '24px',
     padding: '32px',
     width: '100%',
     maxWidth: '480px',
-    boxShadow: '0 8px 40px rgba(10,10,10,0.10)',
+    boxShadow: '0 8px 40px var(--overlay-07)',
   };
 
   const inputStyle = {
     width: '100%',
-    background: '#ffffff',
-    border: '1px solid #e5e5e5',
+    background: 'var(--surface-card)',
+    border: '1px solid var(--color-hairline)',
     borderRadius: '10px',
-    color: '#0a0a0a',
+    color: 'var(--color-ink)',
     padding: '14px 16px',
     fontSize: '16px',
     outline: 'none',
@@ -127,7 +127,7 @@ export default function PublicExpense() {
 
   const labelStyle = {
     display: 'block',
-    color: '#737373',
+    color: 'var(--color-mid-gray)',
     fontSize: '13px',
     marginBottom: '6px',
     fontWeight: 500,
@@ -138,7 +138,7 @@ export default function PublicExpense() {
   const gradientBtn = {
     width: '100%',
     background: 'var(--gradient-card)',
-    color: '#fafafa',
+    color: 'var(--accent-contrast)',
     border: 'none',
     borderRadius: '10px',
     padding: '16px',
@@ -154,7 +154,7 @@ export default function PublicExpense() {
 
   const page = {
     minHeight: '100vh',
-    background: '#f5f5f5',
+    background: 'var(--surface-input-fill)',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
@@ -167,7 +167,7 @@ export default function PublicExpense() {
     return (
       <div style={page}>
         <div style={{ ...cardStyle, textAlign: 'center' }}>
-          <div style={{ color: '#737373', fontSize: '15px' }}>Verifying access...</div>
+          <div style={{ color: 'var(--color-mid-gray)', fontSize: '15px' }}>Verifying access...</div>
         </div>
       </div>
     );
@@ -177,11 +177,11 @@ export default function PublicExpense() {
     return (
       <div style={page}>
         <div style={{ ...cardStyle, textAlign: 'center' }}>
-          <Lock size={40} color="#a3a3a3" style={{ marginBottom: '16px' }} />
-          <div style={{ color: '#0a0a0a', fontSize: '18px', fontWeight: 700, marginBottom: '8px' }}>
+          <Lock size={40} color="var(--color-faint)" style={{ marginBottom: '16px' }} />
+          <div style={{ color: 'var(--color-ink)', fontSize: '18px', fontWeight: 700, marginBottom: '8px' }}>
             This expense link has expired.
           </div>
-          <div style={{ color: '#737373', fontSize: '14px' }}>
+          <div style={{ color: 'var(--color-mid-gray)', fontSize: '14px' }}>
             {projectTitle ? `"${projectTitle}" has been marked as completed.` : 'This project has been marked as completed.'}
           </div>
         </div>
@@ -193,11 +193,11 @@ export default function PublicExpense() {
     return (
       <div style={page}>
         <div style={{ ...cardStyle, textAlign: 'center' }}>
-          <XCircle size={40} color="#e7000b" style={{ marginBottom: '16px' }} />
-          <div style={{ color: '#0a0a0a', fontSize: '18px', fontWeight: 700, marginBottom: '8px' }}>
+          <XCircle size={40} color="var(--color-ember)" style={{ marginBottom: '16px' }} />
+          <div style={{ color: 'var(--color-ink)', fontSize: '18px', fontWeight: 700, marginBottom: '8px' }}>
             This link is no longer valid.
           </div>
-          <div style={{ color: '#737373', fontSize: '14px' }}>
+          <div style={{ color: 'var(--color-mid-gray)', fontSize: '14px' }}>
             Contact your project manager for assistance.
           </div>
         </div>
@@ -210,18 +210,18 @@ export default function PublicExpense() {
       <div style={page}>
         <div style={{ ...cardStyle, textAlign: 'center' }}>
           <div style={{ animation: 'scaleIn 0.3s ease-out' }}>
-            <CheckCircle size={56} color="#0a0a0a" style={{ marginBottom: '16px' }} />
+            <CheckCircle size={56} color="var(--color-ink)" style={{ marginBottom: '16px' }} />
           </div>
-          <div style={{ color: '#0a0a0a', fontSize: '20px', fontWeight: 700, marginBottom: '8px' }}>
+          <div style={{ color: 'var(--color-ink)', fontSize: '20px', fontWeight: 700, marginBottom: '8px' }}>
             Expense Submitted
           </div>
-          <div style={{ color: '#737373', fontSize: '14px', marginBottom: '4px' }}>
+          <div style={{ color: 'var(--color-mid-gray)', fontSize: '14px', marginBottom: '4px' }}>
             €{parseFloat(submitted.amount).toFixed(2)} · {submitted.category}
           </div>
-          <div style={{ color: '#737373', fontSize: '13px', marginBottom: '28px' }}>
+          <div style={{ color: 'var(--color-mid-gray)', fontSize: '13px', marginBottom: '28px' }}>
             {projectTitle}
           </div>
-          <button onClick={resetForAnother} style={{ ...gradientBtn, background: '#ffffff', border: '1px solid #e5e5e5' }}>
+          <button onClick={resetForAnother} style={{ ...gradientBtn, background: 'var(--surface-card)', border: '1px solid var(--color-hairline)' }}>
             Submit Another Expense
           </button>
         </div>
@@ -238,10 +238,10 @@ export default function PublicExpense() {
           {agency.agency_logo_base64 ? (
             <img src={agency.agency_logo_base64} alt="Agency" style={{ height: '40px', objectFit: 'contain', marginBottom: '12px' }} />
           ) : agency.agency_name ? (
-            <div style={{ color: '#0a0a0a', fontWeight: 800, fontSize: '18px', marginBottom: '12px' }}>{agency.agency_name}</div>
+            <div style={{ color: 'var(--color-ink)', fontWeight: 800, fontSize: '18px', marginBottom: '12px' }}>{agency.agency_name}</div>
           ) : null}
-          <div style={{ color: '#0a0a0a', fontWeight: 700, fontSize: '18px' }}>{projectTitle}</div>
-          <div style={{ color: '#737373', fontSize: '13px', marginTop: '4px' }}>Expense Submission</div>
+          <div style={{ color: 'var(--color-ink)', fontWeight: 700, fontSize: '18px' }}>{projectTitle}</div>
+          <div style={{ color: 'var(--color-mid-gray)', fontSize: '13px', marginTop: '4px' }}>Expense Submission</div>
         </div>
 
         <form onSubmit={submit}>
@@ -309,17 +309,17 @@ export default function PublicExpense() {
           <div style={rowStyle}>
             <label style={labelStyle}>Invoice / Receipt</label>
             {file ? (
-              <div style={{ background: '#ffffff', border: '1px solid #e5e5e5', borderRadius: '10px', padding: '12px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ background: 'var(--surface-card)', border: '1px solid var(--color-hairline)', borderRadius: '10px', padding: '12px', display: 'flex', alignItems: 'center', gap: '12px' }}>
                 {filePreview ? (
                   <img src={filePreview} alt="preview" style={{ width: '56px', height: '56px', borderRadius: '6px', objectFit: 'cover', flexShrink: 0 }} />
                 ) : (
-                  <FileText size={32} color="#737373" style={{ flexShrink: 0 }} />
+                  <FileText size={32} color="var(--color-mid-gray)" style={{ flexShrink: 0 }} />
                 )}
                 <div style={{ flex: 1, overflow: 'hidden' }}>
-                  <div style={{ color: '#0a0a0a', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</div>
-                  <div style={{ color: '#737373', fontSize: '12px' }}>{(file.size / 1024).toFixed(0)} KB</div>
+                  <div style={{ color: 'var(--color-ink)', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</div>
+                  <div style={{ color: 'var(--color-mid-gray)', fontSize: '12px' }}>{(file.size / 1024).toFixed(0)} KB</div>
                 </div>
-                <button type="button" onClick={removeFile} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#737373', padding: '4px' }}>
+                <button type="button" onClick={removeFile} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-mid-gray)', padding: '4px' }}>
                   <X size={18} />
                 </button>
               </div>
@@ -330,18 +330,18 @@ export default function PublicExpense() {
                 onDragLeave={() => setDragOver(false)}
                 onDrop={e => { e.preventDefault(); setDragOver(false); handleFile(e.dataTransfer.files[0]); }}
                 style={{
-                  border: `2px dashed ${dragOver ? 'var(--accent)' : '#e5e5e5'}`,
+                  border: `2px dashed ${dragOver ? 'var(--accent)' : 'var(--color-hairline)'}`,
                   borderRadius: '10px',
                   padding: '24px',
                   textAlign: 'center',
                   cursor: 'pointer',
-                  background: dragOver ? 'rgba(10,10,10,0.03)' : 'transparent',
+                  background: dragOver ? 'var(--overlay-02)' : 'transparent',
                   transition: 'all 0.15s',
                 }}
               >
-                <Upload size={24} color="#737373" style={{ marginBottom: '8px' }} />
-                <div style={{ color: '#737373', fontSize: '14px' }}>Tap to upload or drag & drop</div>
-                <div style={{ color: '#737373', fontSize: '12px', marginTop: '4px' }}>JPG, PNG, WebP, PDF · Max 10MB</div>
+                <Upload size={24} color="var(--color-mid-gray)" style={{ marginBottom: '8px' }} />
+                <div style={{ color: 'var(--color-mid-gray)', fontSize: '14px' }}>Tap to upload or drag & drop</div>
+                <div style={{ color: 'var(--color-mid-gray)', fontSize: '12px', marginTop: '4px' }}>JPG, PNG, WebP, PDF · Max 10MB</div>
               </div>
             )}
             <input
@@ -353,7 +353,7 @@ export default function PublicExpense() {
             />
           </div>
 
-          {error && <div style={{ color: '#e7000b', fontSize: '13px', marginBottom: '12px' }}>{error}</div>}
+          {error && <div style={{ color: 'var(--color-ember)', fontSize: '13px', marginBottom: '12px' }}>{error}</div>}
 
           <button type="submit" style={gradientBtn} disabled={submitting}>
             <Receipt size={18} />

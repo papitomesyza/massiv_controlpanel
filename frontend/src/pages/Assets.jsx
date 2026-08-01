@@ -143,9 +143,9 @@ export default function Assets() {
         <div className="assets-providers-panel" style={{ width: '38%', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {providers.length === 0 && archivedProviders.length === 0 && (
             <div className="card" style={{ padding: '48px 24px', textAlign: 'center' }}>
-              <Package size={36} color="#d4d4d4" style={{ margin: '0 auto 12px' }} />
-              <div style={{ color: '#0a0a0a', fontWeight: 600, marginBottom: '8px' }}>No providers yet</div>
-              <div style={{ color: '#737373', fontSize: '13px', marginBottom: '20px' }}>Add your first asset provider to get started.</div>
+              <Package size={36} color="var(--color-hairline-strong)" style={{ margin: '0 auto 12px' }} />
+              <div style={{ color: 'var(--color-ink)', fontWeight: 600, marginBottom: '8px' }}>No providers yet</div>
+              <div style={{ color: 'var(--color-mid-gray)', fontSize: '13px', marginBottom: '20px' }}>Add your first asset provider to get started.</div>
               <button className="btn btn-primary" onClick={() => setShowProviderModal(true)}>
                 <Plus size={14} /> Add Provider
               </button>
@@ -170,7 +170,7 @@ export default function Assets() {
                 style={{
                   display: 'flex', alignItems: 'center', gap: '6px',
                   background: 'none', border: 'none', cursor: 'pointer',
-                  color: '#737373', fontSize: '12px', padding: '6px 2px', width: '100%',
+                  color: 'var(--color-mid-gray)', fontSize: '12px', padding: '6px 2px', width: '100%',
                 }}
               >
                 {showArchived ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
@@ -195,8 +195,8 @@ export default function Assets() {
         {/* Right panel — Items */}
         <div className="card" style={{ flex: 1, minHeight: '420px', display: 'flex', flexDirection: 'column' }}>
           {!selectedProvider ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, padding: '64px 24px', color: '#737373' }}>
-              <Package size={40} color="#d4d4d4" style={{ marginBottom: '12px' }} />
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, padding: '64px 24px', color: 'var(--color-mid-gray)' }}>
+              <Package size={40} color="var(--color-hairline-strong)" style={{ marginBottom: '12px' }} />
               <div style={{ fontSize: '14px' }}>Select a provider to view their items</div>
             </div>
           ) : (
@@ -205,7 +205,7 @@ export default function Assets() {
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid var(--border)', gap: '12px', flexWrap: 'wrap' }}>
                 <div>
                   <div style={{ fontWeight: 700, fontSize: '15px' }}>{selectedProvider.name}</div>
-                  <div style={{ fontSize: '12px', color: '#737373', marginTop: '2px' }}>{selectedProvider.type}</div>
+                  <div style={{ fontSize: '12px', color: 'var(--color-mid-gray)', marginTop: '2px' }}>{selectedProvider.type}</div>
                 </div>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                   {categories.length > 1 && (
@@ -228,7 +228,7 @@ export default function Assets() {
               {/* Items — desktop table */}
               <div className="assets-items-table-wrap" style={{ flex: 1, overflowY: 'auto' }}>
                 {filteredItems.length === 0 ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px 24px', color: '#737373' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px 24px', color: 'var(--color-mid-gray)' }}>
                     <div style={{ fontSize: '13px', marginBottom: '16px' }}>
                       {categoryFilter ? `No items in "${categoryFilter}"` : 'No items yet for this provider'}
                     </div>
@@ -242,21 +242,21 @@ export default function Assets() {
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
                       <tr>
-                        <th style={{ textAlign: 'left', padding: '10px 20px', fontSize: '11px', color: '#737373', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--border)' }}>Item Name</th>
-                        <th style={{ textAlign: 'left', padding: '10px 12px', fontSize: '11px', color: '#737373', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--border)' }}>Category</th>
-                        <th style={{ textAlign: 'right', padding: '10px 12px', fontSize: '11px', color: '#737373', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--border)' }}>Daily Rate €</th>
-                        <th style={{ textAlign: 'left', padding: '10px 12px', fontSize: '11px', color: '#737373', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--border)', width: '160px' }}>Notes</th>
+                        <th style={{ textAlign: 'left', padding: '10px 20px', fontSize: '11px', color: 'var(--color-mid-gray)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--border)' }}>Item Name</th>
+                        <th style={{ textAlign: 'left', padding: '10px 12px', fontSize: '11px', color: 'var(--color-mid-gray)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--border)' }}>Category</th>
+                        <th style={{ textAlign: 'right', padding: '10px 12px', fontSize: '11px', color: 'var(--color-mid-gray)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--border)' }}>Daily Rate €</th>
+                        <th style={{ textAlign: 'left', padding: '10px 12px', fontSize: '11px', color: 'var(--color-mid-gray)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--border)', width: '160px' }}>Notes</th>
                         <th style={{ width: '44px', borderBottom: '1px solid var(--border)' }} />
                       </tr>
                     </thead>
                     <tbody>
                       {filteredItems.map(item => (
-                        <tr key={item.id} style={{ borderBottom: '1px solid #e5e5e5' }}>
+                        <tr key={item.id} style={{ borderBottom: '1px solid var(--color-hairline)' }}>
                           <td style={{ padding: '10px 20px', fontSize: '13px', fontWeight: 500 }}>{item.item_name}</td>
                           <td style={{ padding: '10px 12px' }}>
                             {item.category ? (
-                              <span style={{ background: 'rgba(10,10,10,0.04)', padding: '2px 8px', borderRadius: '6px', fontSize: '11px', color: '#737373' }}>{item.category}</span>
-                            ) : <span style={{ color: '#737373' }}>—</span>}
+                              <span style={{ background: 'var(--overlay-03)', padding: '2px 8px', borderRadius: '6px', fontSize: '11px', color: 'var(--color-mid-gray)' }}>{item.category}</span>
+                            ) : <span style={{ color: 'var(--color-mid-gray)' }}>—</span>}
                           </td>
                           <td style={{ padding: '10px 12px', textAlign: 'right' }}>
                             {editingRate?.id === item.id ? (
@@ -277,19 +277,19 @@ export default function Assets() {
                               <span
                                 title="Click to edit"
                                 onClick={() => setEditingRate({ id: item.id, value: String(item.daily_rate || 0) })}
-                                style={{ cursor: 'pointer', fontWeight: 600, fontSize: '13px', padding: '3px 10px', borderRadius: '6px', background: 'rgba(10,10,10,0.03)', display: 'inline-block' }}
+                                style={{ cursor: 'pointer', fontWeight: 600, fontSize: '13px', padding: '3px 10px', borderRadius: '6px', background: 'var(--overlay-02)', display: 'inline-block' }}
                               >
                                 €{Number(item.daily_rate || 0).toFixed(0)}
                               </span>
                             )}
                           </td>
-                          <td style={{ padding: '10px 12px', fontSize: '12px', color: '#737373', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {item.notes || <span style={{ color: '#d4d4d4' }}>—</span>}
+                          <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--color-mid-gray)', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {item.notes || <span style={{ color: 'var(--color-hairline-strong)' }}>—</span>}
                           </td>
                           <td style={{ padding: '10px 12px' }}>
                             <button
                               className="btn-icon"
-                              style={{ color: '#e7000b' }}
+                              style={{ color: 'var(--color-ember)' }}
                               title="Remove from provider"
                               onClick={() => deleteProviderItem(item.id)}
                             >
@@ -306,7 +306,7 @@ export default function Assets() {
               {/* Items — mobile cards */}
               <div className="assets-items-cards-wrap">
                 {filteredItems.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '32px 16px', color: '#737373', fontSize: '13px' }}>
+                  <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--color-mid-gray)', fontSize: '13px' }}>
                     {categoryFilter ? `No items in "${categoryFilter}"` : 'No items yet'}
                   </div>
                 ) : (
@@ -314,10 +314,10 @@ export default function Assets() {
                     <div key={item.id} className="assets-item-card">
                       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontWeight: 700, fontSize: '14px', color: '#0a0a0a', marginBottom: '4px' }}>{item.item_name}</div>
+                          <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--color-ink)', marginBottom: '4px' }}>{item.item_name}</div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                             {item.category && (
-                              <span style={{ background: 'rgba(10,10,10,0.04)', padding: '2px 8px', borderRadius: '6px', fontSize: '11px', color: '#737373' }}>{item.category}</span>
+                              <span style={{ background: 'var(--overlay-03)', padding: '2px 8px', borderRadius: '6px', fontSize: '11px', color: 'var(--color-mid-gray)' }}>{item.category}</span>
                             )}
                             {editingRate?.id === item.id ? (
                               <input
@@ -344,12 +344,12 @@ export default function Assets() {
                             )}
                           </div>
                           {item.notes && (
-                            <div style={{ fontSize: '12px', color: '#737373', marginTop: '4px' }}>{item.notes}</div>
+                            <div style={{ fontSize: '12px', color: 'var(--color-mid-gray)', marginTop: '4px' }}>{item.notes}</div>
                           )}
                         </div>
                         <button
                           className="btn-icon"
-                          style={{ color: '#e7000b', flexShrink: 0 }}
+                          style={{ color: 'var(--color-ember)', flexShrink: 0 }}
                           title="Remove from provider"
                           onClick={() => deleteProviderItem(item.id)}
                         >
@@ -394,8 +394,8 @@ function ProviderCard({ provider, isSelected, onSelect, onEdit, onArchive, onRes
     <div
       onClick={archived ? undefined : onSelect}
       style={{
-        background: isSelected ? 'rgba(10,10,10,0.05)' : 'rgba(10,10,10,0.02)',
-        border: `1px solid ${isSelected ? '#0a0a0a' : 'var(--border)'}`,
+        background: isSelected ? 'var(--overlay-04)' : 'var(--overlay-01)',
+        border: `1px solid ${isSelected ? 'var(--color-ink)' : 'var(--border)'}`,
         borderRadius: '10px',
         padding: '14px 16px',
         cursor: archived ? 'default' : 'pointer',
@@ -409,12 +409,12 @@ function ProviderCard({ provider, isSelected, onSelect, onEdit, onArchive, onRes
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
             <span style={{
               fontSize: '10px', fontWeight: 600, padding: '2px 8px', borderRadius: '24px',
-              background: 'rgba(10,10,10,0.05)', color: 'var(--accent)',
+              background: 'var(--overlay-04)', color: 'var(--accent)',
               textTransform: 'uppercase', letterSpacing: '0.04em',
             }}>
               {provider.type || 'Rental House'}
             </span>
-            <span style={{ fontSize: '11px', color: '#737373' }}>
+            <span style={{ fontSize: '11px', color: 'var(--color-mid-gray)' }}>
               {provider.item_count} item{provider.item_count !== 1 ? 's' : ''}
             </span>
           </div>
@@ -435,7 +435,7 @@ function ProviderCard({ provider, isSelected, onSelect, onEdit, onArchive, onRes
       {(provider.location || provider.phone) && (
         <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
           {provider.location && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: '#737373' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: 'var(--color-mid-gray)' }}>
               <MapPin size={11} />
               {provider.location}
             </div>
@@ -445,7 +445,7 @@ function ProviderCard({ provider, isSelected, onSelect, onEdit, onArchive, onRes
               href={waLink}
               target="_blank"
               rel="noopener noreferrer"
-              style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: '#171717', textDecoration: 'none' }}
+              style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: 'var(--color-ink-soft)', textDecoration: 'none' }}
               onClick={e => e.stopPropagation()}
             >
               <Phone size={11} />
@@ -602,17 +602,17 @@ function AddItemModal({ allItems, existingItemIds, onAdd, onCreate, onClose }) {
             {dropdownOpen && (filtered.length > 0 || showCreateOption) && (
               <div style={{
                 position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 200,
-                background: '#fafafa', border: '1px solid var(--border)', borderRadius: '10px',
-                boxShadow: '0 8px 24px rgba(10,10,10,0.35)', marginTop: '4px', overflow: 'hidden',
+                background: 'var(--color-surface-alt)', border: '1px solid var(--border)', borderRadius: '10px',
+                boxShadow: '0 8px 24px var(--scrim)', marginTop: '4px', overflow: 'hidden',
               }}>
                 {filtered.map(item => (
                   <div
                     key={item.id}
                     onMouseDown={() => pick(item)}
-                    style={{ padding: '9px 14px', cursor: 'pointer', fontSize: '13px', borderBottom: '1px solid #e5e5e5', display: 'flex', alignItems: 'center', gap: '8px' }}
+                    style={{ padding: '9px 14px', cursor: 'pointer', fontSize: '13px', borderBottom: '1px solid var(--color-hairline)', display: 'flex', alignItems: 'center', gap: '8px' }}
                   >
                     <span style={{ flex: 1 }}>{item.name}</span>
-                    {item.category && <span style={{ color: '#737373', fontSize: '11px' }}>{item.category}</span>}
+                    {item.category && <span style={{ color: 'var(--color-mid-gray)', fontSize: '11px' }}>{item.category}</span>}
                   </div>
                 ))}
                 {showCreateOption && (
@@ -627,7 +627,7 @@ function AddItemModal({ allItems, existingItemIds, onAdd, onCreate, onClose }) {
               </div>
             )}
             {(selectedItem || createNew) && (
-              <div style={{ marginTop: '4px', fontSize: '11px', color: createNew ? 'var(--accent)' : '#0a0a0a' }}>
+              <div style={{ marginTop: '4px', fontSize: '11px', color: createNew ? 'var(--accent)' : 'var(--color-ink)' }}>
                 {createNew ? `Will create new item "${query.trim()}"` : 'Existing item selected'}
               </div>
             )}

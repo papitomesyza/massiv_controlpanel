@@ -102,8 +102,8 @@ export default function Clients() {
                       <tr key={c.id}>
                         <td>
                           {c.company
-                            ? <Building2 size={14} style={{ color: '#737373' }} />
-                            : <User size={14} style={{ color: '#737373' }} />}
+                            ? <Building2 size={14} style={{ color: 'var(--color-mid-gray)' }} />
+                            : <User size={14} style={{ color: 'var(--color-mid-gray)' }} />}
                         </td>
                         <td><Link to={`/clients/${c.id}`} className="link text-bold">{c.name}</Link></td>
                         <td className="text-2">{c.company || '—'}</td>
@@ -139,8 +139,8 @@ export default function Clients() {
                 >
                   <div className="people-mini-name">
                     {c.company
-                      ? <Building2 size={11} style={{ color: '#737373', flexShrink: 0 }} />
-                      : <User size={11} style={{ color: '#737373', flexShrink: 0 }} />}
+                      ? <Building2 size={11} style={{ color: 'var(--color-mid-gray)', flexShrink: 0 }} />
+                      : <User size={11} style={{ color: 'var(--color-mid-gray)', flexShrink: 0 }} />}
                     {c.name}
                   </div>
                   {c.company && <div className="people-mini-sub">{c.company}</div>}
@@ -208,8 +208,8 @@ function ClientDetailSheet({ client, onClose }) {
       <div className="detail-sheet-box" onClick={e => e.stopPropagation()}>
         <div className="detail-sheet-header">
           <div>
-            <div style={{ fontWeight: 700, fontSize: '18px', color: '#0a0a0a', lineHeight: 1.2 }}>{client.name}</div>
-            {client.company && <div style={{ fontSize: '13px', color: '#737373', marginTop: '3px' }}>{client.company}</div>}
+            <div style={{ fontWeight: 700, fontSize: '18px', color: 'var(--color-ink)', lineHeight: 1.2 }}>{client.name}</div>
+            {client.company && <div style={{ fontSize: '13px', color: 'var(--color-mid-gray)', marginTop: '3px' }}>{client.company}</div>}
           </div>
           <button className="modal-close" onClick={onClose}><X size={18} /></button>
         </div>
@@ -240,7 +240,7 @@ function ClientDetailSheet({ client, onClose }) {
           </div>
           <div className="fin-row" style={{ padding: '10px 0', borderBottom: 'none' }}>
             <span className="text-2" style={{ fontSize: '12px' }}>Revenue</span>
-            <span style={{ fontSize: '13px', fontWeight: 700, color: '#0a0a0a' }}>{fmt(client.total_revenue)}</span>
+            <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-ink)' }}>{fmt(client.total_revenue)}</span>
           </div>
         </div>
 

@@ -23,9 +23,9 @@ function createProjectIcon() {
     className: '',
     html: `<div style="
       width:20px;height:20px;border-radius:50%;
-      background:linear-gradient(135deg,#0a0a0a,#0a0a0a);
-      border:2px solid #e5e5e5;
-      box-shadow:0 2px 8px rgba(10,10,10,0.10);
+      background:linear-gradient(135deg,var(--color-ink),var(--color-ink));
+      border:2px solid var(--color-hairline);
+      box-shadow:0 2px 8px var(--overlay-07);
     "></div>`,
     iconSize: [20, 20],
     iconAnchor: [10, 10],
@@ -62,7 +62,7 @@ function FitBoundsButton({ positions }) {
       className="btn btn-secondary btn-sm"
       style={{
         position: 'absolute', top: '12px', right: '12px', zIndex: 1000,
-        boxShadow: '0 2px 12px rgba(10,10,10,0.10)',
+        boxShadow: '0 2px 12px var(--overlay-07)',
         borderRadius: '10px',
       }}
     >
@@ -178,7 +178,7 @@ export default function Map() {
           <MapContainer
             center={defaultCenter}
             zoom={defaultZoom}
-            style={{ height: '100%', width: '100%', background: '#f5f5f5' }}
+            style={{ height: '100%', width: '100%', background: 'var(--surface-input-fill)' }}
             zoomControl={true}
           >
             <TileLayer
@@ -195,11 +195,11 @@ export default function Map() {
                   className: '',
                   html: `<div style="
                     width:36px;height:36px;border-radius:50%;
-                    background:linear-gradient(135deg,#0a0a0a,#0a0a0a);
-                    border:2px solid #e5e5e5;
-                    box-shadow:0 2px 8px rgba(10,10,10,0.10);
+                    background:linear-gradient(135deg,var(--color-ink),var(--color-ink));
+                    border:2px solid var(--color-hairline);
+                    box-shadow:0 2px 8px var(--overlay-07);
                     display:flex;align-items:center;justify-content:center;
-                    color:#0a0a0a;font-size:13px;font-weight:700;
+                    color:var(--color-ink);font-size:13px;font-weight:700;
                   ">${cluster.getChildCount()}</div>`,
                   iconSize: [36, 36],
                   iconAnchor: [18, 18],
@@ -212,16 +212,16 @@ export default function Map() {
                     icon={projectIcon}
                   >
                     <Popup>
-                      <div style={{ background: '#fafafa', minWidth: '200px', padding: '4px 0' }}>
-                        <div style={{ fontWeight: 700, color: '#0a0a0a', marginBottom: '6px', fontSize: '14px' }}>{p.title}</div>
-                        {p.client_name && <div style={{ color: '#737373', fontSize: '12px', marginBottom: '4px' }}>{p.client_name}</div>}
+                      <div style={{ background: 'var(--color-surface-alt)', minWidth: '200px', padding: '4px 0' }}>
+                        <div style={{ fontWeight: 700, color: 'var(--color-ink)', marginBottom: '6px', fontSize: '14px' }}>{p.title}</div>
+                        {p.client_name && <div style={{ color: 'var(--color-mid-gray)', fontSize: '12px', marginBottom: '4px' }}>{p.client_name}</div>}
                         <div style={{ display: 'flex', gap: '6px', marginBottom: '8px', flexWrap: 'wrap' }}>
                           {p.category_name && (
-                            <span style={{ background: 'rgba(10,10,10,0.05)', color: 'var(--accent)', padding: '2px 8px', borderRadius: '18px', fontSize: '11px' }}>
+                            <span style={{ background: 'var(--overlay-04)', color: 'var(--accent)', padding: '2px 8px', borderRadius: '18px', fontSize: '11px' }}>
                               {p.category_name}
                             </span>
                           )}
-                          <span style={{ background: 'rgba(10,10,10,0.05)', color: '#171717', padding: '2px 8px', borderRadius: '18px', fontSize: '11px' }}>
+                          <span style={{ background: 'var(--overlay-04)', color: 'var(--color-ink-soft)', padding: '2px 8px', borderRadius: '18px', fontSize: '11px' }}>
                             {p.status?.replace(/-/g, ' ')}
                           </span>
                         </div>
@@ -234,7 +234,7 @@ export default function Map() {
                           onClick={() => navigate(`/projects/${p.id}`)}
                           style={{
                             background: 'var(--gradient-card)',
-                            color: '#fafafa', border: 'none', borderRadius: '10px',
+                            color: 'var(--accent-contrast)', border: 'none', borderRadius: '10px',
                             padding: '5px 12px', fontSize: '12px', cursor: 'pointer', fontWeight: 600,
                           }}
                         >
@@ -256,20 +256,20 @@ export default function Map() {
         {!loading && mappable.length === 0 && (
           <div style={{
             position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
-            zIndex: 1000, background: '#ffffff', border: '1px solid #e5e5e5',
+            zIndex: 1000, background: 'var(--surface-card)', border: '1px solid var(--color-hairline)',
             boxShadow: 'var(--shadow-overlay)',
             borderRadius: 'var(--radius-cards)', padding: '32px 40px', textAlign: 'center', maxWidth: '360px',
           }}>
-            <MapPin size={32} style={{ color: '#737373', marginBottom: '12px' }} />
-            <div style={{ color: '#0a0a0a', fontWeight: 600, marginBottom: '8px' }}>No project locations yet</div>
-            <div style={{ color: '#737373', fontSize: '13px' }}>
+            <MapPin size={32} style={{ color: 'var(--color-mid-gray)', marginBottom: '12px' }} />
+            <div style={{ color: 'var(--color-ink)', fontWeight: 600, marginBottom: '8px' }}>No project locations yet</div>
+            <div style={{ color: 'var(--color-mid-gray)', fontSize: '13px' }}>
               Add shoot locations to your projects to see them here.
             </div>
           </div>
         )}
       </div>
 
-      <footer style={{ marginTop: '12px', textAlign: 'center', fontSize: '11px', color: '#737373', flexShrink: 0 }}>built by year28</footer>
+      <footer style={{ marginTop: '12px', textAlign: 'center', fontSize: '11px', color: 'var(--color-mid-gray)', flexShrink: 0 }}>built by year28</footer>
     </div>
   );
 }

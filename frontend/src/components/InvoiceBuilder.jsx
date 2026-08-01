@@ -262,7 +262,7 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 1000,
-      background: 'rgba(10,10,10,0.45)', backdropFilter: 'blur(8px)',
+      background: 'var(--scrim-strong)', backdropFilter: 'blur(8px)',
       display: 'flex', flexDirection: 'column',
     }}>
       {/* Top bar */}
@@ -277,7 +277,7 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
           )}
         </div>
         <div className="inv-topbar-right">
-          {err && <span style={{ color: '#e7000b', fontSize: '13px' }}>{err}</span>}
+          {err && <span style={{ color: 'var(--color-ember)', fontSize: '13px' }}>{err}</span>}
           {!isLocked && (
             <>
               <button className="btn btn-ghost btn-sm" onClick={handleSave} disabled={saving || issuing}>
@@ -297,7 +297,7 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
               {invoice?.status === 'issued' && (
                 <button
                   className="btn btn-sm"
-                  style={{ background: '#0a0a0a', color: '#fafafa', gap: '6px', borderRadius: 'var(--radius-buttons)' }}
+                  style={{ background: 'var(--color-ink)', color: 'var(--accent-contrast)', gap: '6px', borderRadius: 'var(--radius-buttons)' }}
                   onClick={async () => {
                     try {
                       await api.put(`/invoices/${invoice.id}`, buildPayload());
@@ -357,7 +357,7 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
               <div className="section-title" style={{ marginBottom: '14px', fontSize: '12px' }}>Invoice Details</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 <div>
-                  <label style={{ fontSize: '11px', color: '#737373', display: 'block', marginBottom: '4px' }}>
+                  <label style={{ fontSize: '11px', color: 'var(--color-mid-gray)', display: 'block', marginBottom: '4px' }}>
                     Linked Project
                   </label>
                   <select className="select" value={projectId}
@@ -368,18 +368,18 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                   <div>
-                    <label style={{ fontSize: '11px', color: '#737373', display: 'block', marginBottom: '4px' }}>Issue Date</label>
+                    <label style={{ fontSize: '11px', color: 'var(--color-mid-gray)', display: 'block', marginBottom: '4px' }}>Issue Date</label>
                     <input className="input" type="date" value={issueDate}
                       onChange={e => setIssueDate(e.target.value)} disabled={isLocked} />
                   </div>
                   <div>
-                    <label style={{ fontSize: '11px', color: '#737373', display: 'block', marginBottom: '4px' }}>Due Date</label>
+                    <label style={{ fontSize: '11px', color: 'var(--color-mid-gray)', display: 'block', marginBottom: '4px' }}>Due Date</label>
                     <input className="input" type="date" value={dueDate}
                       onChange={e => setDueDate(e.target.value)} disabled={isLocked} />
                   </div>
                 </div>
                 <div>
-                  <label style={{ fontSize: '11px', color: '#737373', display: 'block', marginBottom: '4px' }}>Language</label>
+                  <label style={{ fontSize: '11px', color: 'var(--color-mid-gray)', display: 'block', marginBottom: '4px' }}>Language</label>
                   <select className="select" value={language}
                     onChange={e => setLanguage(e.target.value)} disabled={isLocked} style={{ width: '100%' }}>
                     <option value="sq">Albanian (Shqip)</option>
@@ -396,7 +396,7 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
           <div className="card">
             <div style={{
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '14px 18px', borderBottom: '1px solid #e5e5e5',
+              padding: '14px 18px', borderBottom: '1px solid var(--color-hairline)',
             }}>
               <div className="section-title" style={{ fontSize: '12px' }}>Line Items</div>
               {!isLocked && !isMobile && (
@@ -469,7 +469,7 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
                     <div style={{
                       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                       marginTop: '10px', paddingTop: '10px',
-                      borderTop: '1px solid #e5e5e5',
+                      borderTop: '1px solid var(--color-hairline)',
                       gap: '8px',
                     }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
@@ -479,13 +479,13 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
                           onChange={e => updateLine(line._id, 'line_discount_pct', e.target.value)}
                           disabled={isLocked} />
                       </div>
-                      <span style={{ fontWeight: 700, fontSize: '16px', color: '#0a0a0a', whiteSpace: 'nowrap' }}>
+                      <span style={{ fontWeight: 700, fontSize: '16px', color: 'var(--color-ink)', whiteSpace: 'nowrap' }}>
                         {fmt(computeLineAmount(line))}
                       </span>
                       {!isLocked && (
                         <button className="btn btn-ghost btn-sm" style={{ padding: '8px', flexShrink: 0 }}
                           onClick={() => removeLine(line._id)}>
-                          <Trash2 size={14} style={{ color: '#e7000b' }} />
+                          <Trash2 size={14} style={{ color: 'var(--color-ember)' }} />
                         </button>
                       )}
                     </div>
@@ -493,7 +493,7 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
                 ))}
 
                 {lines.length === 0 && (
-                  <div style={{ padding: '20px', textAlign: 'center', color: '#737373', fontSize: '13px' }}>
+                  <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-mid-gray)', fontSize: '13px' }}>
                     No line items yet — add one below
                   </div>
                 )}
@@ -510,9 +510,9 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
-                    <tr style={{ background: 'rgba(10,10,10,0.02)' }}>
+                    <tr style={{ background: 'var(--overlay-01)' }}>
                       {['Shifra', 'Emërtimi', 'Njësia', 'Sasia', 'Çmimi (€)', 'Rabat %', 'Vlera'].map(h => (
-                        <th key={h} style={{ padding: '8px 10px', fontSize: '11px', color: '#737373',
+                        <th key={h} style={{ padding: '8px 10px', fontSize: '11px', color: 'var(--color-mid-gray)',
                           fontWeight: 600, textAlign: h === 'Vlera' || h === 'Sasia' || h === 'Çmimi (€)' || h === 'Rabat %' ? 'right' : 'left',
                           whiteSpace: 'nowrap' }}>
                           {h}
@@ -523,7 +523,7 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
                   </thead>
                   <tbody>
                     {lines.map((line) => (
-                      <tr key={line._id} style={{ borderTop: '1px solid #e5e5e5' }}>
+                      <tr key={line._id} style={{ borderTop: '1px solid var(--color-hairline)' }}>
                         {/* Code */}
                         <td style={{ padding: '6px 8px', width: '80px' }}>
                           <div style={{ display: 'flex', gap: '4px' }}>
@@ -584,14 +584,14 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
                             disabled={isLocked} />
                         </td>
                         {/* Amount */}
-                        <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: '#0a0a0a', whiteSpace: 'nowrap', fontSize: '13px' }}>
+                        <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'var(--color-ink)', whiteSpace: 'nowrap', fontSize: '13px' }}>
                           {fmt(computeLineAmount(line))}
                         </td>
                         {!isLocked && (
                           <td style={{ padding: '6px 8px' }}>
                             <button className="btn btn-ghost btn-sm" style={{ padding: '4px' }}
                               onClick={() => removeLine(line._id)}>
-                              <Trash2 size={13} style={{ color: '#e7000b' }} />
+                              <Trash2 size={13} style={{ color: 'var(--color-ember)' }} />
                             </button>
                           </td>
                         )}
@@ -599,7 +599,7 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
                     ))}
                     {lines.length === 0 && (
                       <tr>
-                        <td colSpan={8} style={{ padding: '24px', textAlign: 'center', color: '#737373', fontSize: '13px' }}>
+                        <td colSpan={8} style={{ padding: '24px', textAlign: 'center', color: 'var(--color-mid-gray)', fontSize: '13px' }}>
                           No line items yet — add one above
                         </td>
                       </tr>
@@ -628,7 +628,7 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
 
               {/* Invoice-level discount */}
               <div>
-                <label style={{ fontSize: '11px', color: '#737373', display: 'block', marginBottom: '6px' }}>
+                <label style={{ fontSize: '11px', color: 'var(--color-mid-gray)', display: 'block', marginBottom: '6px' }}>
                   Rabat-i (Invoice Discount)
                 </label>
                 <div className="inv-totals-disc-row" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -652,7 +652,7 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
 
               {/* Tax toggle */}
               <div className="inv-tax-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
-                <div style={{ fontSize: '13px', color: '#737373', lineHeight: 1.3 }}>
+                <div style={{ fontSize: '13px', color: 'var(--color-mid-gray)', lineHeight: 1.3 }}>
                   Tax ({invSettings?.tax_label || 'Tax'}) {taxRate}%
                 </div>
                 <button
@@ -664,7 +664,7 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
                 </button>
               </div>
 
-              <div style={{ borderTop: '1px solid #e5e5e5', paddingTop: '10px' }}>
+              <div style={{ borderTop: '1px solid var(--color-hairline)', paddingTop: '10px' }}>
                 <TotalRow label="Gjithsejt" value={fmt(totals.subtotal)} />
                 {totals.discountAmt > 0 && (
                   <TotalRow label="Rabat-i" value={`- ${fmt(totals.discountAmt)}`} />
@@ -675,7 +675,7 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
                 {taxEnabled && (
                   <TotalRow label={`${invSettings?.tax_label || 'Tax'} ${taxRate}%`} value={fmt(totals.taxAmt)} />
                 )}
-                <div style={{ borderTop: '1px solid #e5e5e5', marginTop: '8px', paddingTop: '8px' }}>
+                <div style={{ borderTop: '1px solid var(--color-hairline)', marginTop: '8px', paddingTop: '8px' }}>
                   <TotalRow label="Për pagesë" value={fmt(totals.amountDue)} bold large />
                 </div>
               </div>
@@ -691,10 +691,10 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
 function TotalRow({ label, value, bold, large }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-      <span style={{ fontSize: large ? '13px' : '12px', color: bold ? '#171717' : '#737373', fontWeight: bold ? 600 : 400 }}>
+      <span style={{ fontSize: large ? '13px' : '12px', color: bold ? 'var(--color-ink-soft)' : 'var(--color-mid-gray)', fontWeight: bold ? 600 : 400 }}>
         {label}
       </span>
-      <span style={{ fontSize: large ? '16px' : '13px', fontWeight: bold ? 700 : 500, color: bold ? '#0a0a0a' : '#171717' }}>
+      <span style={{ fontSize: large ? '16px' : '13px', fontWeight: bold ? 700 : 500, color: bold ? 'var(--color-ink)' : 'var(--color-ink-soft)' }}>
         {value}
       </span>
     </div>
@@ -706,22 +706,22 @@ function StatusBadge({ status, dueDate }) {
   const isOverdue = status === 'issued' && dueDate && new Date(dueDate + 'T23:59:59') < now;
 
   if (isOverdue) return (
-    <span className="badge" style={{ background: 'rgba(231,0,11,0.07)', color: '#e7000b', fontSize: '11px' }}>
+    <span className="badge" style={{ background: 'var(--ember-soft)', color: 'var(--color-ember)', fontSize: '11px' }}>
       Overdue
     </span>
   );
   if (status === 'paid') return (
-    <span className="badge" style={{ background: 'rgba(10,10,10,0.06)', color: '#0a0a0a', fontSize: '11px' }}>
+    <span className="badge" style={{ background: 'var(--overlay-05)', color: 'var(--color-ink)', fontSize: '11px' }}>
       Paid
     </span>
   );
   if (status === 'issued') return (
-    <span className="badge" style={{ background: 'rgba(10,10,10,0.05)', color: 'var(--accent)', fontSize: '11px' }}>
+    <span className="badge" style={{ background: 'var(--overlay-04)', color: 'var(--accent)', fontSize: '11px' }}>
       Issued
     </span>
   );
   return (
-    <span className="badge" style={{ background: 'rgba(10,10,10,0.05)', color: '#737373', fontSize: '11px' }}>
+    <span className="badge" style={{ background: 'var(--overlay-04)', color: 'var(--color-mid-gray)', fontSize: '11px' }}>
       Draft
     </span>
   );
@@ -752,23 +752,23 @@ function ServicePickerModal({ services, onSelect, onClose }) {
     <div
       style={{
         position: 'fixed', inset: 0, zIndex: 3000,
-        background: 'rgba(10,10,10,0.45)', backdropFilter: 'blur(8px)',
+        background: 'var(--scrim-strong)', backdropFilter: 'blur(8px)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div style={{
-        background: '#fafafa', borderRadius: '24px',
+        background: 'var(--color-surface-alt)', borderRadius: '24px',
         width: '420px', maxWidth: '92vw', maxHeight: '70vh',
         display: 'flex', flexDirection: 'column',
-        boxShadow: '0 24px 80px rgba(10,10,10,0.45)',
-        border: '1px solid #e5e5e5',
+        boxShadow: '0 24px 80px var(--scrim-strong)',
+        border: '1px solid var(--color-hairline)',
       }}>
         {/* Header */}
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '16px 18px 12px',
-          borderBottom: '1px solid #e5e5e5',
+          borderBottom: '1px solid var(--color-hairline)',
           flexShrink: 0,
         }}>
           <span style={{ fontWeight: 700, fontSize: '14px' }}>Select Service</span>
@@ -778,7 +778,7 @@ function ServicePickerModal({ services, onSelect, onClose }) {
         </div>
         {/* Search */}
         <div style={{ padding: '12px 18px 8px', flexShrink: 0, position: 'relative' }}>
-          <Search size={13} style={{ position: 'absolute', left: '28px', top: '50%', transform: 'translateY(-50%)', color: '#737373', pointerEvents: 'none' }} />
+          <Search size={13} style={{ position: 'absolute', left: '28px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-mid-gray)', pointerEvents: 'none' }} />
           <input
             ref={inputRef}
             className="input"
@@ -791,7 +791,7 @@ function ServicePickerModal({ services, onSelect, onClose }) {
         {/* Service list */}
         <div style={{ overflowY: 'auto', flex: 1, paddingBottom: '8px' }}>
           {filtered.length === 0 ? (
-            <div style={{ padding: '28px 18px', textAlign: 'center', color: '#737373', fontSize: '13px', lineHeight: 1.5 }}>
+            <div style={{ padding: '28px 18px', textAlign: 'center', color: 'var(--color-mid-gray)', fontSize: '13px', lineHeight: 1.5 }}>
               {services.length === 0
                 ? 'No services in catalogue yet — add them in Invoice Setup.'
                 : 'No services match your search.'}
@@ -803,9 +803,9 @@ function ServicePickerModal({ services, onSelect, onClose }) {
                   width: '100%', background: 'none', border: 'none',
                   padding: '11px 18px', cursor: 'pointer', textAlign: 'left',
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  color: '#0a0a0a', borderBottom: '1px solid #e5e5e5',
+                  color: 'var(--color-ink)', borderBottom: '1px solid var(--color-hairline)',
                 }}
-                onMouseEnter={e => e.currentTarget.style.background = 'rgba(10,10,10,0.05)'}
+                onMouseEnter={e => e.currentTarget.style.background = 'var(--overlay-04)'}
                 onMouseLeave={e => e.currentTarget.style.background = 'none'}
               >
                 <div>
@@ -817,7 +817,7 @@ function ServicePickerModal({ services, onSelect, onClose }) {
                     )}
                     <span style={{ fontSize: '13px', fontWeight: 600 }}>{s.name}</span>
                   </div>
-                  <div style={{ fontSize: '11px', color: '#737373', marginTop: '2px' }}>{s.unit}</div>
+                  <div style={{ fontSize: '11px', color: 'var(--color-mid-gray)', marginTop: '2px' }}>{s.unit}</div>
                 </div>
                 <span style={{ fontSize: '13px', color: 'var(--accent)', fontWeight: 600, whiteSpace: 'nowrap', marginLeft: '16px' }}>
                   {fmt(s.default_price)}

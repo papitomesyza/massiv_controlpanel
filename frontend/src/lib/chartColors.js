@@ -2,31 +2,37 @@
  * Chart marks for the achromatic system.
  *
  * The palette is monochrome by mandate, so series identity is carried by
- * lightness alone. Steps below were checked for perceptual separation: adjacent
- * pairs clear the ΔE 15 normal-vision floor and the CVD floor at every length.
- * Four steps is the ceiling — a fifth step drops adjacent separation to ΔE 12.6,
- * which reads as the same grey. Anything past four folds into `OTHER`.
+ * lightness alone. Each ramp below was checked for perceptual separation in
+ * both themes: adjacent pairs clear the ΔE 15 normal-vision floor and the CVD
+ * floor. Four steps is the ceiling — a fifth drops adjacent separation to
+ * ΔE ~12.6, which reads as the same grey, so anything past four folds into
+ * `CHART_OTHER`.
  *
- * Because the lighter steps fall under 3:1 against paper, charts using them must
- * keep a legend or direct labels — identity is never carried by the fill alone.
+ * Values resolve through CSS custom properties, so the marks re-step when the
+ * theme flips rather than being inverted mechanically. `var()` is valid in SVG
+ * presentation attributes, which is how recharts applies fill/stroke.
+ *
+ * Because the lightest steps can fall under 3:1 against the surface, charts
+ * using them must keep a legend or direct labels — identity is never carried
+ * by the fill alone.
  */
 
-// Series ramps, indexed by how many series the chart draws.
 const RAMPS = {
-  1: ['#0a0a0a'],
-  2: ['#0a0a0a', '#a3a3a3'],
-  3: ['#262626', '#737373', '#c4c4c4'],
-  4: ['#262626', '#5c5c5c', '#949494', '#c4c4c4'],
+  1: ['var(--chart-a1)'],
+  2: ['var(--chart-b1)', 'var(--chart-b2)'],
+  3: ['var(--chart-c1)', 'var(--chart-c2)', 'var(--chart-c3)'],
+  4: ['var(--chart-d1)', 'var(--chart-d2)', 'var(--chart-d3)', 'var(--chart-d4)'],
 };
 
-export const CHART_INK = '#0a0a0a';
-export const CHART_MUTED = '#a3a3a3';
-export const CHART_GRID = '#e5e5e5';
-export const CHART_AXIS = '#737373';
-export const CHART_OTHER = '#d4d4d4';
+export const CHART_INK = 'var(--color-ink)';
+export const CHART_MUTED = 'var(--color-mid-gray)';
+export const CHART_GRID = 'var(--chart-grid)';
+export const CHART_AXIS = 'var(--chart-axis)';
+export const CHART_OTHER = 'var(--chart-other)';
+export const CHART_SURFACE = 'var(--surface-card)';
 
 /** Reserved — never used for a plain series. */
-export const CHART_NEGATIVE = '#e7000b';
+export const CHART_NEGATIVE = 'var(--color-ember)';
 
 /** Fixed-order ramp for `n` series. Colour follows the entity, never its rank. */
 export function seriesColors(n) {

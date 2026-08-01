@@ -219,17 +219,17 @@ export default function Settings() {
                 ? <img src={logo} alt="Agency Logo" style={{ maxHeight: '80px', width: 'auto', maxWidth: '200px', objectFit: 'contain', display: 'block' }} />
                 : <div style={{
                     width: '120px', height: '80px', borderRadius: '10px',
-                    border: '1.5px dashed #e5e5e5',
+                    border: '1.5px dashed var(--color-hairline)',
                     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '6px'
                   }}>
-                    <ImageIcon size={22} color="#a3a3a3" />
-                    <span style={{ fontSize: '10px', color: '#737373' }}>No logo uploaded</span>
+                    <ImageIcon size={22} color="var(--color-faint)" />
+                    <span style={{ fontSize: '10px', color: 'var(--color-mid-gray)' }}>No logo uploaded</span>
                   </div>
               }
             </div>
             <div>
-              <div style={{ fontWeight: 700, color: '#0a0a0a', marginBottom: '4px' }}>Agency Logo</div>
-              <div style={{ fontSize: '12px', color: '#737373', marginBottom: '14px' }}>
+              <div style={{ fontWeight: 700, color: 'var(--color-ink)', marginBottom: '4px' }}>Agency Logo</div>
+              <div style={{ fontSize: '12px', color: 'var(--color-mid-gray)', marginBottom: '14px' }}>
                 Displayed in the sidebar. Recommended: square image, min 128×128px
               </div>
               <div className="settings-logo-btns">
@@ -258,7 +258,7 @@ export default function Settings() {
               onChange={e => setAgencyName(e.target.value)}
               placeholder="MASSIV TV"
             />
-            <div style={{ fontSize: '11px', color: '#737373', marginTop: '4px' }}>
+            <div style={{ fontSize: '11px', color: 'var(--color-mid-gray)', marginTop: '4px' }}>
               Shown in the sidebar wordmark, login page, and browser tab title.
             </div>
           </div>
@@ -272,7 +272,7 @@ export default function Settings() {
               onChange={e => setAgencyTagline(e.target.value)}
               placeholder="Creative Agency OS"
             />
-            <div style={{ fontSize: '11px', color: '#737373', marginTop: '4px' }}>
+            <div style={{ fontSize: '11px', color: 'var(--color-mid-gray)', marginTop: '4px' }}>
               Shown below the agency name in the sidebar and on the login page.
             </div>
           </div>
@@ -285,7 +285,7 @@ export default function Settings() {
                 <img
                   src={favicon}
                   alt="Favicon preview"
-                  style={{ width: '32px', height: '32px', objectFit: 'contain', borderRadius: '6px', border: '1px solid var(--border)', background: '#ffffff', flexShrink: 0 }}
+                  style={{ width: '32px', height: '32px', objectFit: 'contain', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--surface-card)', flexShrink: 0 }}
                 />
               )}
               <button className="btn btn-primary btn-sm" onClick={() => faviconInputRef.current?.click()}>
@@ -297,7 +297,7 @@ export default function Settings() {
                 </button>
               )}
             </div>
-            <div style={{ fontSize: '11px', color: '#737373', marginTop: '6px' }}>
+            <div style={{ fontSize: '11px', color: 'var(--color-mid-gray)', marginTop: '6px' }}>
               Accepts PNG, ICO, SVG, JPEG. Applied immediately to the browser tab.
             </div>
           </div>
@@ -313,7 +313,7 @@ export default function Settings() {
           <div style={{ marginTop: '20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
             <button className="btn btn-primary" onClick={saveBranding}>Save Branding</button>
             {brandingMsg && (
-              <span style={{ fontSize: '12px', color: '#737373' }}>{brandingMsg}</span>
+              <span style={{ fontSize: '12px', color: 'var(--color-mid-gray)' }}>{brandingMsg}</span>
             )}
           </div>
         </div>
@@ -367,10 +367,10 @@ export default function Settings() {
                 <div className="text-xs text-2" style={{ textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>{group}</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                   {cats.map(c => (
-                    <div key={c.id} className="flex-center gap-1" style={{ background: 'rgba(10,10,10,0.04)', border: '1px solid var(--border)', borderRadius: '6px', padding: '4px 10px', fontSize: '12px' }}>
+                    <div key={c.id} className="flex-center gap-1" style={{ background: 'var(--overlay-03)', border: '1px solid var(--border)', borderRadius: '6px', padding: '4px 10px', fontSize: '12px' }}>
                       <span>{c.name}</span>
                       {!c.is_default && (
-                        <button onClick={() => delProjCat(c.id)} style={{ background: 'none', border: 'none', color: '#737373', cursor: 'pointer', padding: '0 0 0 4px' }}>
+                        <button onClick={() => delProjCat(c.id)} style={{ background: 'none', border: 'none', color: 'var(--color-mid-gray)', cursor: 'pointer', padding: '0 0 0 4px' }}>
                           <Trash2 size={11} />
                         </button>
                       )}
@@ -404,7 +404,7 @@ export default function Settings() {
               onChange={e => setTaxLabel(e.target.value)}
               placeholder="e.g. VAT, Turnover Tax, GST"
             />
-            <div style={{ fontSize: '11px', color: '#737373', marginTop: '4px' }}>
+            <div style={{ fontSize: '11px', color: 'var(--color-mid-gray)', marginTop: '4px' }}>
               Shown wherever tax is displayed on invoices and in the Finances section.
             </div>
           </div>
@@ -421,7 +421,7 @@ export default function Settings() {
               placeholder="e.g. 18"
               style={{ maxWidth: '140px' }}
             />
-            <div style={{ fontSize: '11px', color: '#737373', marginTop: '4px' }}>
+            <div style={{ fontSize: '11px', color: 'var(--color-mid-gray)', marginTop: '4px' }}>
               Applied to invoice totals when generating invoices. You set this — no auto-switching.
             </div>
           </div>
@@ -432,14 +432,14 @@ export default function Settings() {
                 type="checkbox"
                 checked={taxEnabled}
                 onChange={e => setTaxEnabled(e.target.checked)}
-                style={{ width: '16px', height: '16px', accentColor: '#0a0a0a' }}
+                style={{ width: '16px', height: '16px', accentColor: 'var(--color-ink)' }}
               />
               <span style={{ fontSize: '13px' }}>Enable tax tracking in Finances</span>
             </label>
           </div>
           <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
             <button className="btn btn-primary" onClick={saveTax}>Save Tax Settings</button>
-            {taxMsg && <span style={{ fontSize: '12px', color: taxMsg === 'Saved' ? '#0a0a0a' : '#e7000b' }}>{taxMsg}</span>}
+            {taxMsg && <span style={{ fontSize: '12px', color: taxMsg === 'Saved' ? 'var(--color-ink)' : 'var(--color-ember)' }}>{taxMsg}</span>}
           </div>
         </div>
 
@@ -458,22 +458,22 @@ export default function Settings() {
             <label className="form-label">Confirm Password</label>
             <input type="password" className="input" value={password.confirm} onChange={e => setPassword(p => ({ ...p, confirm: e.target.value }))} placeholder="Confirm" />
           </div>
-          {pwMsg && <div style={{ fontSize: '12px', color: pwMsg.includes('success') ? '#737373' : '#e7000b', marginBottom: '12px' }}>{pwMsg}</div>}
+          {pwMsg && <div style={{ fontSize: '12px', color: pwMsg.includes('success') ? 'var(--color-mid-gray)' : 'var(--color-ember)', marginBottom: '12px' }}>{pwMsg}</div>}
           <button className="btn btn-primary" onClick={changePassword}>Update Password</button>
         </div>
 
         {/* Data Management */}
         <div className="card card-pad">
           <div className="section-title" style={{ marginBottom: '12px' }}>Data Management</div>
-          <div style={{ fontSize: '12px', color: '#737373', marginBottom: '14px' }}>
+          <div style={{ fontSize: '12px', color: 'var(--color-mid-gray)', marginBottom: '14px' }}>
             Download a full backup of the database file. Keep this safe — it contains all your project data.
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px', fontSize: '12px' }}>
             <span style={{
               width: '9px', height: '9px', borderRadius: '50%',
-              background: backupStatus.ok ? '#0a0a0a' : '#e7000b', flexShrink: 0,
+              background: backupStatus.ok ? 'var(--color-ink)' : 'var(--color-ember)', flexShrink: 0,
             }} />
-            <span style={{ color: backupStatus.ok ? '#737373' : '#e7000b' }}>
+            <span style={{ color: backupStatus.ok ? 'var(--color-mid-gray)' : 'var(--color-ember)' }}>
               {backupStatus.ok ? backupStatus.label : `⚠ ${backupStatus.label}`}
             </span>
           </div>
@@ -488,7 +488,7 @@ export default function Settings() {
             <Sliders size={15} />
             Workspace Profile
           </div>
-          <div style={{ fontSize: '12px', color: '#737373', marginBottom: '14px' }}>
+          <div style={{ fontSize: '12px', color: 'var(--color-mid-gray)', marginBottom: '14px' }}>
             Update your identity and focus areas to personalize category suggestions and project phase defaults.
           </div>
           <button className="btn btn-ghost" onClick={() => setShowSetupWizard(true)}>

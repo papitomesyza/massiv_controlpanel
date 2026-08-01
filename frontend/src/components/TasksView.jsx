@@ -102,7 +102,7 @@ function TaskCard({ task, onToggle, onDelete, onEdit }) {
         <Check size={11} style={{ color: 'var(--accent)', flexShrink: 0 }} />
         TASK
         {task.priority === 'high' && (
-          <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: '3px', color: '#e7000b', fontWeight: 700, fontSize: '10px' }}>
+          <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: '3px', color: 'var(--color-ember)', fontWeight: 700, fontSize: '10px' }}>
             <Flag size={10} /> HIGH
           </span>
         )}
@@ -119,7 +119,7 @@ function TaskCard({ task, onToggle, onDelete, onEdit }) {
         {task.due_date ? (
           <span
             className="lead-card-date"
-            style={overdue ? { color: '#e7000b', fontWeight: 600 } : {}}
+            style={overdue ? { color: 'var(--color-ember)', fontWeight: 600 } : {}}
           >
             <CalendarDays size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '3px' }} />
             {fmtDue(task.due_date)}{overdue ? ' · overdue' : ''}
@@ -166,14 +166,14 @@ function DoneRow({ task, onToggle, onDelete }) {
         <Check size={12} strokeWidth={3} />
       </button>
       <div className="standalone-task-body">
-        <span className="standalone-task-title" style={{ textDecoration: 'line-through', color: '#737373' }}>
+        <span className="standalone-task-title" style={{ textDecoration: 'line-through', color: 'var(--color-mid-gray)' }}>
           {task.title}
         </span>
       </div>
       <div className="standalone-task-actions" style={{ opacity: 1 }}>
         {confirming ? (
           <>
-            <span style={{ fontSize: '12px', color: '#737373' }}>Del?</span>
+            <span style={{ fontSize: '12px', color: 'var(--color-mid-gray)' }}>Del?</span>
             <button className="btn btn-danger btn-sm" style={{ padding: '4px 8px', fontSize: '11px' }} onClick={() => onDelete(task.id)}>Yes</button>
             <button className="btn btn-ghost btn-sm"  style={{ padding: '4px 8px', fontSize: '11px' }} onClick={() => setConfirming(false)}>No</button>
           </>
@@ -270,7 +270,7 @@ export default function TasksView() {
           <span className="leads-section-label">TASKS</span>
           {pending.length > 0 && <span className="leads-count-badge">{pending.length}</span>}
         </div>
-        {sectionOpen ? <ChevronUp size={14} color="#737373" /> : <ChevronDown size={14} color="#737373" />}
+        {sectionOpen ? <ChevronUp size={14} color="var(--color-mid-gray)" /> : <ChevronDown size={14} color="var(--color-mid-gray)" />}
       </div>
 
       {sectionOpen && (
@@ -341,7 +341,7 @@ export default function TasksView() {
                   Completed
                   <span className="standalone-done-count">{done.length}</span>
                 </span>
-                {doneOpen ? <ChevronUp size={14} color="#737373" /> : <ChevronDown size={14} color="#737373" />}
+                {doneOpen ? <ChevronUp size={14} color="var(--color-mid-gray)" /> : <ChevronDown size={14} color="var(--color-mid-gray)" />}
               </button>
               {doneOpen && done.map(task => (
                 <DoneRow

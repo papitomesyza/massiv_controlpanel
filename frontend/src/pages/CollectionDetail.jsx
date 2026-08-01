@@ -100,8 +100,8 @@ function TagChip({ tag, active, onClick }) {
       onClick={e => { e.stopPropagation(); onClick(tag); }}
       style={{
         padding: '2px 9px', borderRadius: 18, fontSize: '11px', fontWeight: 600,
-        background: active ? 'var(--accent)' : 'rgba(10,10,10,0.05)',
-        color: active ? '#fafafa' : 'var(--accent)',
+        background: active ? 'var(--accent)' : 'var(--overlay-04)',
+        color: active ? 'var(--accent-contrast)' : 'var(--accent)',
         border: 'none', cursor: 'pointer', transition: 'all 0.15s', flexShrink: 0,
       }}
     >
@@ -117,17 +117,17 @@ function InstagramPlaceholder({ url }) {
   return (
     <div style={{
       position: 'absolute', inset: 0,
-      background: 'linear-gradient(135deg, #737373 0%, #e7000b 50%, #737373 100%)',
+      background: 'linear-gradient(135deg, var(--color-mid-gray) 0%, var(--color-ember) 50%, var(--color-mid-gray) 100%)',
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
       gap: '8px',
     }}>
-      <Instagram size={38} color="#0a0a0a" strokeWidth={1.5} />
+      <Instagram size={38} color="var(--color-ink)" strokeWidth={1.5} />
       <div style={{ textAlign: 'center', lineHeight: 1.4 }}>
-        <div style={{ fontSize: '11px', fontWeight: 700, color: '#0a0a0a', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+        <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-ink)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
           {postType}
         </div>
         {username && (
-          <div style={{ fontSize: '11px', color: '#0a0a0a', marginTop: '3px' }}>
+          <div style={{ fontSize: '11px', color: 'var(--color-ink)', marginTop: '3px' }}>
             @{username}
           </div>
         )}
@@ -142,12 +142,12 @@ function TikTokPlaceholder() {
   return (
     <div style={{
       position: 'absolute', inset: 0,
-      background: '#f5f5f5',
+      background: 'var(--surface-input-fill)',
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
       gap: '8px',
     }}>
-      <Music2 size={38} color="#0a0a0a" strokeWidth={1.5} />
-      <div style={{ fontSize: '11px', fontWeight: 700, color: '#0a0a0a', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+      <Music2 size={38} color="var(--color-ink)" strokeWidth={1.5} />
+      <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-ink)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
         TikTok
       </div>
     </div>
@@ -163,7 +163,7 @@ function FaviconPlaceholder({ url }) {
     <div style={{
       position: 'absolute', inset: 0,
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      gap: '10px', background: '#fafafa',
+      gap: '10px', background: 'var(--color-surface-alt)',
     }}>
       {!faviconFailed ? (
         <img
@@ -173,9 +173,9 @@ function FaviconPlaceholder({ url }) {
           style={{ width: 44, height: 44, borderRadius: 10, objectFit: 'contain' }}
         />
       ) : (
-        <Globe size={32} color="#a3a3a3" />
+        <Globe size={32} color="var(--color-faint)" />
       )}
-      <span style={{ fontSize: '12px', color: '#737373', fontWeight: 500, maxWidth: '85%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center' }}>
+      <span style={{ fontSize: '12px', color: 'var(--color-mid-gray)', fontWeight: 500, maxWidth: '85%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center' }}>
         {domain}
       </span>
     </div>
@@ -195,7 +195,7 @@ function CardThumbnail({ card }) {
   return (
     <div style={{
       position: 'relative', width: '100%', paddingBottom: '56.25%',
-      background: '#fafafa', borderRadius: '10px 10px 0 0', overflow: 'hidden', flexShrink: 0,
+      background: 'var(--color-surface-alt)', borderRadius: '10px 10px 0 0', overflow: 'hidden', flexShrink: 0,
     }}>
       {hasThumbnail ? (
         <img
@@ -215,9 +215,9 @@ function CardThumbnail({ card }) {
       {isVideo && hasThumbnail && (
         <div style={{
           position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: 'rgba(10,10,10,0.08)',
+          background: 'var(--overlay-06)',
         }}>
-          <div style={{ width: 46, height: 46, borderRadius: '50%', background: 'rgba(10,10,10,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ width: 46, height: 46, borderRadius: '50%', background: 'var(--scrim-strong)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Play size={18} color="white" fill="white" style={{ marginLeft: 2 }} />
           </div>
         </div>
@@ -278,7 +278,7 @@ function CardMenu({ isOpen, onToggle, onEdit, onDelete }) {
             position: 'fixed', top: menuPos.top, right: menuPos.right,
             zIndex: 9999, background: 'var(--bg-card)',
             border: '1px solid var(--border-default)', borderRadius: '10px',
-            minWidth: '130px', overflow: 'hidden', boxShadow: '0 8px 28px rgba(10,10,10,0.35)',
+            minWidth: '130px', overflow: 'hidden', boxShadow: '0 8px 28px var(--scrim)',
           }}
         >
           <button style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '10px 14px', background: 'none', border: 'none', color: 'var(--text-primary)', fontSize: '13px', cursor: 'pointer', textAlign: 'left' }}
@@ -307,8 +307,8 @@ function LinkCard({ card, isMenuOpen, onMenuToggle, onEdit, onDelete, onStar, ac
       style={{
         padding: 0, overflow: 'hidden', cursor: 'pointer', display: 'flex', flexDirection: 'column',
         position: 'relative',
-        border: isStarred ? '2px solid #d4d4d4' : undefined,
-        boxShadow: isStarred ? '0 0 0 2px #0a0a0a' : undefined,
+        border: isStarred ? '2px solid var(--color-hairline-strong)' : undefined,
+        boxShadow: isStarred ? '0 0 0 2px var(--color-ink)' : undefined,
       }}
       onClick={() => window.open(card.url, '_blank', 'noopener,noreferrer')}
       title={card.url}
@@ -328,11 +328,11 @@ function LinkCard({ card, isMenuOpen, onMenuToggle, onEdit, onDelete, onStar, ac
           <div style={{ display: 'flex', alignItems: 'center', gap: '2px', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
             <button
               className="btn-ghost"
-              style={{ padding: '3px 5px', color: isStarred ? '#171717' : undefined, border: 'none' }}
+              style={{ padding: '3px 5px', color: isStarred ? 'var(--color-ink-soft)' : undefined, border: 'none' }}
               title={isStarred ? 'Unstar' : 'Star'}
               onClick={() => onStar(card.id)}
             >
-              <Star size={13} fill={isStarred ? '#171717' : 'none'} />
+              <Star size={13} fill={isStarred ? 'var(--color-ink-soft)' : 'none'} />
             </button>
             <CardMenu isOpen={isMenuOpen} onToggle={onMenuToggle} onEdit={onEdit} onDelete={onDelete} />
           </div>
@@ -354,11 +354,11 @@ function LinkCard({ card, isMenuOpen, onMenuToggle, onEdit, onDelete, onStar, ac
       {isStarred && (
         <div style={{
           position: 'absolute', bottom: 8, left: 8, zIndex: 10,
-          background: '#171717', borderRadius: '50%',
+          background: 'var(--color-ink-soft)', borderRadius: '50%',
           width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center',
           pointerEvents: 'none',
         }}>
-          <Star size={10} fill="#fafafa" color="#fafafa" />
+          <Star size={10} fill="var(--accent-contrast)" color="var(--accent-contrast)" />
         </div>
       )}
     </div>
@@ -376,9 +376,9 @@ function NoteCard({ card, isMenuOpen, onMenuToggle, onEdit, onDelete, onStar, is
     <div
       className="card"
       style={{
-        padding: '14px 16px', background: 'rgba(10,10,10,0.03)',
-        border: isStarred ? '2px solid #d4d4d4' : '1px solid #e5e5e5',
-        boxShadow: isStarred ? '0 0 0 2px #0a0a0a' : undefined,
+        padding: '14px 16px', background: 'var(--overlay-02)',
+        border: isStarred ? '2px solid var(--color-hairline-strong)' : '1px solid var(--color-hairline)',
+        boxShadow: isStarred ? '0 0 0 2px var(--color-ink)' : undefined,
         display: 'flex', flexDirection: 'column', gap: '9px', position: 'relative',
       }}
     >
@@ -394,11 +394,11 @@ function NoteCard({ card, isMenuOpen, onMenuToggle, onEdit, onDelete, onStar, is
         <div style={{ display: 'flex', alignItems: 'center', gap: '2px', flexShrink: 0 }}>
           <button
             className="btn-ghost"
-            style={{ padding: '3px 5px', color: isStarred ? '#171717' : undefined, border: 'none' }}
+            style={{ padding: '3px 5px', color: isStarred ? 'var(--color-ink-soft)' : undefined, border: 'none' }}
             title={isStarred ? 'Unstar' : 'Star'}
             onClick={e => { e.stopPropagation(); onStar(card.id); }}
           >
-            <Star size={13} fill={isStarred ? '#171717' : 'none'} />
+            <Star size={13} fill={isStarred ? 'var(--color-ink-soft)' : 'none'} />
           </button>
           <CardMenu isOpen={isMenuOpen} onToggle={onMenuToggle} onEdit={onEdit} onDelete={onDelete} />
         </div>
@@ -426,11 +426,11 @@ function NoteCard({ card, isMenuOpen, onMenuToggle, onEdit, onDelete, onStar, is
       {isStarred && (
         <div style={{
           position: 'absolute', bottom: 8, left: 8, zIndex: 10,
-          background: '#171717', borderRadius: '50%',
+          background: 'var(--color-ink-soft)', borderRadius: '50%',
           width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center',
           pointerEvents: 'none',
         }}>
-          <Star size={10} fill="#fafafa" color="#fafafa" />
+          <Star size={10} fill="var(--accent-contrast)" color="var(--accent-contrast)" />
         </div>
       )}
     </div>
@@ -462,7 +462,7 @@ function SortableCardWrapper({ card, ...props }) {
         style={{
           position: 'absolute', top: 7, left: 7, zIndex: 20,
           cursor: isStarred ? 'default' : (isDragging ? 'grabbing' : 'grab'),
-          background: 'rgba(10,10,10,0.45)', borderRadius: 6, padding: '3px 5px',
+          background: 'var(--scrim-strong)', borderRadius: 6, padding: '3px 5px',
           color: '#ffffff', touchAction: 'none',
           display: 'flex', alignItems: 'center',
           opacity: isStarred ? 0.25 : 1,
@@ -890,7 +890,7 @@ export default function CollectionDetail() {
 
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0, flex: 1 }}>
-            <div style={{ width: 40, height: 40, borderRadius: 10, background: 'rgba(10,10,10,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--overlay-04)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <Library size={20} color="var(--accent)" />
             </div>
             <div style={{ minWidth: 0 }}>
@@ -924,7 +924,7 @@ export default function CollectionDetail() {
                 ? <><ArchiveRestore size={13} /> Unarchive</>
                 : <><Archive size={13} /> Archive</>}
             </button>
-            <button className="btn btn-ghost" style={{ padding: '7px 13px', fontSize: '12px', color: 'var(--danger)', borderColor: 'rgba(231,0,11,0.35)' }} onClick={handleDeleteCollection} title="Delete collection">
+            <button className="btn btn-ghost" style={{ padding: '7px 13px', fontSize: '12px', color: 'var(--danger)', borderColor: 'var(--ember-line-strong)' }} onClick={handleDeleteCollection} title="Delete collection">
               <Trash2 size={13} /> Delete
             </button>
           </div>
@@ -951,7 +951,7 @@ export default function CollectionDetail() {
 
       {/* ── Add Link inline form (Section 1 — polished card) ── */}
       {addMode === 'link' && (
-        <div className="card" style={{ padding: '20px 22px', marginBottom: '24px', border: '1px solid #e5e5e5' }}>
+        <div className="card" style={{ padding: '20px 22px', marginBottom: '24px', border: '1px solid var(--color-hairline)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
             <Link2 size={14} color="var(--accent)" />
             <span style={{ fontWeight: 700, fontSize: '14px' }}>Add Link</span>
@@ -999,7 +999,7 @@ export default function CollectionDetail() {
 
       {/* ── Add Note inline form (Section 1 — polished card) ── */}
       {addMode === 'note' && (
-        <div className="card" style={{ padding: '20px 22px', marginBottom: '24px', border: '1px solid #e5e5e5' }}>
+        <div className="card" style={{ padding: '20px 22px', marginBottom: '24px', border: '1px solid var(--color-hairline)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
             <FileText size={14} color="var(--accent)" />
             <span style={{ fontWeight: 700, fontSize: '14px' }}>Add Note</span>
@@ -1062,7 +1062,7 @@ export default function CollectionDetail() {
               <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Filtering by tag:</span>
               <button
                 onClick={() => setActiveTag(null)}
-                style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '3px 10px', borderRadius: 18, fontSize: '12px', fontWeight: 600, background: 'var(--accent)', color: '#fafafa', border: 'none', cursor: 'pointer' }}
+                style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '3px 10px', borderRadius: 18, fontSize: '12px', fontWeight: 600, background: 'var(--accent)', color: 'var(--accent-contrast)', border: 'none', cursor: 'pointer' }}
               >
                 {activeTag} <X size={11} />
               </button>

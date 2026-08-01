@@ -66,7 +66,7 @@ export default function CrewDetail() {
           <Link to="/crew" className="btn btn-ghost btn-sm"><ArrowLeft size={14} /></Link>
           <div>
             <div className="flex-center gap-2">
-              {isCompany && <Building2 size={16} style={{ color: '#737373' }} />}
+              {isCompany && <Building2 size={16} style={{ color: 'var(--color-mid-gray)' }} />}
               <div className="page-title">{member.name}</div>
             </div>
             {isCompany
@@ -119,7 +119,7 @@ export default function CrewDetail() {
             {member.notes && (
               <div style={{ marginTop: '12px' }}>
                 <div className="text-xs text-2" style={{ marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Notes</div>
-                <div className="text-sm" style={{ color: '#171717' }}>{member.notes}</div>
+                <div className="text-sm" style={{ color: 'var(--color-ink-soft)' }}>{member.notes}</div>
               </div>
             )}
           </div>
@@ -166,10 +166,10 @@ export default function CrewDetail() {
       <div style={{ marginTop: '24px' }}>
         <div className="section-header" style={{ marginBottom: '12px' }}>
           <span className="section-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Receipt size={15} style={{ color: '#737373' }} />
+            <Receipt size={15} style={{ color: 'var(--color-mid-gray)' }} />
             Transactions &amp; Debts
             {unpaidTotal > 0 && (
-              <span style={{ background: '#e7000b', color: '#0a0a0a', fontSize: '10px', fontWeight: 700, borderRadius: '18px', padding: '2px 8px', lineHeight: 1.4 }}>
+              <span style={{ background: 'var(--color-ember)', color: 'var(--color-ink)', fontSize: '10px', fontWeight: 700, borderRadius: '18px', padding: '2px 8px', lineHeight: 1.4 }}>
                 {fmt(unpaidTotal)} owed
               </span>
             )}
@@ -228,7 +228,7 @@ export default function CrewDetail() {
                             ) : (
                               <button
                                 className="btn btn-ghost btn-sm"
-                                style={{ fontSize: '11px', color: '#0a0a0a' }}
+                                style={{ fontSize: '11px', color: 'var(--color-ink)' }}
                                 onClick={() => { setMarkPaidId(debt.id); setMarkPaidDate(new Date().toISOString().slice(0, 10)); }}
                                 title="Mark as Paid"
                               >

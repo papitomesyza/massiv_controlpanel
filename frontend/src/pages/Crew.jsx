@@ -163,15 +163,15 @@ export default function Crew() {
                       <tr key={member.id}>
                         <td style={{ width: '32px', paddingRight: 0 }}>
                           {member.is_company
-                            ? <Building2 size={14} style={{ color: '#737373' }} />
-                            : <User size={14} style={{ color: '#737373' }} />}
+                            ? <Building2 size={14} style={{ color: 'var(--color-mid-gray)' }} />
+                            : <User size={14} style={{ color: 'var(--color-mid-gray)' }} />}
                         </td>
                         <td>
                           <div className="flex-center gap-1">
                             <Link to={`/crew/${member.id}`} className="link text-bold">{member.name}</Link>
                             {debtSummary[member.id] > 0 && (
                               <div
-                                style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#e7000b', flexShrink: 0 }}
+                                style={{ width: '7px', height: '7px', borderRadius: '50%', background: 'var(--color-ember)', flexShrink: 0 }}
                                 title={`€${Number(debtSummary[member.id]).toFixed(2)} in unpaid debts`}
                               />
                             )}
@@ -223,11 +223,11 @@ export default function Crew() {
                 >
                   <div className="people-mini-name">
                     {member.is_company
-                      ? <Building2 size={11} style={{ color: '#737373', flexShrink: 0 }} />
-                      : <User size={11} style={{ color: '#737373', flexShrink: 0 }} />}
+                      ? <Building2 size={11} style={{ color: 'var(--color-mid-gray)', flexShrink: 0 }} />
+                      : <User size={11} style={{ color: 'var(--color-mid-gray)', flexShrink: 0 }} />}
                     {member.name}
                     {debtSummary[member.id] > 0 && (
-                      <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#e7000b', flexShrink: 0, display: 'inline-block', marginLeft: 'auto' }} />
+                      <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--color-ember)', flexShrink: 0, display: 'inline-block', marginLeft: 'auto' }} />
                     )}
                   </div>
                   <div className="people-mini-sub">
@@ -244,7 +244,7 @@ export default function Crew() {
         <div style={{ marginBottom: '24px' }}>
           <button
             className="flex-center gap-2"
-            style={{ background: 'none', border: 'none', color: '#737373', cursor: 'pointer', padding: '8px 0', fontSize: '13px' }}
+            style={{ background: 'none', border: 'none', color: 'var(--color-mid-gray)', cursor: 'pointer', padding: '8px 0', fontSize: '13px' }}
             onClick={() => setShowArchived(!showArchived)}
           >
             {showArchived ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
@@ -272,10 +272,10 @@ export default function Crew() {
         <div className="section-title" style={{ marginBottom: '12px' }}>Crew Roles</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
           {roles.map(r => (
-            <div key={r.id} className="flex-center gap-1" style={{ background: 'rgba(10,10,10,0.04)', border: '1px solid var(--border)', borderRadius: '6px', padding: '4px 10px', fontSize: '12px' }}>
+            <div key={r.id} className="flex-center gap-1" style={{ background: 'var(--overlay-03)', border: '1px solid var(--border)', borderRadius: '6px', padding: '4px 10px', fontSize: '12px' }}>
               <span>{r.name}</span>
               {!r.is_default && (
-                <button onClick={() => deleteRole(r.id)} style={{ background: 'none', border: 'none', color: '#737373', cursor: 'pointer', padding: '0 0 0 4px', lineHeight: 1 }}>
+                <button onClick={() => deleteRole(r.id)} style={{ background: 'none', border: 'none', color: 'var(--color-mid-gray)', cursor: 'pointer', padding: '0 0 0 4px', lineHeight: 1 }}>
                   <Trash2 size={11} />
                 </button>
               )}
@@ -390,14 +390,14 @@ function CrewDetailSheet({ member, debtAmount, onClose, onEdit, onTxn, onArchive
         <div className="detail-sheet-header">
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontWeight: 700, fontSize: '18px', color: '#0a0a0a', lineHeight: 1.2 }}>{member.name}</span>
+              <span style={{ fontWeight: 700, fontSize: '18px', color: 'var(--color-ink)', lineHeight: 1.2 }}>{member.name}</span>
               {debtAmount > 0 && (
-                <span style={{ background: 'rgba(231,0,11,0.07)', color: '#e7000b', fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '18px' }}>
+                <span style={{ background: 'var(--ember-soft)', color: 'var(--color-ember)', fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '18px' }}>
                   Unpaid
                 </span>
               )}
             </div>
-            <div style={{ fontSize: '13px', color: '#737373', marginTop: '3px' }}>
+            <div style={{ fontSize: '13px', color: 'var(--color-mid-gray)', marginTop: '3px' }}>
               {member.is_company ? (member.service_type || 'Company') : (member.role || 'No role')}
             </div>
           </div>
@@ -433,7 +433,7 @@ function CrewDetailSheet({ member, debtAmount, onClose, onEdit, onTxn, onArchive
           {debtAmount > 0 && (
             <div className="fin-row" style={{ padding: '10px 0' }}>
               <span className="text-2" style={{ fontSize: '12px' }}>Outstanding</span>
-              <span style={{ fontSize: '13px', fontWeight: 700, color: '#e7000b' }}>€{Number(debtAmount).toFixed(2)}</span>
+              <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-ember)' }}>€{Number(debtAmount).toFixed(2)}</span>
             </div>
           )}
         </div>
@@ -441,7 +441,7 @@ function CrewDetailSheet({ member, debtAmount, onClose, onEdit, onTxn, onArchive
         <div style={{ display: 'flex', gap: '8px', marginTop: '16px', flexWrap: 'wrap' }}>
           <button
             className="btn btn-ghost btn-sm"
-            style={{ color: 'var(--accent)', borderColor: '#e5e5e5', flex: 1 }}
+            style={{ color: 'var(--accent)', borderColor: 'var(--color-hairline)', flex: 1 }}
             onClick={() => onTxn(member)}
           >
             <Plus size={13} /> Txn
@@ -537,7 +537,7 @@ function ArchivedCrewRow({ member, onRestore, onDeleted }) {
       <td>
         {confirming ? (
           <div className="flex-center gap-1" style={{ flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '11px', color: '#e7000b', whiteSpace: 'nowrap' }}>
+            <span style={{ fontSize: '11px', color: 'var(--color-ember)', whiteSpace: 'nowrap' }}>
               Permanently delete {member.name}? This cannot be undone.
             </span>
             <button className="btn btn-danger btn-sm" style={{ fontSize: '11px' }} onClick={confirmDelete} disabled={deleting}>
@@ -550,7 +550,7 @@ function ArchivedCrewRow({ member, onRestore, onDeleted }) {
         ) : (
           <div className="flex-center gap-1">
             <button className="btn btn-ghost btn-sm" onClick={() => onRestore(member)}>Restore</button>
-            <button className="btn btn-ghost btn-sm" onClick={() => setConfirming(true)} title="Permanently delete" style={{ color: '#e7000b' }}>
+            <button className="btn btn-ghost btn-sm" onClick={() => setConfirming(true)} title="Permanently delete" style={{ color: 'var(--color-ember)' }}>
               <Trash2 size={13} />
             </button>
           </div>

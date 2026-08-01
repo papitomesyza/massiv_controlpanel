@@ -107,8 +107,8 @@ function VaultSetupModal({ onSetup, onClose }) {
             server — your passphrase never leaves your device.
           </p>
           <div style={{
-            background: 'rgba(231,0,11,0.06)', border: '1px solid rgba(231,0,11,0.20)',
-            borderRadius: 'var(--radius-nested)', padding: '10px 14px', fontSize: '12px', color: '#e7000b',
+            background: 'var(--ember-soft)', border: '1px solid var(--ember-line)',
+            borderRadius: 'var(--radius-nested)', padding: '10px 14px', fontSize: '12px', color: 'var(--color-ember)',
           }}>
             <strong>Warning:</strong> If you forget your passphrase, stored passwords cannot be recovered.
             There is no reset option.
@@ -368,9 +368,9 @@ function AccountCard({ account, onEdit, onDelete, onArchive, vaultKey, unlocked 
         <div style={{ padding: '8px 14px 0' }}>
           <span style={{
             display: 'inline-flex', alignItems: 'center',
-            background: '#f5f5f5', border: '1px solid transparent',
+            background: 'var(--surface-input-fill)', border: '1px solid transparent',
             borderRadius: 'var(--radius-badges)', padding: '3px 10px',
-            fontSize: '12px', color: '#171717', fontWeight: 500,
+            fontSize: '12px', color: 'var(--color-ink-soft)', fontWeight: 500,
           }}>
             {ssoLabel(account.auth_method)}
           </span>
@@ -382,7 +382,7 @@ function AccountCard({ account, onEdit, onDelete, onArchive, vaultKey, unlocked 
         {hasPayment && (
           <div style={{
             display: 'inline-flex', alignItems: 'center', gap: '5px',
-            background: 'rgba(10,10,10,0.05)', border: '1px solid #e5e5e5',
+            background: 'var(--overlay-04)', border: '1px solid var(--color-hairline)',
             borderRadius: '6px', padding: '4px 8px', flexWrap: 'wrap', rowGap: '2px',
           }}>
             <CreditCard size={10} color="var(--accent)" />
@@ -899,12 +899,12 @@ export default function MindAccounts() {
           >
             {tab.charAt(0).toUpperCase() + tab.slice(1)}
             {tab === 'active' && totalActive > 0 && (
-              <span style={{ marginLeft: '6px', fontSize: '11px', background: 'var(--accent)', color: '#fafafa', borderRadius: '10px', padding: '1px 6px', fontWeight: 700 }}>
+              <span style={{ marginLeft: '6px', fontSize: '11px', background: 'var(--accent)', color: 'var(--accent-contrast)', borderRadius: '10px', padding: '1px 6px', fontWeight: 700 }}>
                 {totalActive}
               </span>
             )}
             {tab === 'archived' && totalArchived > 0 && (
-              <span style={{ marginLeft: '6px', fontSize: '11px', background: '#f5f5f5', color: '#737373', borderRadius: '10px', padding: '1px 6px', fontWeight: 700 }}>
+              <span style={{ marginLeft: '6px', fontSize: '11px', background: 'var(--surface-input-fill)', color: 'var(--color-mid-gray)', borderRadius: '10px', padding: '1px 6px', fontWeight: 700 }}>
                 {totalArchived}
               </span>
             )}

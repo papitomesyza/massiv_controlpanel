@@ -39,9 +39,9 @@ function RingGauge({ percent, color, track }) {
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
       <circle cx={size/2} cy={size/2} r={r} fill="none"
-        stroke={track || '#e5e5e5'} strokeWidth={sw} />
+        stroke={track || 'var(--color-hairline)'} strokeWidth={sw} />
       <circle cx={size/2} cy={size/2} r={r} fill="none"
-        stroke={color || '#0a0a0a'} strokeWidth={sw}
+        stroke={color || 'var(--color-ink)'} strokeWidth={sw}
         strokeDasharray={`${filled} ${circ - filled}`}
         strokeLinecap="round"
         transform={`rotate(-90 ${size/2} ${size/2})`}
@@ -61,8 +61,8 @@ export default function StatCard({
   const valueStyle = warn && !danger ? { color: 'var(--warning)' } : undefined;
   // Marks invert along with the card they sit on.
   const sparkColor = gradient
-    ? 'rgba(255,255,255,0.80)'
-    : (danger ? '#e7000b' : '#0a0a0a');
+    ? 'var(--on-ink-strong)'
+    : (danger ? 'var(--color-ember)' : 'var(--color-ink)');
 
   return (
     <div
@@ -79,8 +79,8 @@ export default function StatCard({
         <div style={{ position: 'absolute', top: '18px', right: '18px' }}>
           <RingGauge
             percent={ring}
-            color={ringColor || (gradient ? '#fafafa' : '#0a0a0a')}
-            track={gradient ? 'rgba(255,255,255,0.18)' : '#e5e5e5'}
+            color={ringColor || (gradient ? 'var(--accent-contrast)' : 'var(--color-ink)')}
+            track={gradient ? 'var(--on-ink-line)' : 'var(--color-hairline)'}
           />
         </div>
       )}

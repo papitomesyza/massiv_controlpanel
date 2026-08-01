@@ -609,7 +609,7 @@ function StepCrew({ crewMembers, lines, isFlatFee, shootDays, selected, onToggle
             </div>
           ))}
           {crewMembers.length === 0 && (
-            <div style={{ color: '#737373', fontSize: '12px', gridColumn: '1/-1', padding: '12px 0' }}>No crew members found.</div>
+            <div style={{ color: 'var(--color-mid-gray)', fontSize: '12px', gridColumn: '1/-1', padding: '12px 0' }}>No crew members found.</div>
           )}
         </div>
       </div>
@@ -620,7 +620,7 @@ function StepCrew({ crewMembers, lines, isFlatFee, shootDays, selected, onToggle
         <div className="budget-panel-title">{isFlatFee ? 'Services' : 'Crew Cost'}</div>
 
         {lines.length === 0 && (
-          <div style={{ color: '#737373', fontSize: '12px', padding: '12px 0', fontStyle: 'italic' }}>
+          <div style={{ color: 'var(--color-mid-gray)', fontSize: '12px', padding: '12px 0', fontStyle: 'italic' }}>
             {isFlatFee ? 'Click providers on the left to add services.' : 'Click crew members on the left to add them.'}
           </div>
         )}
@@ -696,7 +696,7 @@ function StepCrew({ crewMembers, lines, isFlatFee, shootDays, selected, onToggle
                     onChange={e => onUpdate(line._id, 'discount', e.target.value)}
                   />
                   {discLbl && (
-                    <span style={{ fontSize: '11px', color: '#e7000b', whiteSpace: 'nowrap' }}>{discLbl}</span>
+                    <span style={{ fontSize: '11px', color: 'var(--color-ember)', whiteSpace: 'nowrap' }}>{discLbl}</span>
                   )}
                 </div>
                 <button className="btn-icon" style={{ width: '28px', height: '28px', borderRadius: '10px', flexShrink: 0 }} onClick={() => onRemove(line._id)}>
@@ -736,7 +736,7 @@ function StepEquipmentAssets({ assetProviders, assetAllItems, lines, selectedKey
         <div className="budget-panel-title">Asset Providers</div>
 
         {assetProviders.length === 0 && (
-          <div style={{ color: '#737373', fontSize: '12px', padding: '12px 0' }}>
+          <div style={{ color: 'var(--color-mid-gray)', fontSize: '12px', padding: '12px 0' }}>
             No asset providers yet. Add them in the Assets page.
           </div>
         )}
@@ -750,24 +750,24 @@ function StepEquipmentAssets({ assetProviders, assetAllItems, lines, selectedKey
                 style={{
                   display: 'flex', alignItems: 'center', gap: '8px',
                   padding: '10px 12px', cursor: 'pointer',
-                  background: isExpanded ? 'rgba(10,10,10,0.05)' : 'rgba(10,10,10,0.02)',
+                  background: isExpanded ? 'var(--overlay-04)' : 'var(--overlay-01)',
                   userSelect: 'none',
                 }}
                 onClick={() => onToggleExpand(provider.id)}
               >
-                {isExpanded ? <ChevronDown size={14} color="#737373" /> : <ChevronRight size={14} color="#737373" />}
+                {isExpanded ? <ChevronDown size={14} color="var(--color-mid-gray)" /> : <ChevronRight size={14} color="var(--color-mid-gray)" />}
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: '13px', color: '#0a0a0a' }}>{provider.name}</div>
-                  <div style={{ fontSize: '11px', color: '#737373', marginTop: '1px' }}>
+                  <div style={{ fontWeight: 600, fontSize: '13px', color: 'var(--color-ink)' }}>{provider.name}</div>
+                  <div style={{ fontSize: '11px', color: 'var(--color-mid-gray)', marginTop: '1px' }}>
                     {provider.type} · {items.length} item{items.length !== 1 ? 's' : ''}
                   </div>
                 </div>
               </div>
 
               {isExpanded && (
-                <div style={{ borderTop: '1px solid var(--border)', background: 'rgba(10,10,10,0.06)' }}>
+                <div style={{ borderTop: '1px solid var(--border)', background: 'var(--overlay-05)' }}>
                   {items.length === 0 ? (
-                    <div style={{ padding: '10px 12px', fontSize: '12px', color: '#737373' }}>No items for this provider.</div>
+                    <div style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--color-mid-gray)' }}>No items for this provider.</div>
                   ) : (
                     items.map(item => {
                       const key = `${item.provider_id}-${item.item_id}`;
@@ -778,24 +778,24 @@ function StepEquipmentAssets({ assetProviders, assetAllItems, lines, selectedKey
                           style={{
                             display: 'flex', alignItems: 'center', gap: '10px',
                             padding: '8px 12px', cursor: 'pointer',
-                            background: isSelected ? 'rgba(10,10,10,0.05)' : 'transparent',
-                            borderBottom: '1px solid #e5e5e5',
+                            background: isSelected ? 'var(--overlay-04)' : 'transparent',
+                            borderBottom: '1px solid var(--color-hairline)',
                           }}
                           onClick={() => onAddItem(item)}
                         >
                           <div style={{
                             width: '16px', height: '16px', borderRadius: '6px', flexShrink: 0,
-                            border: `1.5px solid ${isSelected ? 'var(--accent)' : '#e5e5e5'}`,
+                            border: `1.5px solid ${isSelected ? 'var(--accent)' : 'var(--color-hairline)'}`,
                             background: isSelected ? 'var(--accent)' : 'transparent',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                           }}>
-                            {isSelected && <Check size={10} color="#fafafa" />}
+                            {isSelected && <Check size={10} color="var(--accent-contrast)" />}
                           </div>
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: '12px', color: '#171717' }}>{item.item_name}</div>
-                            {item.category && <div style={{ fontSize: '11px', color: '#737373' }}>{item.category}</div>}
+                            <div style={{ fontSize: '12px', color: 'var(--color-ink-soft)' }}>{item.item_name}</div>
+                            {item.category && <div style={{ fontSize: '11px', color: 'var(--color-mid-gray)' }}>{item.category}</div>}
                           </div>
-                          <div style={{ fontSize: '12px', color: '#737373', flexShrink: 0 }}>
+                          <div style={{ fontSize: '12px', color: 'var(--color-mid-gray)', flexShrink: 0 }}>
                             €{Number(item.daily_rate || 0).toFixed(0)}/day
                           </div>
                         </div>
@@ -815,7 +815,7 @@ function StepEquipmentAssets({ assetProviders, assetAllItems, lines, selectedKey
         <div className="budget-panel-title">Asset & Rental Costs</div>
 
         {lines.length === 0 && (
-          <div style={{ color: '#737373', fontSize: '12px', padding: '12px 0', fontStyle: 'italic' }}>
+          <div style={{ color: 'var(--color-mid-gray)', fontSize: '12px', padding: '12px 0', fontStyle: 'italic' }}>
             Expand providers on the left to add items, or add custom rows.
           </div>
         )}
@@ -876,7 +876,7 @@ function StepEquipmentAssets({ assetProviders, assetAllItems, lines, selectedKey
                       onChange={e => onUpdate(line._id, 'discount', e.target.value)}
                     />
                     {discLbl && (
-                      <span style={{ fontSize: '11px', color: '#e7000b', whiteSpace: 'nowrap' }}>{discLbl}</span>
+                      <span style={{ fontSize: '11px', color: 'var(--color-ember)', whiteSpace: 'nowrap' }}>{discLbl}</span>
                     )}
                   </div>
                   <button className="btn-icon" style={{ width: '28px', height: '28px', borderRadius: '10px', flexShrink: 0 }} onClick={() => onRemove(line._id)}>
@@ -884,7 +884,7 @@ function StepEquipmentAssets({ assetProviders, assetAllItems, lines, selectedKey
                   </button>
                 </div>
                 {line.provider_name && (
-                  <div style={{ fontSize: '11px', color: '#737373', paddingLeft: '6px', marginTop: '-2px' }}>{line.provider_name}</div>
+                  <div style={{ fontSize: '11px', color: 'var(--color-mid-gray)', paddingLeft: '6px', marginTop: '-2px' }}>{line.provider_name}</div>
                 )}
               </div>
             );
@@ -912,7 +912,7 @@ function StepLogistics({ lines, expenseCats, onAdd, onUpdate, onRemove, subtotal
     <div>
       <div style={{ marginBottom: '16px' }}>
         <div className="budget-panel-title" style={{ marginBottom: '4px' }}>Logistical Costs</div>
-        <div style={{ fontSize: '12px', color: '#737373' }}>Add transport, catering, accommodation and other on-location costs.</div>
+        <div style={{ fontSize: '12px', color: 'var(--color-mid-gray)' }}>Add transport, catering, accommodation and other on-location costs.</div>
       </div>
 
       {lines.length > 0 && (
@@ -969,7 +969,7 @@ function StepLogistics({ lines, expenseCats, onAdd, onUpdate, onRemove, subtotal
                   onChange={e => onUpdate(line._id, 'discount', e.target.value)}
                 />
                 {discLbl && (
-                  <span style={{ fontSize: '11px', color: '#e7000b', whiteSpace: 'nowrap' }}>{discLbl}</span>
+                  <span style={{ fontSize: '11px', color: 'var(--color-ember)', whiteSpace: 'nowrap' }}>{discLbl}</span>
                 )}
               </div>
               <button className="btn-icon" style={{ width: '28px', height: '28px', borderRadius: '10px', flexShrink: 0 }} onClick={() => onRemove(line._id)}>
@@ -1009,13 +1009,13 @@ function StepReview({
 
   function ProviderToggle() {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px', padding: '10px 14px', background: 'rgba(10,10,10,0.02)', borderRadius: '10px', border: '1px solid #e5e5e5' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px', padding: '10px 14px', background: 'var(--overlay-01)', borderRadius: '10px', border: '1px solid var(--color-hairline)' }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', flex: 1 }}>
           <div
             onClick={() => f('show_providers', !info.show_providers)}
             style={{
               width: '38px', height: '22px', borderRadius: '18px', flexShrink: 0,
-              background: info.show_providers ? 'var(--accent)' : '#f5f5f5',
+              background: info.show_providers ? 'var(--accent)' : 'var(--surface-input-fill)',
               position: 'relative', cursor: 'pointer', transition: 'background 0.2s',
             }}
           >
@@ -1023,13 +1023,13 @@ function StepReview({
               position: 'absolute', top: '3px',
               left: info.show_providers ? '19px' : '3px',
               width: '16px', height: '16px', borderRadius: '50%',
-              background: '#ffffff', transition: 'left 0.2s',
-              boxShadow: '0 1px 4px rgba(10,10,10,0.08)',
+              background: 'var(--surface-card)', transition: 'left 0.2s',
+              boxShadow: '0 1px 4px var(--overlay-06)',
             }} />
           </div>
-          <span style={{ fontSize: '13px', color: '#171717' }}>Show provider names on PDF</span>
+          <span style={{ fontSize: '13px', color: 'var(--color-ink-soft)' }}>Show provider names on PDF</span>
         </label>
-        <span style={{ fontSize: '11px', color: '#737373' }}>{info.show_providers ? 'ON' : 'OFF'}</span>
+        <span style={{ fontSize: '11px', color: 'var(--color-mid-gray)' }}>{info.show_providers ? 'ON' : 'OFF'}</span>
       </div>
     );
   }
@@ -1062,7 +1062,7 @@ function StepReview({
 
   return (
     <div>
-      <div className="card card-pad" style={{ marginBottom: '20px', background: '#fafafa' }}>
+      <div className="card card-pad" style={{ marginBottom: '20px', background: 'var(--color-surface-alt)' }}>
         <div className="review-meta-grid">
           {[
             ['Title', info.title],
@@ -1083,7 +1083,7 @@ function StepReview({
       <div className="budget-review-section">
         <div className="budget-review-section-title">01 — CREW COST</div>
         {crewLines.length === 0 ? (
-          <div style={{ color: '#737373', fontSize: '12px', fontStyle: 'italic', padding: '8px 0' }}>No crew lines added.</div>
+          <div style={{ color: 'var(--color-mid-gray)', fontSize: '12px', fontStyle: 'italic', padding: '8px 0' }}>No crew lines added.</div>
         ) : (
           <>
             <div className="budget-line-headers">
@@ -1121,7 +1121,7 @@ function StepReview({
                     <input type="number" className="input budget-line-input" style={{ width: '76px' }}
                       value={line.discount || 0} min="0" placeholder="0"
                       onChange={e => updateCrew(line._id, 'discount', e.target.value)} />
-                    {discLbl && <span style={{ fontSize: '11px', color: '#e7000b', whiteSpace: 'nowrap' }}>{discLbl}</span>}
+                    {discLbl && <span style={{ fontSize: '11px', color: 'var(--color-ember)', whiteSpace: 'nowrap' }}>{discLbl}</span>}
                   </div>
                   <button className="btn-icon" style={{ width: '28px', height: '28px', borderRadius: '10px', flexShrink: 0 }}
                     onClick={() => setCrewLines(prev => prev.filter(l => l._id !== line._id))}>
@@ -1141,7 +1141,7 @@ function StepReview({
           <div className="budget-review-section-title">02 — ASSETS & RENTALS</div>
           <ProviderToggle />
           {equipLines.length === 0 ? (
-            <div style={{ color: '#737373', fontSize: '12px', fontStyle: 'italic', padding: '8px 0' }}>No equipment lines added.</div>
+            <div style={{ color: 'var(--color-mid-gray)', fontSize: '12px', fontStyle: 'italic', padding: '8px 0' }}>No equipment lines added.</div>
           ) : (
             <>
               <div className="budget-line-headers">
@@ -1172,7 +1172,7 @@ function StepReview({
                         <input type="number" className="input budget-line-input" style={{ width: '76px' }}
                           value={line.discount || 0} min="0" placeholder="0"
                           onChange={e => updateEquip(line._id, 'discount', e.target.value)} />
-                        {discLbl && <span style={{ fontSize: '11px', color: '#e7000b', whiteSpace: 'nowrap' }}>{discLbl}</span>}
+                        {discLbl && <span style={{ fontSize: '11px', color: 'var(--color-ember)', whiteSpace: 'nowrap' }}>{discLbl}</span>}
                       </div>
                       <button className="btn-icon" style={{ width: '28px', height: '28px', borderRadius: '10px', flexShrink: 0 }}
                         onClick={() => setEquipLines(prev => prev.filter(l => l._id !== line._id))}>
@@ -1180,7 +1180,7 @@ function StepReview({
                       </button>
                     </div>
                     {line.provider_name && (
-                      <div style={{ fontSize: '11px', color: '#737373', paddingLeft: '6px', marginTop: '-2px' }}>{line.provider_name}</div>
+                      <div style={{ fontSize: '11px', color: 'var(--color-mid-gray)', paddingLeft: '6px', marginTop: '-2px' }}>{line.provider_name}</div>
                     )}
                   </div>
                 );
@@ -1196,7 +1196,7 @@ function StepReview({
         <div className="budget-review-section">
           <div className="budget-review-section-title">03 — LOGISTICAL COSTS</div>
           {logLines.length === 0 ? (
-            <div style={{ color: '#737373', fontSize: '12px', fontStyle: 'italic', padding: '8px 0' }}>No logistical lines added.</div>
+            <div style={{ color: 'var(--color-mid-gray)', fontSize: '12px', fontStyle: 'italic', padding: '8px 0' }}>No logistical lines added.</div>
           ) : (
             <>
               <div className="budget-line-headers">
@@ -1228,7 +1228,7 @@ function StepReview({
                       <input type="number" className="input budget-line-input" style={{ width: '76px' }}
                         value={line.discount || 0} min="0" placeholder="0"
                         onChange={e => updateLog(line._id, 'discount', e.target.value)} />
-                      {discLbl && <span style={{ fontSize: '11px', color: '#e7000b', whiteSpace: 'nowrap' }}>{discLbl}</span>}
+                      {discLbl && <span style={{ fontSize: '11px', color: 'var(--color-ember)', whiteSpace: 'nowrap' }}>{discLbl}</span>}
                     </div>
                     <button className="btn-icon" style={{ width: '28px', height: '28px', borderRadius: '10px', flexShrink: 0 }}
                       onClick={() => setLogLines(prev => prev.filter(l => l._id !== line._id))}>
@@ -1251,7 +1251,7 @@ function StepReview({
         </div>
 
         {totalDiscount > 0 && (
-          <div className="fin-row" style={{ color: '#e7000b' }}>
+          <div className="fin-row" style={{ color: 'var(--color-ember)' }}>
             <span style={{ fontSize: '13px' }}>
               Discount
               {grossSubtotal > 0 && (
@@ -1270,7 +1270,7 @@ function StepReview({
         </div>
 
         <div className="fin-row" style={{ alignItems: 'flex-start' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#737373' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: 'var(--color-mid-gray)' }}>
             <input
               type="checkbox"
               checked={info.vat_enabled}
@@ -1289,12 +1289,12 @@ function StepReview({
                 onChange={e => setInfo(p => ({ ...p, vat_rate: e.target.value }))}
               />
               <span className="text-2 text-sm">%</span>
-              <span style={{ fontWeight: 600, color: '#737373', fontSize: '13px' }}>{fmt(vatAmount)}</span>
+              <span style={{ fontWeight: 600, color: 'var(--color-mid-gray)', fontSize: '13px' }}>{fmt(vatAmount)}</span>
             </div>
           )}
         </div>
 
-        <div className="fin-row total" style={{ borderTop: '1px solid #e5e5e5', marginTop: '6px', paddingTop: '12px', fontSize: '18px' }}>
+        <div className="fin-row total" style={{ borderTop: '1px solid var(--color-hairline)', marginTop: '6px', paddingTop: '12px', fontSize: '18px' }}>
           <span>TOTAL</span>
           <span style={{ background: 'var(--gradient-primary)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
             {fmt(grandTotal)}

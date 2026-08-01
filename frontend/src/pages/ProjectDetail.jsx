@@ -267,9 +267,9 @@ export default function ProjectDetail() {
                 <div className="section-title" style={{ marginBottom: '8px' }}>Status History</div>
                 {statusHistory.map(h => (
                   <div key={h.id} className="status-history-item">
-                    <ArrowRight size={12} style={{ color: '#737373', flexShrink: 0 }} />
+                    <ArrowRight size={12} style={{ color: 'var(--color-mid-gray)', flexShrink: 0 }} />
                     <span className="text-2">{h.from_status?.replace(/-/g, ' ') || 'created'}</span>
-                    <ArrowRight size={10} style={{ color: '#737373' }} />
+                    <ArrowRight size={10} style={{ color: 'var(--color-mid-gray)' }} />
                     <span>{h.to_status.replace(/-/g, ' ')}</span>
                     <span className="text-xs text-2" style={{ marginLeft: 'auto' }}>
                       {fmtDate(h.changed_at)}
@@ -434,7 +434,7 @@ export default function ProjectDetail() {
                 </div>
               ) : !expenseLink.is_active ? (
                 <div className="flex-center gap-2">
-                  <span className="badge" style={{ background: '#f5f5f5', color: '#737373', fontSize: '11px' }}>Link revoked</span>
+                  <span className="badge" style={{ background: 'var(--surface-input-fill)', color: 'var(--color-mid-gray)', fontSize: '11px' }}>Link revoked</span>
                   <button className="btn btn-ghost btn-sm" onClick={generateLink} disabled={linkLoading}><Link2 size={12} /> Generate New Link</button>
                 </div>
               ) : (
@@ -483,7 +483,7 @@ export default function ProjectDetail() {
                     </div>
                     <div className="flex-center gap-2" style={{ flexShrink: 0 }}>
                       <span className="text-bold text-sm">{fmt(pe.amount)}</span>
-                      <button className="btn btn-ghost btn-sm" style={{ color: '#0a0a0a', fontSize: '11px' }}
+                      <button className="btn btn-ghost btn-sm" style={{ color: 'var(--color-ink)', fontSize: '11px' }}
                         onClick={async () => { await api.post(`/projects/${id}/expenses/${pe.id}/approve`, {}); load(); }}>
                         Approve
                       </button>
@@ -512,8 +512,8 @@ export default function ProjectDetail() {
                       title="View invoice"
                     >
                       {e.invoice_image_path.toLowerCase().endsWith('.pdf') ? (
-                        <div style={{ width: '32px', height: '32px', background: '#ffffff', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <FileText size={16} color="#737373" />
+                        <div style={{ width: '32px', height: '32px', background: 'var(--surface-card)', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <FileText size={16} color="var(--color-mid-gray)" />
                         </div>
                       ) : (
                         <img
@@ -532,13 +532,13 @@ export default function ProjectDetail() {
                     {e.notes && <div className="text-xs text-2">{e.notes}</div>}
                     {e.submitted_by && (
                       <div className="text-xs text-2" style={{ marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <span style={{ background: '#ffffff', borderRadius: '6px', padding: '1px 6px', fontSize: '10px' }}>via link</span>
+                        <span style={{ background: 'var(--surface-card)', borderRadius: '6px', padding: '1px 6px', fontSize: '10px' }}>via link</span>
                         <span>{e.submitted_by}</span>
                       </div>
                     )}
                     {!e.submitted_by && e.source === 'link' && (
                       <div className="text-xs text-2" style={{ marginTop: '2px' }}>
-                        <span style={{ background: '#ffffff', borderRadius: '6px', padding: '1px 6px', fontSize: '10px' }}>via link</span>
+                        <span style={{ background: 'var(--surface-card)', borderRadius: '6px', padding: '1px 6px', fontSize: '10px' }}>via link</span>
                       </div>
                     )}
                   </div>
@@ -606,7 +606,7 @@ export default function ProjectDetail() {
             {pnl.clientBudget > 0 && (
               <div className="fin-row">
                 <span className="text-2">Negotiation Delta</span>
-                <span style={{ color: (pnl.agreedBudget - pnl.clientBudget) >= 0 ? '#0a0a0a' : '#e7000b', fontWeight: 600 }}>
+                <span style={{ color: (pnl.agreedBudget - pnl.clientBudget) >= 0 ? 'var(--color-ink)' : 'var(--color-ember)', fontWeight: 600 }}>
                   {(pnl.agreedBudget - pnl.clientBudget) >= 0 ? '+' : ''}{fmt(pnl.agreedBudget - pnl.clientBudget)}
                 </span>
               </div>
@@ -748,7 +748,7 @@ function PhaseBlock({ phase, expanded, onToggle, onComplete, onReactivate, onAdd
               {task.is_locked ? (
                 <div className="task-lock-icon" title="Locked approval task"><Lock size={12} /></div>
               ) : (
-                <div style={{ cursor: 'grab', color: '#737373', paddingRight: '4px', display: 'flex', alignItems: 'center', opacity: hoveredId === task.id ? 1 : 0, transition: 'opacity 0.15s', flexShrink: 0 }}>
+                <div style={{ cursor: 'grab', color: 'var(--color-mid-gray)', paddingRight: '4px', display: 'flex', alignItems: 'center', opacity: hoveredId === task.id ? 1 : 0, transition: 'opacity 0.15s', flexShrink: 0 }}>
                   <GripVertical size={14} />
                 </div>
               )}
@@ -757,7 +757,7 @@ function PhaseBlock({ phase, expanded, onToggle, onComplete, onReactivate, onAdd
                 onClick={() => onTaskStatus(task, task.status === 'done' ? 'todo' : 'done')}
                 title="Click to toggle done"
               >
-                {task.status === 'done' && <Check size={10} color="#0a0a0a" />}
+                {task.status === 'done' && <Check size={10} color="var(--color-ink)" />}
               </div>
               <div style={{ flex: 1 }}>
                 <span className={task.status === 'done' ? 'text-2' : ''} style={{ textDecoration: task.status === 'done' ? 'line-through' : 'none', fontSize: '13px' }}>{task.title}</span>
@@ -820,7 +820,7 @@ function PhaseCompleteModal({ projectId, project, currentPhase, nextPhase, crewL
           <button className="modal-close" onClick={onClose}><X size={16} /></button>
         </div>
         <p className="text-2 text-sm" style={{ marginBottom: '16px' }}>
-          Optionally add tasks to <strong style={{ color: '#0a0a0a' }}>{nextPhase.phase_name}</strong> before marking <strong style={{ color: '#0a0a0a' }}>{currentPhase.phase_name}</strong> complete.
+          Optionally add tasks to <strong style={{ color: 'var(--color-ink)' }}>{nextPhase.phase_name}</strong> before marking <strong style={{ color: 'var(--color-ink)' }}>{currentPhase.phase_name}</strong> complete.
         </p>
         <PhaseTaskStep
           phaseName={nextPhase.phase_name}
@@ -1207,7 +1207,7 @@ function ExpenseModal({ expense, projectId, expCats, invoiceBlobUrls, onClose, o
         {file ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px', background: 'var(--card)', borderRadius: '6px', border: '1px solid var(--border)' }}>
             {filePreview && <img src={filePreview} alt="preview" style={{ width: '32px', height: '32px', objectFit: 'cover', borderRadius: '6px' }} />}
-            {!filePreview && <FileText size={20} color="#737373" />}
+            {!filePreview && <FileText size={20} color="var(--color-mid-gray)" />}
             <span className="text-xs text-2" style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setFile(null); setFilePreview(null); if (fileRef.current) fileRef.current.value = ''; }}><X size={12} /></button>
           </div>
@@ -1239,12 +1239,12 @@ function ImageLightbox({ src, filename, onClose }) {
 
   return (
     <div
-      style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,0.45)', zIndex: 2000, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
+      style={{ position: 'fixed', inset: 0, background: 'var(--scrim-strong)', zIndex: 2000, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
       onClick={e => e.target === e.currentTarget && onClose()}
     >
       <button
         onClick={onClose}
-        style={{ position: 'absolute', top: '16px', right: '16px', background: 'rgba(10,10,10,0.05)', border: 'none', borderRadius: '50%', width: '36px', height: '36px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0a0a0a' }}
+        style={{ position: 'absolute', top: '16px', right: '16px', background: 'var(--overlay-04)', border: 'none', borderRadius: '50%', width: '36px', height: '36px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-ink)' }}
       >
         <X size={18} />
       </button>
@@ -1256,7 +1256,7 @@ function ImageLightbox({ src, filename, onClose }) {
       <a
         href={src}
         download={filename}
-        style={{ marginTop: '16px', background: 'rgba(10,10,10,0.06)', color: '#0a0a0a', border: 'none', borderRadius: '24px', padding: '10px 20px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', textDecoration: 'none', fontSize: '14px' }}
+        style={{ marginTop: '16px', background: 'var(--overlay-05)', color: 'var(--color-ink)', border: 'none', borderRadius: '24px', padding: '10px 20px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', textDecoration: 'none', fontSize: '14px' }}
       >
         <Download size={16} /> Download
       </a>
@@ -1488,7 +1488,7 @@ function DeleteProjectModal({ projectTitle, onClose, onConfirm }) {
           <button className="modal-close" onClick={onClose}><X size={16} /></button>
         </div>
         <p className="text-2 text-sm" style={{ marginBottom: '20px', lineHeight: '1.6' }}>
-          Are you sure you want to delete <strong style={{ color: '#0a0a0a' }}>{projectTitle}</strong>? This will permanently delete all tasks, phases, crew assignments, expenses, and payments linked to this project.
+          Are you sure you want to delete <strong style={{ color: 'var(--color-ink)' }}>{projectTitle}</strong>? This will permanently delete all tasks, phases, crew assignments, expenses, and payments linked to this project.
         </p>
         <div className="modal-footer">
           <button className="btn btn-ghost" onClick={onClose} disabled={deleting}>Cancel</button>

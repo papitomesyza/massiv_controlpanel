@@ -149,12 +149,12 @@ export default function Dashboard() {
           onDrop={() => onDrop(w.id)}
         >
           <div style={{
-            border: '1px dashed #e5e5e5', borderRadius: '24px',
+            border: '1px dashed var(--color-hairline)', borderRadius: '24px',
             padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '12px',
-            background: 'rgba(10,10,10,0.03)',
+            background: 'var(--overlay-02)',
           }}>
-            <GripHorizontal size={16} style={{ color: '#737373' }} />
-            <span style={{ color: '#737373', fontSize: '13px', flex: 1 }}>
+            <GripHorizontal size={16} style={{ color: 'var(--color-mid-gray)' }} />
+            <span style={{ color: 'var(--color-mid-gray)', fontSize: '13px', flex: 1 }}>
               {WIDGET_DEFS.find(d => d.id === w.id)?.label} — Hidden
             </span>
             <button className="btn btn-ghost btn-sm" onClick={() => toggleVisibility(w.id)} style={{ fontSize: '12px' }}>
@@ -182,20 +182,20 @@ export default function Dashboard() {
           <div style={{
             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
             padding: '6px 12px', marginBottom: '6px',
-            background: 'rgba(10,10,10,0.03)',
-            border: '1px dashed #0a0a0a',
+            background: 'var(--overlay-02)',
+            border: '1px dashed var(--color-ink)',
             borderBottom: 'none',
             borderRadius: '10px 10px 0 0',
             cursor: 'grab',
           }}>
-            <GripHorizontal size={16} style={{ color: '#737373' }} />
-            <span style={{ fontSize: '11px', color: '#737373' }}>{WIDGET_DEFS.find(d => d.id === w.id)?.label}</span>
+            <GripHorizontal size={16} style={{ color: 'var(--color-mid-gray)' }} />
+            <span style={{ fontSize: '11px', color: 'var(--color-mid-gray)' }}>{WIDGET_DEFS.find(d => d.id === w.id)?.label}</span>
             <button className="btn btn-ghost btn-sm" style={{ fontSize: '11px', padding: '2px 8px' }} onClick={() => toggleVisibility(w.id)}>
               <Eye size={12} /> Hide
             </button>
           </div>
         )}
-        <div style={editMode ? { border: '1px dashed #0a0a0a', borderTop: 'none', borderRadius: '0 0 10px 10px', padding: '12px 0' } : {}}>
+        <div style={editMode ? { border: '1px dashed var(--color-ink)', borderTop: 'none', borderRadius: '0 0 10px 10px', padding: '12px 0' } : {}}>
           <WidgetContent
             id={w.id}
             stats={stats}
@@ -260,12 +260,12 @@ function ChartTooltip({ active, payload, label, labelFmt }) {
   if (!active || !payload?.length) return null;
   return (
     <div style={{
-      background: '#fafafa', border: '1px solid #e5e5e5',
+      background: 'var(--color-surface-alt)', border: '1px solid var(--color-hairline)',
       borderRadius: '10px', padding: '10px 14px', fontSize: '12px',
     }}>
-      <div style={{ color: '#737373', marginBottom: '4px' }}>{label}</div>
+      <div style={{ color: 'var(--color-mid-gray)', marginBottom: '4px' }}>{label}</div>
       {payload.map(p => (
-        <div key={p.dataKey} style={{ color: '#0a0a0a', fontWeight: 600 }}>
+        <div key={p.dataKey} style={{ color: 'var(--color-ink)', fontWeight: 600 }}>
           {labelFmt ? labelFmt(p.value) : p.value}
         </div>
       ))}
@@ -409,13 +409,13 @@ function WidgetContent({ id, stats, projects, expenses, chartData, leads, setAct
               <AreaChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
                 <defs>
                   <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor="#0a0a0a" stopOpacity={0.25} />
-                    <stop offset="95%" stopColor="#0a0a0a" stopOpacity={0.01} />
+                    <stop offset="5%"  stopColor="var(--color-ink)" stopOpacity={0.25} />
+                    <stop offset="95%" stopColor="var(--color-ink)" stopOpacity={0.01} />
                   </linearGradient>
                 </defs>
-                <XAxis dataKey="month" tick={{ fontSize: 10, fill: '#737373' }} axisLine={false} tickLine={false} />
+                <XAxis dataKey="month" tick={{ fontSize: 10, fill: 'var(--color-mid-gray)' }} axisLine={false} tickLine={false} />
                 <Tooltip content={<ChartTooltip labelFmt={v => fmt(v)} />} />
-                <Area type="monotone" dataKey="revenue" stroke="#0a0a0a" strokeWidth={2} fill="url(#revGrad)" dot={false} />
+                <Area type="monotone" dataKey="revenue" stroke="var(--color-ink)" strokeWidth={2} fill="url(#revGrad)" dot={false} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -425,13 +425,13 @@ function WidgetContent({ id, stats, projects, expenses, chartData, leads, setAct
               <AreaChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
                 <defs>
                   <linearGradient id="expGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor="#171717" stopOpacity={0.25} />
-                    <stop offset="95%" stopColor="#171717" stopOpacity={0.01} />
+                    <stop offset="5%"  stopColor="var(--color-ink-soft)" stopOpacity={0.25} />
+                    <stop offset="95%" stopColor="var(--color-ink-soft)" stopOpacity={0.01} />
                   </linearGradient>
                 </defs>
-                <XAxis dataKey="month" tick={{ fontSize: 10, fill: '#737373' }} axisLine={false} tickLine={false} />
+                <XAxis dataKey="month" tick={{ fontSize: 10, fill: 'var(--color-mid-gray)' }} axisLine={false} tickLine={false} />
                 <Tooltip content={<ChartTooltip labelFmt={v => fmt(v)} />} />
-                <Area type="monotone" dataKey="expenses" stroke="#171717" strokeWidth={2} fill="url(#expGrad)" dot={false} />
+                <Area type="monotone" dataKey="expenses" stroke="var(--color-ink-soft)" strokeWidth={2} fill="url(#expGrad)" dot={false} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -460,7 +460,7 @@ function LeadsBand({ leads }) {
 
       {leads.length === 0 ? (
         <div className="dash-leads-empty">
-          <Lightbulb size={22} style={{ color: '#d4d4d4' }} />
+          <Lightbulb size={22} style={{ color: 'var(--color-hairline-strong)' }} />
           <span>No leads yet — add one from the Projects page</span>
         </div>
       ) : (
@@ -480,12 +480,12 @@ function DashLeadCard({ lead }) {
       <div style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--accent)' }}>
         {lead.category_name || 'Uncategorized'}
       </div>
-      <div style={{ fontWeight: 700, fontSize: '14px', color: '#0a0a0a' }}>
+      <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--color-ink)' }}>
         {lead.client_name || '—'}
       </div>
       {lead.note && (
         <div style={{
-          fontSize: '12px', color: '#737373',
+          fontSize: '12px', color: 'var(--color-mid-gray)',
           display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
           flex: 1,
         }}>
@@ -493,7 +493,7 @@ function DashLeadCard({ lead }) {
         </div>
       )}
       <div className="flex-between" style={{ marginTop: '4px' }}>
-        <span style={{ fontSize: '11px', color: '#737373' }}>
+        <span style={{ fontSize: '11px', color: 'var(--color-mid-gray)' }}>
           <CalendarDays size={11} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }} />
           {fmtDate(lead.contacted_at)}
         </span>
@@ -524,14 +524,14 @@ function ProjectDashCard({ p }) {
           <StatusBadge status={p.status} />
         </div>
 
-        <div style={{ fontSize: '12px', color: '#737373', marginBottom: '10px' }}>
+        <div style={{ fontSize: '12px', color: 'var(--color-mid-gray)', marginBottom: '10px' }}>
           {p.client_name || 'No client'}
-          {p.category_name && <span style={{ color: '#737373', margin: '0 5px' }}>·</span>}
+          {p.category_name && <span style={{ color: 'var(--color-mid-gray)', margin: '0 5px' }}>·</span>}
           {p.category_name && <span>{p.category_name}</span>}
         </div>
 
         {/* Phase progress */}
-        <div className="flex-between" style={{ fontSize: '11px', color: '#737373', marginBottom: '4px' }}>
+        <div className="flex-between" style={{ fontSize: '11px', color: 'var(--color-mid-gray)', marginBottom: '4px' }}>
           <span>{p.current_phase || 'No active phase'}</span>
           <span>{p.completed_phases}/4 phases</span>
         </div>
@@ -542,9 +542,9 @@ function ProjectDashCard({ p }) {
         {/* Budget vs received */}
         {p.agreed_budget > 0 && (
           <>
-            <div className="flex-between" style={{ fontSize: '11px', color: '#737373', marginBottom: '4px' }}>
+            <div className="flex-between" style={{ fontSize: '11px', color: 'var(--color-mid-gray)', marginBottom: '4px' }}>
               <span>Received</span>
-              <span>{fmt(p.total_received)} <span style={{ color: '#737373' }}>/ {fmt(p.agreed_budget)}</span></span>
+              <span>{fmt(p.total_received)} <span style={{ color: 'var(--color-mid-gray)' }}>/ {fmt(p.agreed_budget)}</span></span>
             </div>
             <div className="mini-bar-track">
               <div className="mini-bar-fill mini-bar-received" style={{ width: `${receivedPct}%` }} />
@@ -731,7 +731,7 @@ function DashboardModal({ type, month, projects, onClose, onReload }) {
 
             {type === 'upcoming' && (
               <div className="table-wrap">
-                <div style={{ padding: '8px 12px 4px', fontSize: '12px', color: '#737373' }}>
+                <div style={{ padding: '8px 12px 4px', fontSize: '12px', color: 'var(--color-mid-gray)' }}>
                   Future shoots with an unpaid balance — not yet due.
                 </div>
                 <table>
@@ -743,7 +743,7 @@ function DashboardModal({ type, month, projects, onClose, onReload }) {
                         <td className="text-2 text-sm">{row.client_name || '—'}</td>
                         <td className="text-sm">{fmt(row.agreed_budget)}</td>
                         <td className="text-2 text-sm">{fmt(row.total_received)}</td>
-                        <td className="text-bold" style={{ color: '#737373' }}>{fmt(row.outstanding)}</td>
+                        <td className="text-bold" style={{ color: 'var(--color-mid-gray)' }}>{fmt(row.outstanding)}</td>
                         <td className="text-sm">{fmtDate(row.shoot_date)}</td>
                       </tr>
                     ))}
@@ -751,7 +751,7 @@ function DashboardModal({ type, month, projects, onClose, onReload }) {
                 </table>
                 {data.length === 0 && <div className="empty">No upcoming shoots with a balance</div>}
                 {data.length > 0 && (
-                  <div style={{ padding: '10px 12px', fontWeight: 700, borderTop: '1px solid var(--border)', textAlign: 'right', color: '#737373' }}>
+                  <div style={{ padding: '10px 12px', fontWeight: 700, borderTop: '1px solid var(--border)', textAlign: 'right', color: 'var(--color-mid-gray)' }}>
                     Total Expected: {fmt(data.reduce((s, r) => s + r.outstanding, 0))}
                   </div>
                 )}

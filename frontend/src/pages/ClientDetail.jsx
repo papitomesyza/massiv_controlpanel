@@ -102,7 +102,7 @@ export default function ClientDetail() {
             {client.notes && (
               <div style={{ marginTop: '12px' }}>
                 <div className="text-xs text-2" style={{ marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Notes</div>
-                <div className="text-sm" style={{ color: '#171717' }}>{client.notes}</div>
+                <div className="text-sm" style={{ color: 'var(--color-ink-soft)' }}>{client.notes}</div>
               </div>
             )}
           </div>

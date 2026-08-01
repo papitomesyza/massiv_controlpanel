@@ -4,8 +4,10 @@ import {
   LayoutDashboard, FolderKanban, Users, UserCog, Package,
   BarChart3, FileText, Settings, LogOut, CalendarDays, MapPin, Receipt,
   Plus, X, Lightbulb, LayoutGrid, Library, ChevronRight, KeyRound, Presentation,
+  Sun, Moon,
 } from 'lucide-react';
 import { useAgency } from '../context/AgencyContext';
+import { useTheme } from '../context/ThemeContext';
 import { api } from '../api';
 import SetupWizard from './SetupWizard';
 
@@ -84,6 +86,8 @@ export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { name, tagline, logo } = useAgency();
+  const { theme, toggleTheme } = useTheme();
+  const isDark = theme === 'dark';
   const [upcoming, setUpcoming] = useState([]);
   const [fabOpen, setFabOpen] = useState(false);
   const [floatMenuOpen, setFloatMenuOpen] = useState(false);
@@ -158,7 +162,7 @@ export default function Layout() {
             <div>
               <div>{name}</div>
               {tagline && (
-                <div style={{ fontSize: '10px', color: '#737373', fontWeight: 400, marginTop: '2px', letterSpacing: '0' }}>
+                <div style={{ fontSize: '10px', color: 'var(--color-mid-gray)', fontWeight: 400, marginTop: '2px', letterSpacing: '0' }}>
                   {tagline}
                 </div>
               )}
@@ -185,7 +189,7 @@ export default function Layout() {
               ))}
             </div>
 
-            <div style={{ height: '1px', background: 'rgba(10,10,10,0.04)', margin: '4px 16px' }} />
+            <div style={{ height: '1px', background: 'var(--overlay-03)', margin: '4px 16px' }} />
 
             {/* DATABASE */}
             <button
@@ -204,7 +208,7 @@ export default function Layout() {
               ))}
             </div>
 
-            <div style={{ height: '1px', background: 'rgba(10,10,10,0.04)', margin: '4px 16px' }} />
+            <div style={{ height: '1px', background: 'var(--overlay-03)', margin: '4px 16px' }} />
 
             {/* THE MIND */}
             <button
@@ -223,7 +227,7 @@ export default function Layout() {
               ))}
             </div>
 
-            <div style={{ height: '1px', background: 'rgba(10,10,10,0.04)', margin: '4px 16px' }} />
+            <div style={{ height: '1px', background: 'var(--overlay-03)', margin: '4px 16px' }} />
 
             {/* PITCHES */}
             <button
@@ -248,7 +252,7 @@ export default function Layout() {
               <div className="sidebar-upcoming-title">Upcoming</div>
               {upcoming.map(ev => (
                 <div key={ev.id} className="sidebar-upcoming-item">
-                  <span className="sidebar-upcoming-dot" style={{ background: ev.color || '#0a0a0a' }} />
+                  <span className="sidebar-upcoming-dot" style={{ background: ev.color || 'var(--color-ink)' }} />
                   <div className="sidebar-upcoming-info">
                     <span className="sidebar-upcoming-name">{ev.title.length > 22 ? ev.title.slice(0, 22) + '…' : ev.title}</span>
                     <span className="sidebar-upcoming-date">{fmtShortDate(ev.start_date)}</span>
@@ -260,6 +264,18 @@ export default function Layout() {
         </div>
 
         <div className="sidebar-footer">
+          <button
+            className="theme-toggle"
+            onClick={toggleTheme}
+            aria-pressed={isDark}
+            title={isDark ? 'Switch to light' : 'Switch to dark'}
+          >
+            <div className="nav-icon">{isDark ? <Sun size={18} /> : <Moon size={18} />}</div>
+            <span>{isDark ? 'Light mode' : 'Dark mode'}</span>
+            <span className="theme-toggle-track" aria-hidden="true">
+              <span className="theme-toggle-thumb" />
+            </span>
+          </button>
           <NavLink to="/settings" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
             <div className="nav-icon"><Settings size={18} /></div>
             Settings
@@ -310,9 +326,19 @@ export default function Layout() {
           <div className="more-launcher-box" onClick={e => e.stopPropagation()}>
             <div className="more-launcher-header">
               <span className="more-launcher-title">Navigation</span>
-              <button className="modal-close" onClick={() => setFloatMenuOpen(false)}>
-                <X size={18} />
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  className="modal-close"
+                  onClick={toggleTheme}
+                  aria-pressed={isDark}
+                  aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+                >
+                  {isDark ? <Sun size={18} /> : <Moon size={18} />}
+                </button>
+                <button className="modal-close" onClick={() => setFloatMenuOpen(false)} aria-label="Close">
+                  <X size={18} />
+                </button>
+              </div>
             </div>
             <div className="more-launcher-grid">
               {ALL_NAV_PAGES.map(({ to, icon: Icon, label }) => (

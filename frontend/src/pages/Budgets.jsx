@@ -76,10 +76,10 @@ export default function Budgets() {
 
   function statusBadge(status) {
     if (status === 'finalized') return (
-      <span className="badge" style={{ background: 'rgba(10,10,10,0.06)', color: '#0a0a0a' }}>Finalized</span>
+      <span className="badge" style={{ background: 'var(--overlay-05)', color: 'var(--color-ink)' }}>Finalized</span>
     );
     return (
-      <span className="badge" style={{ background: 'rgba(10,10,10,0.05)', color: 'var(--accent)' }}>Draft</span>
+      <span className="badge" style={{ background: 'var(--overlay-04)', color: 'var(--accent)' }}>Draft</span>
     );
   }
 
@@ -100,8 +100,8 @@ export default function Budgets() {
       <div className="card">
         {budgets.length === 0 ? (
           <div className="empty" style={{ padding: '64px 32px' }}>
-            <FileText size={40} color="#d4d4d4" style={{ marginBottom: '16px' }} />
-            <div style={{ marginBottom: '8px', color: '#0a0a0a', fontWeight: 600, fontSize: '16px' }}>No estimates yet</div>
+            <FileText size={40} color="var(--color-hairline-strong)" style={{ marginBottom: '16px' }} />
+            <div style={{ marginBottom: '8px', color: 'var(--color-ink)', fontWeight: 600, fontSize: '16px' }}>No estimates yet</div>
             <div style={{ marginBottom: '24px' }}>Create your first estimate.</div>
             <button className="btn btn-primary" onClick={handleNew}><Plus size={15} /> New Estimate</button>
           </div>
@@ -126,14 +126,14 @@ export default function Budgets() {
                     <td data-label="Title">
                       <button
                         onClick={() => handleEdit(b)}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#0a0a0a', fontWeight: 600, fontSize: '14px', padding: 0, textAlign: 'left' }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-ink)', fontWeight: 600, fontSize: '14px', padding: 0, textAlign: 'left' }}
                       >
                         {b.title}
                       </button>
                     </td>
-                    <td data-label="Project" className="text-2">{b.project_title || <span style={{ color: '#737373' }}>—</span>}</td>
+                    <td data-label="Project" className="text-2">{b.project_title || <span style={{ color: 'var(--color-mid-gray)' }}>—</span>}</td>
                     <td data-label="Category" className="text-2" style={{ fontSize: '12px' }}>{b.category}</td>
-                    <td data-label="Client" className="text-2">{b.client_name || <span style={{ color: '#737373' }}>—</span>}</td>
+                    <td data-label="Client" className="text-2">{b.client_name || <span style={{ color: 'var(--color-mid-gray)' }}>—</span>}</td>
                     <td data-label="Total" style={{ fontWeight: 600 }}>{fmt(b.total)}</td>
                     <td data-label="Status">{statusBadge(b.status)}</td>
                     <td data-label="Date" className="text-2" style={{ fontSize: '12px' }}>{fmtDate(b.created_at?.split('T')[0] || b.created_at?.split(' ')[0])}</td>
@@ -159,7 +159,7 @@ export default function Budgets() {
                           title="Delete"
                           onClick={() => handleDelete(b)}
                           disabled={deleting === b.id}
-                          style={{ color: '#e7000b' }}
+                          style={{ color: 'var(--color-ember)' }}
                         >
                           <Trash2 size={14} />
                         </button>

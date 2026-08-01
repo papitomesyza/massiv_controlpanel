@@ -71,13 +71,13 @@ function CollectionTile({ collection, onEdit, onDelete, onArchive, onStar, onCli
       style={{
         cursor: 'pointer', overflow: 'hidden', display: 'flex', flexDirection: 'column',
         position: 'relative', opacity: collection.archived ? 0.75 : 1,
-        border: isStarred ? '2px solid #d4d4d4' : undefined,
-        boxShadow: isStarred ? '0 0 0 2px #0a0a0a' : undefined,
+        border: isStarred ? '2px solid var(--color-hairline-strong)' : undefined,
+        boxShadow: isStarred ? '0 0 0 2px var(--color-ink)' : undefined,
       }}
       onClick={onClick}
     >
       {/* Cover image / placeholder */}
-      <div style={{ width: '100%', height: '118px', background: 'rgba(10,10,10,0.02)', flexShrink: 0 }}>
+      <div style={{ width: '100%', height: '118px', background: 'var(--overlay-01)', flexShrink: 0 }}>
         {hasCover ? (
           <img
             src={collection.cover_thumbnail}
@@ -89,17 +89,17 @@ function CollectionTile({ collection, onEdit, onDelete, onArchive, onStar, onCli
         ) : isInstagramCover ? (
           <div style={{
             width: '100%', height: '100%',
-            background: 'linear-gradient(135deg, #737373 0%, #e7000b 50%, #737373 100%)',
+            background: 'linear-gradient(135deg, var(--color-mid-gray) 0%, var(--color-ember) 50%, var(--color-mid-gray) 100%)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
-            <Instagram size={30} color="#0a0a0a" strokeWidth={1.5} />
+            <Instagram size={30} color="var(--color-ink)" strokeWidth={1.5} />
           </div>
         ) : isTikTokCover ? (
           <div style={{
-            width: '100%', height: '100%', background: '#f5f5f5',
+            width: '100%', height: '100%', background: 'var(--surface-input-fill)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
-            <Music2 size={30} color="#0a0a0a" strokeWidth={1.5} />
+            <Music2 size={30} color="var(--color-ink)" strokeWidth={1.5} />
           </div>
         ) : (
           <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -117,11 +117,11 @@ function CollectionTile({ collection, onEdit, onDelete, onArchive, onStar, onCli
           <div style={{ display: 'flex', gap: '2px', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
             <button
               className="btn-ghost"
-              style={{ padding: '3px 5px', color: isStarred ? '#171717' : undefined }}
+              style={{ padding: '3px 5px', color: isStarred ? 'var(--color-ink-soft)' : undefined }}
               title={isStarred ? 'Unstar' : 'Star'}
               onClick={() => onStar(collection)}
             >
-              <Star size={12} fill={isStarred ? '#171717' : 'none'} />
+              <Star size={12} fill={isStarred ? 'var(--color-ink-soft)' : 'none'} />
             </button>
             {!isProject && !collection.archived && (
               <button className="btn-ghost" style={{ padding: '3px 5px' }} title="Edit" onClick={() => onEdit(collection)}>
@@ -161,11 +161,11 @@ function CollectionTile({ collection, onEdit, onDelete, onArchive, onStar, onCli
       {isStarred && (
         <div style={{
           position: 'absolute', bottom: 8, left: 8,
-          background: '#171717', borderRadius: '50%',
+          background: 'var(--color-ink-soft)', borderRadius: '50%',
           width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center',
           pointerEvents: 'none',
         }}>
-          <Star size={10} fill="#fafafa" color="#fafafa" />
+          <Star size={10} fill="var(--accent-contrast)" color="var(--accent-contrast)" />
         </div>
       )}
     </div>
@@ -198,7 +198,7 @@ function SortableCollectionTile(props) {
         style={{
           position: 'absolute', top: 7, left: 7, zIndex: 20,
           cursor: isStarred ? 'default' : (isDragging ? 'grabbing' : 'grab'),
-          background: 'rgba(10,10,10,0.45)', borderRadius: 6, padding: '3px 5px',
+          background: 'var(--scrim-strong)', borderRadius: 6, padding: '3px 5px',
           color: '#ffffff', touchAction: 'none', display: 'flex', alignItems: 'center',
           opacity: isStarred ? 0.25 : 1,
         }}
@@ -362,11 +362,11 @@ function NewCollectionModal({ projects, onClose, onCreated }) {
                 key={opt.key}
                 style={typeCardBase}
                 onClick={() => pickType(opt.key)}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = 'rgba(10,10,10,0.03)'; }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = 'var(--overlay-02)'; }}
                 onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-default)'; e.currentTarget.style.background = 'var(--bg-secondary)'; }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '13px' }}>
-                  <div style={{ width: 38, height: 38, borderRadius: 10, background: 'rgba(10,10,10,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <div style={{ width: 38, height: 38, borderRadius: 10, background: 'var(--overlay-04)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                     {opt.icon}
                   </div>
                   <div>
@@ -692,7 +692,7 @@ function MindShareModal({ onClose }) {
                 <div style={{ display: 'flex', gap: '8px', justifyContent: 'space-between', flexWrap: 'wrap' }}>
                   <button
                     className="btn btn-ghost"
-                    style={{ color: 'var(--danger)', borderColor: 'rgba(231,0,11,0.35)', fontSize: '12px' }}
+                    style={{ color: 'var(--danger)', borderColor: 'var(--ember-line-strong)', fontSize: '12px' }}
                     onClick={handleRevoke}
                     disabled={revoking}
                   >
@@ -951,12 +951,12 @@ export default function Collections() {
               >
                 {tab.charAt(0).toUpperCase() + tab.slice(1)}
                 {tab === 'active' && totalActive > 0 && (
-                  <span style={{ marginLeft: '6px', fontSize: '11px', background: 'var(--accent)', color: '#fafafa', borderRadius: '10px', padding: '1px 6px', fontWeight: 700 }}>
+                  <span style={{ marginLeft: '6px', fontSize: '11px', background: 'var(--accent)', color: 'var(--accent-contrast)', borderRadius: '10px', padding: '1px 6px', fontWeight: 700 }}>
                     {totalActive}
                   </span>
                 )}
                 {tab === 'archived' && totalArchived > 0 && (
-                  <span style={{ marginLeft: '6px', fontSize: '11px', background: '#f5f5f5', color: '#737373', borderRadius: '10px', padding: '1px 6px', fontWeight: 700 }}>
+                  <span style={{ marginLeft: '6px', fontSize: '11px', background: 'var(--surface-input-fill)', color: 'var(--color-mid-gray)', borderRadius: '10px', padding: '1px 6px', fontWeight: 700 }}>
                     {totalArchived}
                   </span>
                 )}

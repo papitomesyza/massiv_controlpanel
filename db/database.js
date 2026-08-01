@@ -622,7 +622,7 @@ function initDb() {
       slug TEXT UNIQUE,
       category TEXT,
       status TEXT DEFAULT 'draft',
-      accent_color TEXT DEFAULT '#0a0a0a',
+      accent_color TEXT DEFAULT '#723CEB',
       is_template INTEGER DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now')),
