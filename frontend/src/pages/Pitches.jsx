@@ -184,11 +184,11 @@ function PitchCard({ pitch, onDelete, onDuplicate, pitchBase }) {
   }
 
   return (
-    <div className="card" style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column' }} onClick={() => navigate(`/pitches/${pitch.id}`)}>
+    <div className="card pitch-saved-card" style={{ cursor: 'pointer' }} onClick={() => navigate(`/pitches/${pitch.id}`)}>
       <div className="pitch-template-accent" style={{ background: pitch.accent_color || 'var(--color-mid-gray)' }} />
       <div style={{ padding: '14px 18px 16px', display: 'flex', flexDirection: 'column', gap: '7px', flex: 1 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
-          <span style={{ fontWeight: 700, fontSize: '14px', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{pitch.title}</span>
+          <span style={{ fontWeight: 700, fontSize: '14px', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{pitch.title}</span>
           <span className={STATUS_BADGE[pitch.status] || 'badge badge-pending'}>{pitch.status}</span>
         </div>
         {pitch.category && (

@@ -680,7 +680,7 @@ export default function Finances() {
       </div>
 
       {/* Tab navigation */}
-      <div style={{ display: 'flex', gap: '6px', marginBottom: '24px', borderBottom: '1px solid var(--border)', paddingBottom: '12px' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '24px', borderBottom: '1px solid var(--border)', paddingBottom: '12px' }}>
         {TABS.map(t => (
           <button
             key={t.key}

@@ -212,7 +212,7 @@ export default function Calendar() {
       </div>
 
       {/* Month Navigation */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
         <button className="btn btn-ghost btn-sm" style={{ padding: '6px 8px' }} onClick={prevMonth}>
           <ChevronLeft size={16} />
         </button>

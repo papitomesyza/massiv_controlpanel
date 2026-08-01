@@ -518,7 +518,7 @@ function ProjectDashCard({ p }) {
     <Link to={`/projects/${p.id}`} style={{ textDecoration: 'none', display: 'block' }}>
       <div className="card project-dash-card">
         <div className="flex-between mb-2">
-          <span style={{ fontWeight: 700, fontSize: '14px', flex: 1, marginRight: '8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span style={{ fontWeight: 700, fontSize: '14px', flex: 1, minWidth: 0, marginRight: '8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {p.title}
           </span>
           <StatusBadge status={p.status} />
