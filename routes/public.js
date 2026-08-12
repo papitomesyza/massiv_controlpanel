@@ -2,9 +2,14 @@ const express = require('express');
 const router = express.Router();
 const { db } = require('../db/database');
 
+const { verifyCrewToken, issueCrewToken, checkPasscode } = require('../lib/shotlistAuth');
+const { getPublishedBySlug, logActivity } = require('../lib/shotlistStore');
+
 // In-memory rate limiters
 const ipSubmissions = new Map();   // ip -> { count, windowStart }
 const tokenSubmissions = new Map(); // token -> { count, dayStart }
+const unlockIpAttempts = new Map();  // ip -> { count, windowStart }
+const unlockSlugAttempts = new Map(); // slug -> { count, windowStart }
 
 function checkIpLimit(ip) {
   const now = Date.now();
@@ -163,6 +168,99 @@ router.get('/mind/:token', (req, res) => {
     res.json({ valid: true, categories, sections });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Public shot list crew endpoints ──────────────────────────────────────────
+// Viewing a shot list needs only the link. CHANGING anything needs the
+// production passcode, which mints a crew token scoped to that one shot list.
+//
+// This is a public authentication surface, so the unlock endpoint is rate
+// limited the same way the public expense endpoint is, and every failure —
+// unknown slug, draft shot list, no passcode set, wrong passcode — returns the
+// identical response so nothing about the panel can be enumerated.
+
+const UNLOCK_IP_PER_MIN = 5;
+const UNLOCK_SLUG_PER_MIN = 10;
+
+function checkWindowLimit(map, key, windowMs) {
+  const now = Date.now();
+  const rec = map.get(key) || { count: 0, windowStart: now };
+  if (now - rec.windowStart > windowMs) { rec.count = 0; rec.windowStart = now; }
+  return rec;
+}
+
+function unlockDenied(res) {
+  return res.status(401).json({ error: 'invalid' });
+}
+
+// POST /api/public/shotlist/:slug/unlock
+router.post('/shotlist/:slug/unlock', (req, res) => {
+  try {
+    const ip = req.ip || (req.connection && req.connection.remoteAddress) || 'unknown';
+    const slug = String(req.params.slug || '');
+
+    const ipRec = checkWindowLimit(unlockIpAttempts, ip, 60000);
+    if (ipRec.count >= UNLOCK_IP_PER_MIN) {
+      return res.status(429).json({ error: 'too_many_attempts' });
+    }
+    const slugRec = checkWindowLimit(unlockSlugAttempts, slug, 60000);
+    if (slugRec.count >= UNLOCK_SLUG_PER_MIN) {
+      return res.status(429).json({ error: 'too_many_attempts' });
+    }
+    // Every attempt counts, successful or not — a valid passcode is not a way
+    // around the limiter.
+    ipRec.count++; unlockIpAttempts.set(ip, ipRec);
+    slugRec.count++; unlockSlugAttempts.set(slug, slugRec);
+
+    const name = String((req.body && req.body.name) || '').trim().slice(0, 60);
+    const passcode = (req.body && req.body.passcode) || '';
+    if (!name) return res.status(400).json({ error: 'name_required' });
+
+    const shotlist = getPublishedBySlug(slug);
+    if (!shotlist || !shotlist.passcode_hash) return unlockDenied(res);
+    if (!checkPasscode(passcode, shotlist.passcode_hash)) return unlockDenied(res);
+
+    logActivity(shotlist.id, null, 'unlocked', name);
+    res.json({ token: issueCrewToken(shotlist, name), name });
+  } catch (err) {
+    // Never log the passcode or the body
+    console.error('Shot list unlock failed:', err && err.name ? err.name : 'error');
+    res.status(500).json({ error: 'unlock_failed' });
+  }
+});
+
+// POST /api/public/shotlist/:slug/shots/:shotId/complete
+// Completion and un-completion both go through here, both need a valid crew
+// token, and both are recorded in the activity log with the crew member's name.
+router.post('/shotlist/:slug/shots/:shotId/complete', (req, res) => {
+  try {
+    const shotlist = getPublishedBySlug(String(req.params.slug || ''));
+    if (!shotlist || !shotlist.passcode_hash) return unlockDenied(res);
+
+    const auth = verifyCrewToken((req.body && req.body.token) || '', shotlist);
+    if (!auth.valid) return unlockDenied(res);
+
+    const shot = db.prepare('SELECT * FROM shots WHERE id = ? AND shotlist_id = ?')
+      .get(req.params.shotId, shotlist.id);
+    if (!shot) return res.status(404).json({ error: 'not_found' });
+
+    const completed = !!(req.body && req.body.completed);
+    if (completed) {
+      db.prepare(`
+        UPDATE shots SET status = 'completed', completed_by = ?, completed_at = datetime('now') WHERE id = ?
+      `).run(auth.name || 'Crew', shot.id);
+    } else {
+      db.prepare(`
+        UPDATE shots SET status = 'pending', completed_by = NULL, completed_at = NULL WHERE id = ?
+      `).run(shot.id);
+    }
+    logActivity(shotlist.id, shot.id, completed ? 'completed' : 'uncompleted', auth.name || 'Crew');
+
+    res.json({ completed, completed_by: completed ? (auth.name || 'Crew') : null });
+  } catch (err) {
+    console.error('Shot completion failed:', err && err.name ? err.name : 'error');
+    res.status(500).json({ error: 'update_failed' });
   }
 });
 

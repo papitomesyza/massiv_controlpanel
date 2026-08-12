@@ -671,6 +671,106 @@ function initDb() {
     console.error('Pitch template seeding failed:', err.message);
   }
 
+  // ── Shot lists (Tools → Production) ──
+  // Ordering: creates, then alters, then backfills, then indexes. No seeds —
+  // this feature ships with no example data of any kind.
+
+  // Creates
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS shotlists (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id INTEGER,
+      title TEXT NOT NULL,
+      slug TEXT UNIQUE,
+      shoot_date TEXT,
+      call_time TEXT,
+      status TEXT DEFAULT 'draft',
+      order_mode TEXT DEFAULT 'user',
+      passcode_hash TEXT,
+      notes TEXT,
+      plan_json TEXT,
+      optimizer_mode TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      published_at TEXT,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS shotlist_locations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      shotlist_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      address TEXT,
+      lat REAL,
+      lng REAL,
+      notes TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (shotlist_id) REFERENCES shotlists(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS shots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      shotlist_id INTEGER NOT NULL,
+      sort_order INTEGER DEFAULT 0,
+      optimized_order INTEGER,
+      shot_number TEXT,
+      title TEXT,
+      description TEXT,
+      shot_type TEXT,
+      space TEXT DEFAULT 'exterior',
+      light_window TEXT DEFAULT 'daylight',
+      duration_minutes INTEGER DEFAULT 30,
+      talent TEXT,
+      costume TEXT,
+      props TEXT,
+      camera_notes TEXT,
+      location_id INTEGER,
+      status TEXT DEFAULT 'pending',
+      completed_by TEXT,
+      completed_at TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (shotlist_id) REFERENCES shotlists(id) ON DELETE CASCADE,
+      FOREIGN KEY (location_id) REFERENCES shotlist_locations(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS shot_media (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      shot_id INTEGER NOT NULL,
+      kind TEXT DEFAULT 'reference',
+      filename TEXT NOT NULL,
+      thumb_filename TEXT,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (shot_id) REFERENCES shots(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS shot_activity (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      shotlist_id INTEGER NOT NULL,
+      shot_id INTEGER,
+      action TEXT NOT NULL,
+      actor_name TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (shotlist_id) REFERENCES shotlists(id) ON DELETE CASCADE
+    );
+  `);
+
+  // Backfills — sort_order is the user ordering, so any row that somehow
+  // arrived without one falls back to its id. The IS NULL guard makes every
+  // later boot a no-op.
+  try {
+    db.exec('UPDATE shots SET sort_order = id WHERE sort_order IS NULL');
+  } catch (_) {}
+
+  // Indexes
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_shotlists_slug ON shotlists(slug);
+    CREATE INDEX IF NOT EXISTS idx_shots_shotlist ON shots(shotlist_id);
+    CREATE INDEX IF NOT EXISTS idx_shot_media_shot ON shot_media(shot_id);
+    CREATE INDEX IF NOT EXISTS idx_shotlist_locations_shotlist ON shotlist_locations(shotlist_id);
+    CREATE INDEX IF NOT EXISTS idx_shot_activity_shotlist ON shot_activity(shotlist_id);
+  `);
+
   // Password migration — run once on boot
   migratePassword();
 }

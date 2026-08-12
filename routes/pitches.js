@@ -1,11 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const path = require('path');
-const fs = require('fs');
-const crypto = require('crypto');
 const multer = require('multer');
-const sharp = require('sharp');
 const { db } = require('../db/database');
+const { imageUploadOptions, storeImage } = require('../lib/mediaStore');
 const { renderPresentation, SECTION_TYPES } = require('../lib/renderPresentation');
 const { publicPitchBase } = require('../lib/pitchDomain');
 
@@ -37,34 +35,16 @@ function parseSection(row) {
 }
 
 // ── Media upload — images only, sharp produces web + thumb, original discarded ──
+// The processing itself lives in lib/mediaStore.js, shared with shot list
+// media. Same rules, same output, same presentation-media folder as before.
 
-const upload = multer({
-  storage: multer.memoryStorage(),
-  fileFilter: (req, file, cb) => {
-    cb(null, ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'].includes(file.mimetype));
-  },
-  limits: { fileSize: 25 * 1024 * 1024 },
-});
+const upload = multer(imageUploadOptions());
 
 router.post('/upload', upload.single('image'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Image file required (jpeg, png or webp, max 25MB)' });
-  const mediaDir = getMediaDir();
-  if (!fs.existsSync(mediaDir)) fs.mkdirSync(mediaDir, { recursive: true });
-
-  const base = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
-  const webName = `${base}-web.jpg`;
-  const thumbName = `${base}-thumb.jpg`;
   try {
-    const image = sharp(req.file.buffer, { failOn: 'none' }).rotate();
-    await image.clone()
-      .resize(2000, 2000, { fit: 'inside', withoutEnlargement: true })
-      .jpeg({ quality: 82, mozjpeg: true })
-      .toFile(path.join(mediaDir, webName));
-    await image.clone()
-      .resize(640, 640, { fit: 'inside', withoutEnlargement: true })
-      .jpeg({ quality: 78, mozjpeg: true })
-      .toFile(path.join(mediaDir, thumbName));
-    res.json({ filename: webName, thumb: thumbName });
+    const out = await storeImage(req.file.buffer, getMediaDir());
+    res.json({ filename: out.filename, thumb: out.thumb });
   } catch (err) {
     res.status(400).json({ error: `Could not process image: ${err.message}` });
   }

@@ -108,6 +108,7 @@ app.use('/api/invoices', requireAuth, require('./routes/invoices'));
 app.use('/api/collections', requireAuth, require('./routes/collections'));
 app.use('/api/mind-accounts', requireAuth, require('./routes/mind-accounts'));
 app.use('/api/vault', requireAuth, require('./routes/vault'));
+app.use('/api/shotlists', requireAuth, require('./routes/shotlists'));
 app.use('/api/standalone-tasks', requireAuth, require('./routes/standalone-tasks'));
 
 // Pitches — the preview endpoint is embedded in an iframe that cannot send an
@@ -133,27 +134,15 @@ app.use('/api/projects', requireAuth, (req, res, next) => {
   next();
 }, require('./routes/projects'));
 
-// Public pitch media — no auth (public presentations must load these).
-// Filenames are timestamp-unique, so long immutable caching is safe.
+// Public media — no auth (public presentations and shot lists must load these).
+// Filenames are timestamp-unique, so long immutable caching is safe. Both
+// routes share one handler: same traversal guard, same mime map, same headers.
+const { serveMediaFile } = require('./lib/mediaStore');
 const PRESENTATION_MEDIA_DIR = path.join(DATA_DIR, 'presentation-media');
-app.get('/p-media/:filename', (req, res) => {
-  const filename = req.params.filename;
-  // Reject path traversal attempts
-  if (/[/\\]/.test(filename) || filename.includes('..')) {
-    return res.status(400).json({ error: 'Invalid filename' });
-  }
-  const filePath = path.join(PRESENTATION_MEDIA_DIR, filename);
-  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Not found' });
+const SHOTLIST_MEDIA_DIR = path.join(DATA_DIR, 'shotlist-media');
 
-  const ext = path.extname(filename).toLowerCase();
-  const mimeMap = {
-    '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
-    '.png': 'image/png', '.webp': 'image/webp',
-  };
-  res.setHeader('Content-Type', mimeMap[ext] || 'application/octet-stream');
-  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-  res.sendFile(filePath);
-});
+app.get('/p-media/:filename', (req, res) => serveMediaFile(req, res, PRESENTATION_MEDIA_DIR));
+app.get('/s-media/:filename', (req, res) => serveMediaFile(req, res, SHOTLIST_MEDIA_DIR));
 
 // Public pitch presentations — published only; drafts and unknown slugs fall
 // through to the SPA's generic behavior, revealing nothing. Must be registered
@@ -193,6 +182,45 @@ app.get('/p/:slug', (req, res, next) => {
     // No global error handler here — on the pitch domain a failure must render
     // the same blank 404 rather than Express's default stack page.
     console.error('Public pitch render failed:', err && err.message ? err.message : err);
+    if (onPitchHost) return sendPitch404(req, res);
+    return next();
+  }
+});
+
+// Public shot lists — published only; drafts and unknown slugs behave exactly
+// like the pitch route does on this domain, revealing nothing. Registered
+// alongside the pitch route, BEFORE the static middleware and the SPA
+// catch-all.
+app.get('/s/:slug', (req, res, next) => {
+  const onPitchHost = isPitchHost(req);
+  const miss = () => (onPitchHost ? sendPitch404(req, res) : next());
+
+  try {
+    const shotlist = db.prepare(
+      "SELECT * FROM shotlists WHERE slug = ? AND status = 'published'"
+    ).get(req.params.slug);
+    if (!shotlist) return miss();
+
+    const { loadBundle, orderLabelFor } = require('./lib/shotlistStore');
+    const { renderShotlist } = require('./lib/renderShotlist');
+    const bundle = loadBundle(shotlist);
+
+    const agencyRows = db.prepare("SELECT key, value FROM settings WHERE key IN ('agency_name')").all();
+    const agencyMap = {};
+    agencyRows.forEach(r => { agencyMap[r.key] = r.value; });
+
+    const html = renderShotlist(
+      shotlist, bundle.rows, bundle.shotsById, bundle.locationsById, bundle.media,
+      { agency: { name: agencyMap.agency_name || null }, orderLabel: orderLabelFor(shotlist) }
+    );
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    // No caching — a completion or a post-publish edit must show immediately
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.send(html);
+  } catch (err) {
+    // No global error handler here — a failure must behave like a miss rather
+    // than render Express's default stack page.
+    console.error('Public shot list render failed:', err && err.message ? err.message : err);
     if (onPitchHost) return sendPitch404(req, res);
     return next();
   }

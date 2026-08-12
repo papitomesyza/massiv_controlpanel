@@ -23,7 +23,11 @@ import Collections from './pages/Collections';
 import CollectionDetail from './pages/CollectionDetail';
 import MindAccounts from './pages/MindAccounts';
 import Pitches from './pages/Pitches';
+import PitchesPhotography from './pages/PitchesPhotography';
 import PitchEditor from './pages/PitchEditor';
+import Production from './pages/Production';
+import Shotlists from './pages/Shotlists';
+import ShotlistEditor from './pages/ShotlistEditor';
 import { AgencyProvider } from './context/AgencyContext';
 
 function applyFavicon() {
@@ -92,8 +96,18 @@ export default function App() {
           <Route path="collections" element={<Collections />} />
           <Route path="collections/:id" element={<CollectionDetail />} />
           <Route path="accounts" element={<MindAccounts />} />
+          {/* Tools → Pitches: the card grid, with the pitch list one level in.
+              Static segments win over :id in React Router, so the editor route
+              is untouched. */}
           <Route path="pitches" element={<Pitches />} />
+          <Route path="pitches/photography" element={<PitchesPhotography />} />
+          {/* The pitch list used to live at /pitches — anything bookmarked or
+              already open on the old path lands on its new home. */}
+          <Route path="pitches/list" element={<Navigate to="/pitches/photography" replace />} />
           <Route path="pitches/:id" element={<PitchEditor />} />
+          <Route path="production" element={<Production />} />
+          <Route path="production/shotlists" element={<Shotlists />} />
+          <Route path="production/shotlists/:id" element={<ShotlistEditor />} />
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>

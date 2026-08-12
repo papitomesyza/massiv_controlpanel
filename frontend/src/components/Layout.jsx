@@ -4,7 +4,7 @@ import {
   LayoutDashboard, FolderKanban, Users, UserCog, Package,
   BarChart3, FileText, Settings, LogOut, CalendarDays, MapPin, Receipt,
   Plus, X, Lightbulb, LayoutGrid, Library, ChevronRight, KeyRound, Presentation,
-  Sun, Moon,
+  Sun, Moon, Clapperboard,
 } from 'lucide-react';
 import { useAgency } from '../context/AgencyContext';
 import { useTheme } from '../context/ThemeContext';
@@ -32,8 +32,10 @@ const MIND_LINKS = [
   { to: '/accounts',    icon: KeyRound,  label: 'Accounts'    },
 ];
 
-const PITCHES_LINKS = [
-  { to: '/pitches', icon: Presentation, label: 'Photography Concepts' },
+// Tools — each item is a card grid of the tools in that family.
+const TOOLS_LINKS = [
+  { to: '/pitches',    icon: Presentation, label: 'Pitches'    },
+  { to: '/production', icon: Clapperboard, label: 'Production' },
 ];
 
 // All pages — used by the floating menu button for full-nav access
@@ -51,6 +53,7 @@ const ALL_NAV_PAGES = [
   { to: '/collections', icon: Library,       label: 'Collections' },
   { to: '/accounts',    icon: KeyRound,      label: 'Accounts'    },
   { to: '/pitches',   icon: Presentation,    label: 'Pitches'   },
+  { to: '/production', icon: Clapperboard,   label: 'Production' },
   { to: '/settings',  icon: Settings,        label: 'Settings'  },
 ];
 
@@ -74,7 +77,7 @@ function getGroupForPath(pathname) {
   if (OPS_LINKS.some(l => pathname.startsWith(l.to))) return 'ops';
   if (DB_LINKS.some(l => pathname.startsWith(l.to))) return 'db';
   if (MIND_LINKS.some(l => pathname.startsWith(l.to))) return 'mind';
-  if (PITCHES_LINKS.some(l => pathname.startsWith(l.to))) return 'pitches';
+  if (TOOLS_LINKS.some(l => pathname.startsWith(l.to))) return 'tools';
   return null;
 }
 
@@ -229,16 +232,16 @@ export default function Layout() {
 
             <div style={{ height: '1px', background: 'var(--overlay-03)', margin: '4px 16px' }} />
 
-            {/* PITCHES */}
+            {/* TOOLS */}
             <button
-              className={`sidebar-group-header${openGroup === 'pitches' ? ' is-open' : ''}${hasActiveLink(PITCHES_LINKS, location.pathname) && openGroup !== 'pitches' ? ' has-active' : ''}`}
-              onClick={() => toggleGroup('pitches')}
+              className={`sidebar-group-header${openGroup === 'tools' ? ' is-open' : ''}${hasActiveLink(TOOLS_LINKS, location.pathname) && openGroup !== 'tools' ? ' has-active' : ''}`}
+              onClick={() => toggleGroup('tools')}
             >
-              <span>Pitches</span>
-              <ChevronRight size={15} style={{ transform: openGroup === 'pitches' ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease', flexShrink: 0 }} />
+              <span>Tools</span>
+              <ChevronRight size={15} style={{ transform: openGroup === 'tools' ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease', flexShrink: 0 }} />
             </button>
-            <div style={{ maxHeight: openGroup === 'pitches' ? '200px' : '0', overflow: 'hidden', transition: 'max-height 0.25s ease' }}>
-              {PITCHES_LINKS.map(({ to, icon: Icon, label }) => (
+            <div style={{ maxHeight: openGroup === 'tools' ? '200px' : '0', overflow: 'hidden', transition: 'max-height 0.25s ease' }}>
+              {TOOLS_LINKS.map(({ to, icon: Icon, label }) => (
                 <NavLink key={to} to={to} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
                   <div className="nav-icon"><Icon size={18} /></div>
                   {label}
