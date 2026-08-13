@@ -950,6 +950,89 @@ function BreaksPanel({ shotlistId, dayId, breaks, scenes, onChanged }) {
   );
 }
 
+// ── Wardrobe ─────────────────────────────────────────────────────────────────
+// A part usually has more than one look, so this is a list of photos, each
+// nameable for continuity. It only appears once the character exists, because
+// the photos hang off the character id.
+
+function WardrobePicker({ shotlistId, character, onChanged }) {
+  const inputRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
+  const items = character.wardrobe || [];
+
+  async function handleFiles(e) {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (!files.length) return;
+    setUploading(true);
+    try {
+      for (const file of files) {
+        const fd = new FormData();
+        fd.append('image', file);
+        const res = await api.postForm('/shotlists/upload', fd);
+        await api.post(`/shotlists/${shotlistId}/characters/${character.id}/media`, {
+          filename: res.filename, thumb_filename: res.thumb,
+        });
+      }
+      await onChanged();
+    } catch (err) {
+      alert(err.message || 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function rename(m, label) {
+    try {
+      await api.put(`/shotlists/${shotlistId}/character-media/${m.id}`, { label });
+      await onChanged();
+    } catch (err) { alert(err.message || 'Could not rename the look'); }
+  }
+
+  async function remove(m) {
+    try {
+      await api.del(`/shotlists/${shotlistId}/character-media/${m.id}`);
+      await onChanged();
+    } catch (err) { alert(err.message || 'Could not remove the photo'); }
+  }
+
+  return (
+    <div className="form-row">
+      <label className="form-label">Wardrobe ({items.length})</label>
+      <div className="shotlist-wardrobe">
+        {items.map(m => (
+          <div key={m.id} className="shotlist-wardrobe-item">
+            <div style={{ position: 'relative' }}>
+              <img src={`/s-media/${m.thumb_filename || m.filename}`} alt="" />
+              <button
+                type="button" title="Remove this look" onClick={() => remove(m)}
+                className="shotlist-wardrobe-x"
+              >
+                <X size={10} />
+              </button>
+            </div>
+            <input
+              className="input" defaultValue={m.label || ''} placeholder="Name this look"
+              onBlur={e => { if ((e.target.value || '') !== (m.label || '')) rename(m, e.target.value); }}
+            />
+          </div>
+        ))}
+        <button
+          type="button" className="shotlist-wardrobe-add"
+          onClick={() => inputRef.current?.click()} disabled={uploading}
+        >
+          {uploading ? <Loader2 size={15} className="pitch-spin" /> : <Plus size={15} />}
+        </button>
+        <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" multiple
+          style={{ display: 'none' }} onChange={handleFiles} />
+      </div>
+      <p className="shotlist-hint">
+        Fittings and continuity stills. They travel with the part into every scene it appears in.
+      </p>
+    </div>
+  );
+}
+
 // ── Characters ───────────────────────────────────────────────────────────────
 
 function CharactersPanel({ shotlistId, characters, onChanged, onAddExtra }) {
@@ -957,6 +1040,16 @@ function CharactersPanel({ shotlistId, characters, onChanged, onAddExtra }) {
   const [busy, setBusy] = useState(false);
   const fileRef = useRef(null);
   const [uploading, setUploading] = useState(false);
+
+  // Wardrobe is saved the moment it is uploaded, so the open modal takes the
+  // fresh list back from the server — but only that field, or it would discard
+  // whatever is half-typed in the others.
+  useEffect(() => {
+    if (!editing || !editing.id) return;
+    const fresh = characters.find(c => c.id === editing.id);
+    if (!fresh) return;
+    setEditing(prev => (prev && prev.id === fresh.id ? { ...prev, wardrobe: fresh.wardrobe } : prev));
+  }, [characters]);
 
   async function save() {
     if (!editing.name || !editing.name.trim()) { alert('Give the character a name'); return; }
@@ -1038,6 +1131,7 @@ function CharactersPanel({ shotlistId, characters, onChanged, onAddExtra }) {
                 {c.kind === 'extra' ? 'Extra' : 'Principal'}
                 {fmtAgeRange(c.age_min, c.age_max) ? ` · age ${fmtAgeRange(c.age_min, c.age_max)}` : ''}
                 {c.performer ? ` · ${c.performer}` : ''}
+                {(c.wardrobe || []).length ? ` · ${c.wardrobe.length} look${c.wardrobe.length === 1 ? '' : 's'}` : ''}
               </div>
             </div>
             <button className="btn-ghost" style={{ padding: '4px 6px' }} title="Edit" onClick={() => setEditing({ ...c })}>
@@ -1107,7 +1201,7 @@ function CharactersPanel({ shotlistId, characters, onChanged, onAddExtra }) {
               onChange={e => setEditing({ ...editing, costume: e.target.value })} />
           </div>
           <div className="form-row">
-            <label className="form-label">Photo</label>
+            <label className="form-label">Casting photo</label>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               {editing.photo_thumb_filename || editing.photo_filename ? (
                 <img src={`/s-media/${editing.photo_thumb_filename || editing.photo_filename}`} alt=""
@@ -1127,6 +1221,18 @@ function CharactersPanel({ shotlistId, characters, onChanged, onAddExtra }) {
                 style={{ display: 'none' }} onChange={uploadPhoto} />
             </div>
           </div>
+          {/* Wardrobe photos hang off the character id, so a brand new part is
+              saved first and then dressed. */}
+          {editing.id ? (
+            <WardrobePicker shotlistId={shotlistId} character={editing} onChanged={onChanged} />
+          ) : (
+            <div className="form-row">
+              <label className="form-label">Wardrobe</label>
+              <p className="shotlist-hint" style={{ marginTop: 0 }}>
+                Save this character first, then reopen it to attach wardrobe photos.
+              </p>
+            </div>
+          )}
           <div className="form-row">
             <label className="form-label">Notes</label>
             <textarea className="input" rows={2} value={editing.notes || ''}

@@ -809,6 +809,21 @@ function initDb() {
       FOREIGN KEY (shotlist_id) REFERENCES shotlists(id) ON DELETE CASCADE
     );
 
+    -- Wardrobe attached to a part. A character normally has more than one
+    -- look, so this is a list rather than a column: each row is one costume
+    -- photo, optionally named ("Look 2 — rain coat") for continuity.
+    CREATE TABLE IF NOT EXISTS shotlist_character_media (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      character_id INTEGER NOT NULL,
+      kind TEXT DEFAULT 'costume',
+      label TEXT,
+      filename TEXT NOT NULL,
+      thumb_filename TEXT,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (character_id) REFERENCES shotlist_characters(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS shot_characters (
       shot_id INTEGER NOT NULL,
       character_id INTEGER NOT NULL,
@@ -1025,6 +1040,7 @@ function initDb() {
     CREATE INDEX IF NOT EXISTS idx_shotlist_scenes_day ON shotlist_scenes(day_id);
     CREATE INDEX IF NOT EXISTS idx_shotlist_days_shotlist ON shotlist_days(shotlist_id);
     CREATE INDEX IF NOT EXISTS idx_shotlist_characters_shotlist ON shotlist_characters(shotlist_id);
+    CREATE INDEX IF NOT EXISTS idx_character_media_character ON shotlist_character_media(character_id);
     CREATE INDEX IF NOT EXISTS idx_shot_characters_shot ON shot_characters(shot_id);
     CREATE INDEX IF NOT EXISTS idx_shot_characters_character ON shot_characters(character_id);
     CREATE INDEX IF NOT EXISTS idx_shotlist_breaks_day ON shotlist_breaks(day_id);

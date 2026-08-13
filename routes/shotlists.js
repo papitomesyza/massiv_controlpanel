@@ -769,6 +769,79 @@ router.delete('/:id/characters/:characterId', (req, res) => {
   }
 });
 
+// ── Wardrobe ──────────────────────────────────────────────────────────────────
+// Costume photos hang off the character, not off a shot: the same look travels
+// with the part across every scene it appears in.
+
+router.post('/:id/characters/:characterId/media', (req, res) => {
+  try {
+    const character = db.prepare('SELECT id FROM shotlist_characters WHERE id = ? AND shotlist_id = ?')
+      .get(req.params.characterId, req.params.id);
+    if (!character) return res.status(404).json({ error: 'Character not found' });
+
+    const body = req.body || {};
+    const filename = cleanFilename(body.filename);
+    if (!filename) return res.status(400).json({ error: 'Invalid filename' });
+    // A thumb that fails the guard is dropped rather than failing the upload —
+    // the full image still shows.
+    const thumb = cleanFilename(body.thumb_filename);
+
+    const nextOrder = db.prepare(
+      'SELECT COALESCE(MAX(sort_order), -1) AS m FROM shotlist_character_media WHERE character_id = ?'
+    ).get(character.id).m + 1;
+
+    const r = db.prepare(`
+      INSERT INTO shotlist_character_media (character_id, kind, label, filename, thumb_filename, sort_order)
+      VALUES (?, 'costume', ?, ?, ?, ?)
+    `).run(character.id, cleanText(body.label, 120), filename, thumb, nextOrder);
+    touch(req.params.id);
+    res.json({ id: r.lastInsertRowid });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not attach the costume photo' });
+  }
+});
+
+// Naming a look is the whole point for continuity, so the label is editable
+// without re-uploading.
+router.put('/:id/character-media/:mediaId', (req, res) => {
+  try {
+    const row = db.prepare(`
+      SELECT m.id FROM shotlist_character_media m
+      JOIN shotlist_characters c ON c.id = m.character_id
+      WHERE m.id = ? AND c.shotlist_id = ?
+    `).get(req.params.mediaId, req.params.id);
+    if (!row) return res.status(404).json({ error: 'Costume photo not found' });
+
+    const body = req.body || {};
+    if (body.label !== undefined) {
+      db.prepare('UPDATE shotlist_character_media SET label = ? WHERE id = ?')
+        .run(cleanText(body.label, 120), row.id);
+    }
+    touch(req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not rename the costume photo' });
+  }
+});
+
+router.delete('/:id/character-media/:mediaId', (req, res) => {
+  try {
+    // Scoped through the character so one shot list can never delete another's.
+    const r = db.prepare(`
+      DELETE FROM shotlist_character_media WHERE id IN (
+        SELECT m.id FROM shotlist_character_media m
+        JOIN shotlist_characters c ON c.id = m.character_id
+        WHERE m.id = ? AND c.shotlist_id = ?
+      )
+    `).run(req.params.mediaId, req.params.id);
+    if (r.changes === 0) return res.status(404).json({ error: 'Costume photo not found' });
+    touch(req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not remove the costume photo' });
+  }
+});
+
 // The whole cast of one shot, replaced in one call.
 router.put('/:id/shots/:shotId/characters', (req, res) => {
   try {
