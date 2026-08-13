@@ -5,15 +5,20 @@ const multer = require('multer');
 const { db } = require('../db/database');
 const { imageUploadOptions, storeImage } = require('../lib/mediaStore');
 const { publicPitchBase } = require('../lib/pitchDomain');
-const { organize } = require('../lib/shotlistOptimizer');
+const { organizeDay, legLookupFor } = require('../lib/shotlistOptimizer');
 const {
   windowsForSpace, solarSummary, resolveWindow, WINDOW_DEFS, parseTimeParts,
 } = require('../lib/sunWindows');
 const { hashPasscode } = require('../lib/shotlistAuth');
 const {
-  getShotlistById, getLocations, getScenes, getShotsForScene, getMediaByShot,
-  getActivity, logActivity, touch, loadBundle, sceneDuration, orderLabelFor,
+  getShotlistById, getLocations, getCharacters, getDays, getBreaks, getScenes,
+  getShotsForScene, getMediaByShot, getCharactersByShot, charactersForScene,
+  getActivity, logActivity, touch, loadBundle, orderLabelFor,
 } = require('../lib/shotlistStore');
+const {
+  buildDayTimeline, sceneDuration, clipSeconds, sumTotals,
+  BREAK_KINDS, defaultBreakLabel, DEFAULT_CREW_CALL_OFFSET,
+} = require('../lib/shotlistSchedule');
 const { callSheetPdf, photoBoardPdf } = require('../lib/shotlistPdf');
 
 // This app has no global error handler: every handler owns its own try/catch.
@@ -31,6 +36,18 @@ function getAgency() {
 
 const SPACES = ['interior', 'exterior'];
 const STATUSES = ['pending', 'completed'];
+const CHARACTER_KINDS = ['principal', 'extra'];
+const LENSES = [
+  'ultra_wide', 'wide', 'standard', 'portrait', 'telephoto', 'macro',
+  'probe', 'anamorphic', 'fisheye', 'tilt_shift', 'zoom',
+];
+
+function cleanInt(v, { min = 0, max = 100000 } = {}) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return Math.min(max, Math.max(min, Math.round(n)));
+}
 
 function cleanDate(v) {
   if (v === null || v === undefined || v === '') return null;
@@ -49,6 +66,15 @@ function cleanText(v, max = 4000) {
   const s = String(v).trim();
   if (!s) return null;
   return s.slice(0, max);
+}
+
+// Media filenames are generated server-side; anything with a separator in it
+// is a tampering attempt.
+function cleanFilename(v) {
+  const name = cleanText(v, 200);
+  if (!name) return null;
+  if (/[/\\]/.test(name) || name.includes('..')) return null;
+  return name;
 }
 
 function cleanCoord(v, limit) {
@@ -210,11 +236,23 @@ router.post('/', (req, res) => {
       projectId = project.id;
     }
 
-    const r = db.prepare(`
-      INSERT INTO shotlists (project_id, title, shoot_date, call_time, status, order_mode)
-      VALUES (?, ?, ?, ?, 'draft', 'user')
-    `).run(projectId, title, cleanDate(body.shoot_date), cleanTime(body.call_time));
-    res.json({ id: r.lastInsertRowid });
+    // A shot list is never dayless: it is born with Day 1, carrying whatever
+    // date and call time was given — the same shape the backfill gives the
+    // lists that existed before days did.
+    const create = db.transaction(() => {
+      const shotlistId = db.prepare(`
+        INSERT INTO shotlists (project_id, title, shoot_date, call_time, status, order_mode)
+        VALUES (?, ?, ?, ?, 'draft', 'user')
+      `).run(projectId, title, cleanDate(body.shoot_date), cleanTime(body.call_time)).lastInsertRowid;
+
+      db.prepare(`
+        INSERT INTO shotlist_days (shotlist_id, day_number, shoot_date, crew_call, crew_call_offset_minutes, sort_order)
+        VALUES (?, 1, ?, ?, ?, 0)
+      `).run(shotlistId, cleanDate(body.shoot_date), cleanTime(body.call_time), DEFAULT_CREW_CALL_OFFSET);
+
+      return shotlistId;
+    });
+    res.json({ id: create() });
   } catch (err) {
     res.status(500).json({ error: 'Could not create the shot list' });
   }
@@ -226,29 +264,53 @@ router.get('/:id', (req, res) => {
     if (!shotlist) return res.status(404).json({ error: 'Shot list not found' });
 
     const locations = getLocations(shotlist.id);
+    const characters = getCharacters(shotlist.id);
+    const days = getDays(shotlist.id);
+    const breaks = getBreaks(shotlist.id);
     // The panel always edits the USER ordering; the optimised one is shown
     // separately in the comparison.
     const scenes = getScenes(shotlist.id, 'user');
     const shotsByScene = new Map(scenes.map(s => [s.id, getShotsForScene(s.id)]));
     const allShots = scenes.flatMap(s => shotsByScene.get(s.id) || []);
     const media = getMediaByShot(allShots.map(s => s.id));
+    const charactersByShot = getCharactersByShot(allShots.map(s => s.id));
 
     const locById = new Map(locations.map(l => [l.id, l]));
-    // The light window belongs to the scene, and it is resolved from that
-    // scene's own coordinates.
+    const dayById = new Map(days.map(d => [d.id, d]));
+    const leg = legLookupFor(locations);
+
+    // The light window belongs to the scene, resolved from that scene's own
+    // coordinates on ITS day's date — so a three-day shoot gets three answers.
     const shaped = scenes.map(scene => {
       const loc = scene.location_id != null ? locById.get(scene.location_id) : null;
-      const win = resolveWindow(scene.light_window, shotlist.shoot_date, loc ? loc.lat : null, loc ? loc.lng : null);
-      const shots = (shotsByScene.get(scene.id) || []).map(s => ({ ...s, media: media.get(s.id) || [] }));
+      const day = scene.day_id != null ? dayById.get(scene.day_id) : days[0];
+      const date = (day && day.shoot_date) || shotlist.shoot_date;
+      const win = resolveWindow(scene.light_window, date, loc ? loc.lat : null, loc ? loc.lng : null);
+      const shots = (shotsByScene.get(scene.id) || []).map(s => ({
+        ...s,
+        media: media.get(s.id) || [],
+        characters: charactersByShot.get(s.id) || [],
+      }));
       return {
         ...scene,
         shots,
         duration_minutes: sceneDuration(shots),
+        clip_seconds: clipSeconds(shots),
+        characters: charactersForScene(shots, charactersByShot),
         light_window_label: win ? win.label : '',
         light_window_range: win ? win.range_label : '',
         light_window_hard: win ? win.hard : false,
         light_window_approximate: win ? win.approximate : true,
       };
+    });
+
+    // One timeline per day, rebuilt live — scenes, generated company moves and
+    // breaks, with the day's derived crew call and totals.
+    const timelines = days.map(day => {
+      const dayScenes = scenes.filter(sc => sc.day_id === day.id);
+      const dayBreaks = breaks.filter(b => b.day_id === day.id);
+      const t = buildDayTimeline(shotlist, day, dayScenes, shotsByScene, dayBreaks, locations, leg);
+      return { day_id: day.id, items: t.items, totals: t.totals, warnings: t.warnings, scheduled: t.scheduled };
     });
 
     const project = shotlist.project_id
@@ -258,13 +320,21 @@ router.get('/:id', (req, res) => {
     res.json({
       shotlist: publicShape(shotlist),
       project,
+      days,
       scenes: shaped,
+      characters,
+      breaks,
+      timelines,
+      totals: sumTotals(timelines.map(t => t.totals)),
       shot_count: allShots.length,
       locations,
-      plan: readPlan(shotlist),
+      plan: readPlan(shotlist),   // { days: { [dayId]: { plan, comparison, current } } }
       activity: getActivity(shotlist.id, 60),
-      sun: shotlist.shoot_date && locations.length
-        ? locations.map(l => ({ location_id: l.id, name: l.name, ...(solarSummary(shotlist.shoot_date, l.lat, l.lng) || {}) }))
+      sun: days.length && locations.length
+        ? days.flatMap(d => locations.map(l => ({
+          day_id: d.id, location_id: l.id, name: l.name,
+          ...(solarSummary(d.shoot_date || shotlist.shoot_date, l.lat, l.lng) || {}),
+        })))
         : [],
     });
   } catch (err) {
@@ -300,7 +370,7 @@ router.put('/:id', (req, res) => {
     db.prepare(`
       UPDATE shotlists
       SET project_id = ?, title = ?, shoot_date = ?, call_time = ?, notes = ?, order_mode = ?,
-          updated_at = datetime('now')
+          move_wrap_minutes = ?, move_setup_minutes = ?, updated_at = datetime('now')
       WHERE id = ?
     `).run(
       projectId,
@@ -309,8 +379,26 @@ router.put('/:id', (req, res) => {
       body.call_time !== undefined ? cleanTime(body.call_time) : shotlist.call_time,
       body.notes !== undefined ? cleanText(body.notes, 8000) : shotlist.notes,
       orderMode,
+      body.move_wrap_minutes !== undefined
+        ? (cleanInt(body.move_wrap_minutes, { min: 0, max: 480 }) ?? shotlist.move_wrap_minutes)
+        : shotlist.move_wrap_minutes,
+      body.move_setup_minutes !== undefined
+        ? (cleanInt(body.move_setup_minutes, { min: 0, max: 480 }) ?? shotlist.move_setup_minutes)
+        : shotlist.move_setup_minutes,
       shotlist.id
     );
+
+    // Days own the dates now, so the legacy field only reaches through to a
+    // single day that has no date of its own — it never overwrites a day
+    // somebody has already dated, and never touches a multi-day list.
+    if (body.shoot_date !== undefined && cleanDate(body.shoot_date)) {
+      const days = getDays(shotlist.id);
+      if (days.length === 1 && !days[0].shoot_date) {
+        db.prepare('UPDATE shotlist_days SET shoot_date = ? WHERE id = ?')
+          .run(cleanDate(body.shoot_date), days[0].id);
+      }
+    }
+
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: 'Could not save the shot list' });
@@ -455,6 +543,315 @@ router.delete('/:id/locations/:locationId', (req, res) => {
   }
 });
 
+// ── Shoot days ────────────────────────────────────────────────────────────────
+// A day owns its own date and times. shotlists.shoot_date / call_time remain
+// for compatibility but are no longer the source of truth.
+
+function getDay(shotlistId, dayId) {
+  return db.prepare('SELECT * FROM shotlist_days WHERE id = ? AND shotlist_id = ?').get(dayId, shotlistId);
+}
+
+router.post('/:id/days', (req, res) => {
+  try {
+    const shotlist = getShotlistById(req.params.id);
+    if (!shotlist) return res.status(404).json({ error: 'Shot list not found' });
+
+    const body = req.body || {};
+    const existing = getDays(shotlist.id);
+    const nextNumber = cleanInt(body.day_number, { min: 1, max: 999 })
+      || (existing.reduce((n, d) => Math.max(n, Number(d.day_number) || 0), 0) + 1);
+    const nextOrder = existing.reduce((n, d) => Math.max(n, Number(d.sort_order) || 0), -1) + 1;
+
+    const r = db.prepare(`
+      INSERT INTO shotlist_days (shotlist_id, day_number, shoot_date, crew_call, crew_call_offset_minutes, notes, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      shotlist.id, nextNumber, cleanDate(body.shoot_date), cleanTime(body.crew_call),
+      cleanInt(body.crew_call_offset_minutes, { min: 0, max: 600 }) ?? DEFAULT_CREW_CALL_OFFSET,
+      cleanText(body.notes, 2000), nextOrder
+    );
+    touch(shotlist.id);
+    res.json({ id: r.lastInsertRowid });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not add the day' });
+  }
+});
+
+router.put('/:id/days/:dayId', (req, res) => {
+  try {
+    const day = getDay(req.params.id, req.params.dayId);
+    if (!day) return res.status(404).json({ error: 'Day not found' });
+
+    const body = req.body || {};
+    db.prepare(`
+      UPDATE shotlist_days SET day_number = ?, shoot_date = ?, crew_call = ?,
+             crew_call_offset_minutes = ?, notes = ?
+      WHERE id = ? AND shotlist_id = ?
+    `).run(
+      body.day_number !== undefined ? (cleanInt(body.day_number, { min: 1, max: 999 }) || day.day_number) : day.day_number,
+      body.shoot_date !== undefined ? cleanDate(body.shoot_date) : day.shoot_date,
+      body.crew_call !== undefined ? cleanTime(body.crew_call) : day.crew_call,
+      body.crew_call_offset_minutes !== undefined
+        ? (cleanInt(body.crew_call_offset_minutes, { min: 0, max: 600 }) ?? day.crew_call_offset_minutes)
+        : day.crew_call_offset_minutes,
+      body.notes !== undefined ? cleanText(body.notes, 2000) : day.notes,
+      day.id, req.params.id
+    );
+    touch(req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not save the day' });
+  }
+});
+
+// A day only goes when nothing is scheduled on it — deleting a day must never
+// take scenes down with it.
+router.delete('/:id/days/:dayId', (req, res) => {
+  try {
+    const day = getDay(req.params.id, req.params.dayId);
+    if (!day) return res.status(404).json({ error: 'Day not found' });
+
+    const scenes = db.prepare('SELECT COUNT(*) AS c FROM shotlist_scenes WHERE day_id = ?').get(day.id).c;
+    if (scenes > 0) {
+      return res.status(400).json({ error: `This day still holds ${scenes} scene${scenes === 1 ? '' : 's'}. Move them to another day first.` });
+    }
+    const remaining = getDays(req.params.id).length;
+    if (remaining <= 1) return res.status(400).json({ error: 'A shot list needs at least one day' });
+
+    db.prepare('DELETE FROM shotlist_days WHERE id = ? AND shotlist_id = ?').run(day.id, req.params.id);
+    touch(req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not delete the day' });
+  }
+});
+
+router.patch('/:id/days/reorder', (req, res) => {
+  try {
+    const { dayIds } = req.body || {};
+    if (!Array.isArray(dayIds)) return res.status(400).json({ error: 'dayIds array required' });
+    const update = db.prepare('UPDATE shotlist_days SET sort_order = ? WHERE id = ? AND shotlist_id = ?');
+    const updateAll = db.transaction(ids => {
+      ids.forEach((did, index) => update.run(index, did, req.params.id));
+    });
+    updateAll(dayIds);
+    touch(req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not reorder the days' });
+  }
+});
+
+// ── Characters ────────────────────────────────────────────────────────────────
+// Defined once per shot list and reused across shots, exactly like locations.
+
+router.post('/:id/characters', (req, res) => {
+  try {
+    const shotlist = getShotlistById(req.params.id);
+    if (!shotlist) return res.status(404).json({ error: 'Shot list not found' });
+
+    const body = req.body || {};
+    const name = cleanText(body.name, 120);
+    if (!name) return res.status(400).json({ error: 'Character name required' });
+
+    const nextOrder = db.prepare(
+      'SELECT COALESCE(MAX(sort_order), -1) AS m FROM shotlist_characters WHERE shotlist_id = ?'
+    ).get(shotlist.id).m + 1;
+
+    const r = db.prepare(`
+      INSERT INTO shotlist_characters (shotlist_id, name, performer, kind, costume, notes,
+                                       photo_filename, photo_thumb_filename, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      shotlist.id, name, cleanText(body.performer, 120),
+      CHARACTER_KINDS.includes(body.kind) ? body.kind : 'principal',
+      cleanText(body.costume, 300), cleanText(body.notes, 1000),
+      cleanFilename(body.photo_filename), cleanFilename(body.photo_thumb_filename),
+      nextOrder
+    );
+    touch(shotlist.id);
+    res.json({ id: r.lastInsertRowid });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not add the character' });
+  }
+});
+
+// One tap gives the next numbered extra: Extra 1, Extra 2, Extra 3…
+router.post('/:id/characters/extra', (req, res) => {
+  try {
+    const shotlist = getShotlistById(req.params.id);
+    if (!shotlist) return res.status(404).json({ error: 'Shot list not found' });
+
+    const existing = getCharacters(shotlist.id);
+    let n = 0;
+    existing.forEach(c => {
+      const m = /^extra\s+(\d+)$/i.exec(String(c.name || '').trim());
+      if (m) n = Math.max(n, Number(m[1]));
+    });
+    const nextOrder = existing.reduce((m, c) => Math.max(m, Number(c.sort_order) || 0), -1) + 1;
+
+    const r = db.prepare(`
+      INSERT INTO shotlist_characters (shotlist_id, name, kind, sort_order)
+      VALUES (?, ?, 'extra', ?)
+    `).run(shotlist.id, `Extra ${n + 1}`, nextOrder);
+    touch(shotlist.id);
+    res.json({ id: r.lastInsertRowid, name: `Extra ${n + 1}` });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not add the extra' });
+  }
+});
+
+router.put('/:id/characters/:characterId', (req, res) => {
+  try {
+    const character = db.prepare('SELECT * FROM shotlist_characters WHERE id = ? AND shotlist_id = ?')
+      .get(req.params.characterId, req.params.id);
+    if (!character) return res.status(404).json({ error: 'Character not found' });
+
+    const body = req.body || {};
+    if (body.name !== undefined && !cleanText(body.name, 120)) {
+      return res.status(400).json({ error: 'Character name required' });
+    }
+
+    db.prepare(`
+      UPDATE shotlist_characters SET name = ?, performer = ?, kind = ?, costume = ?, notes = ?,
+             photo_filename = ?, photo_thumb_filename = ?
+      WHERE id = ? AND shotlist_id = ?
+    `).run(
+      body.name !== undefined ? cleanText(body.name, 120) : character.name,
+      body.performer !== undefined ? cleanText(body.performer, 120) : character.performer,
+      body.kind !== undefined && CHARACTER_KINDS.includes(body.kind) ? body.kind : character.kind,
+      body.costume !== undefined ? cleanText(body.costume, 300) : character.costume,
+      body.notes !== undefined ? cleanText(body.notes, 1000) : character.notes,
+      body.photo_filename !== undefined ? cleanFilename(body.photo_filename) : character.photo_filename,
+      body.photo_thumb_filename !== undefined ? cleanFilename(body.photo_thumb_filename) : character.photo_thumb_filename,
+      character.id, req.params.id
+    );
+    touch(req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not save the character' });
+  }
+});
+
+router.delete('/:id/characters/:characterId', (req, res) => {
+  try {
+    // The shot links cascade with the character.
+    const r = db.prepare('DELETE FROM shotlist_characters WHERE id = ? AND shotlist_id = ?')
+      .run(req.params.characterId, req.params.id);
+    if (r.changes === 0) return res.status(404).json({ error: 'Character not found' });
+    touch(req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not delete the character' });
+  }
+});
+
+// The whole cast of one shot, replaced in one call.
+router.put('/:id/shots/:shotId/characters', (req, res) => {
+  try {
+    const shot = db.prepare('SELECT id FROM shots WHERE id = ? AND shotlist_id = ?')
+      .get(req.params.shotId, req.params.id);
+    if (!shot) return res.status(404).json({ error: 'Shot not found' });
+
+    const ids = Array.isArray(req.body && req.body.characterIds) ? req.body.characterIds : null;
+    if (!ids) return res.status(400).json({ error: 'characterIds array required' });
+
+    const valid = new Set(getCharacters(req.params.id).map(c => c.id));
+    const link = db.prepare('INSERT OR IGNORE INTO shot_characters (shot_id, character_id) VALUES (?, ?)');
+    const replace = db.transaction(() => {
+      db.prepare('DELETE FROM shot_characters WHERE shot_id = ?').run(shot.id);
+      ids.map(Number).filter(cid => valid.has(cid)).forEach(cid => link.run(shot.id, cid));
+    });
+    replace();
+    touch(req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not save the characters on this shot' });
+  }
+});
+
+// ── Meals and breaks ──────────────────────────────────────────────────────────
+// A break sits between two scenes. sort_order n means "before the nth scene"
+// of its day. With a start_time it is immovable; without one it floats there.
+
+router.post('/:id/breaks', (req, res) => {
+  try {
+    const shotlist = getShotlistById(req.params.id);
+    if (!shotlist) return res.status(404).json({ error: 'Shot list not found' });
+
+    const body = req.body || {};
+    const day = body.day_id ? getDay(shotlist.id, body.day_id) : getDays(shotlist.id)[0];
+    if (!day) return res.status(400).json({ error: 'Add a shoot day first' });
+
+    const kind = BREAK_KINDS.includes(body.kind) ? body.kind : 'break';
+    const r = db.prepare(`
+      INSERT INTO shotlist_breaks (shotlist_id, day_id, kind, label, start_time, duration_minutes, sort_order, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      shotlist.id, day.id, kind,
+      cleanText(body.label, 80) || defaultBreakLabel(kind),
+      cleanTime(body.start_time),
+      cleanInt(body.duration_minutes, { min: 5, max: 480 }) ?? 45,
+      cleanInt(body.sort_order, { min: 0, max: 999 }) ?? 0,
+      cleanText(body.notes, 1000)
+    );
+    touch(shotlist.id);
+    res.json({ id: r.lastInsertRowid });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not add the break' });
+  }
+});
+
+router.put('/:id/breaks/:breakId', (req, res) => {
+  try {
+    const row = db.prepare('SELECT * FROM shotlist_breaks WHERE id = ? AND shotlist_id = ?')
+      .get(req.params.breakId, req.params.id);
+    if (!row) return res.status(404).json({ error: 'Break not found' });
+
+    const body = req.body || {};
+    let dayId = row.day_id;
+    if (body.day_id !== undefined) {
+      const day = body.day_id ? getDay(req.params.id, body.day_id) : null;
+      if (body.day_id && !day) return res.status(400).json({ error: 'Unknown day' });
+      dayId = day ? day.id : null;
+    }
+
+    db.prepare(`
+      UPDATE shotlist_breaks SET day_id = ?, kind = ?, label = ?, start_time = ?,
+             duration_minutes = ?, sort_order = ?, notes = ?
+      WHERE id = ? AND shotlist_id = ?
+    `).run(
+      dayId,
+      body.kind !== undefined && BREAK_KINDS.includes(body.kind) ? body.kind : row.kind,
+      body.label !== undefined ? (cleanText(body.label, 80) || defaultBreakLabel(row.kind)) : row.label,
+      // An explicit null clears the fixed time and lets the break float again.
+      body.start_time !== undefined ? cleanTime(body.start_time) : row.start_time,
+      body.duration_minutes !== undefined
+        ? (cleanInt(body.duration_minutes, { min: 5, max: 480 }) ?? row.duration_minutes)
+        : row.duration_minutes,
+      body.sort_order !== undefined ? (cleanInt(body.sort_order, { min: 0, max: 999 }) ?? row.sort_order) : row.sort_order,
+      body.notes !== undefined ? cleanText(body.notes, 1000) : row.notes,
+      row.id, req.params.id
+    );
+    touch(req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not save the break' });
+  }
+});
+
+router.delete('/:id/breaks/:breakId', (req, res) => {
+  try {
+    const r = db.prepare('DELETE FROM shotlist_breaks WHERE id = ? AND shotlist_id = ?')
+      .run(req.params.breakId, req.params.id);
+    if (r.changes === 0) return res.status(404).json({ error: 'Break not found' });
+    touch(req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not delete the break' });
+  }
+});
+
 // ── Scenes ────────────────────────────────────────────────────────────────────
 // A scene owns the location, the interior/exterior call and the light window.
 // Its shots are the coverage inside it and inherit all three.
@@ -481,18 +878,23 @@ router.post('/:id/scenes', (req, res) => {
     const nextOrder = db.prepare('SELECT COALESCE(MAX(sort_order), -1) AS m FROM shotlist_scenes WHERE shotlist_id = ?')
       .get(shotlist.id).m + 1;
 
+    // A scene always belongs to a day: the named one, else the first.
+    const day = body.day_id ? getDay(shotlist.id, body.day_id) : getDays(shotlist.id)[0];
+
     const r = db.prepare(`
-      INSERT INTO shotlist_scenes (shotlist_id, sort_order, scene_number, title, description,
-                                   location_id, space, light_window, notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO shotlist_scenes (shotlist_id, day_id, sort_order, scene_number, title, description,
+                                   location_id, space, light_window, set_design, locked_start_time, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      shotlist.id, nextOrder,
+      shotlist.id, day ? day.id : null, nextOrder,
       cleanText(body.scene_number, 12) || String(nextOrder + 1),
       cleanText(body.title, 200) || 'New scene',
       cleanText(body.description, 8000),
       resolveLocationId(shotlist.id, body.location_id),
       space,
       cleanWindow(space, body.light_window),
+      cleanText(body.set_design, 4000),
+      cleanTime(body.locked_start_time),
       cleanText(body.notes, 4000)
     );
     touch(shotlist.id);
@@ -516,17 +918,35 @@ router.put('/:id/scenes/:sceneId', (req, res) => {
       ? cleanWindow(space, body.light_window !== undefined ? body.light_window : scene.light_window)
       : scene.light_window;
 
+    let dayId = scene.day_id;
+    if (body.day_id !== undefined) {
+      const day = body.day_id ? getDay(req.params.id, body.day_id) : null;
+      if (body.day_id && !day) return res.status(400).json({ error: 'Unknown day' });
+      dayId = day ? day.id : scene.day_id;
+    }
+
     db.prepare(`
-      UPDATE shotlist_scenes SET scene_number = ?, title = ?, description = ?, location_id = ?,
-             space = ?, light_window = ?, notes = ?
+      UPDATE shotlist_scenes SET day_id = ?, scene_number = ?, title = ?, description = ?, location_id = ?,
+             space = ?, light_window = ?, set_design = ?, locked_start_time = ?,
+             move_wrap_minutes = ?, move_setup_minutes = ?, notes = ?
       WHERE id = ? AND shotlist_id = ?
     `).run(
+      dayId,
       body.scene_number !== undefined ? cleanText(body.scene_number, 12) : scene.scene_number,
       body.title !== undefined ? (cleanText(body.title, 200) || 'Untitled scene') : scene.title,
       body.description !== undefined ? cleanText(body.description, 8000) : scene.description,
       body.location_id !== undefined ? resolveLocationId(req.params.id, body.location_id) : scene.location_id,
       space,
       lightWindow,
+      body.set_design !== undefined ? cleanText(body.set_design, 4000) : scene.set_design,
+      // An explicit null unlocks; a time locks. Nothing else touches it.
+      body.locked_start_time !== undefined ? cleanTime(body.locked_start_time) : scene.locked_start_time,
+      // Per-move overrides for the company move INTO this scene; null restores
+      // the shot list defaults.
+      body.move_wrap_minutes !== undefined
+        ? cleanInt(body.move_wrap_minutes, { min: 0, max: 480 }) : scene.move_wrap_minutes,
+      body.move_setup_minutes !== undefined
+        ? cleanInt(body.move_setup_minutes, { min: 0, max: 480 }) : scene.move_setup_minutes,
       body.notes !== undefined ? cleanText(body.notes, 4000) : scene.notes,
       scene.id, req.params.id
     );
@@ -547,13 +967,15 @@ router.post('/:id/scenes/:sceneId/duplicate', (req, res) => {
       .get(scene.shotlist_id).m + 1;
 
     const duplicate = db.transaction(() => {
+      // A copy keeps the set dressing but never the lock: two scenes cannot
+      // both be immovable at the same minute.
       const newSceneId = db.prepare(`
-        INSERT INTO shotlist_scenes (shotlist_id, sort_order, scene_number, title, description,
-                                     location_id, space, light_window, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO shotlist_scenes (shotlist_id, day_id, sort_order, scene_number, title, description,
+                                     location_id, space, light_window, set_design, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
-        scene.shotlist_id, nextOrder, String(nextOrder + 1), `${scene.title || 'Scene'} copy`,
-        scene.description, scene.location_id, scene.space, scene.light_window, scene.notes
+        scene.shotlist_id, scene.day_id, nextOrder, String(nextOrder + 1), `${scene.title || 'Scene'} copy`,
+        scene.description, scene.location_id, scene.space, scene.light_window, scene.set_design, scene.notes
       ).lastInsertRowid;
 
       const insertShot = db.prepare(`
@@ -623,10 +1045,13 @@ function addShotToScene(shotlistId, scene, body) {
   const nextOrder = db.prepare('SELECT COALESCE(MAX(sort_order), -1) AS m FROM shots WHERE scene_id = ?')
     .get(scene.id).m + 1;
 
+  // duration_minutes is how long the shot takes to CAPTURE on the day.
+  // clip_length_seconds is how long the resulting clip RUNS in the edit.
   return db.prepare(`
     INSERT INTO shots (shotlist_id, scene_id, sort_order, shot_number, title, description, shot_type,
-                       duration_minutes, talent, costume, props, camera_notes, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+                       duration_minutes, clip_length_seconds, lens, lens_detail, set_design,
+                       locked_start_time, costume, props, camera_notes, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
   `).run(
     shotlistId, scene.id, nextOrder,
     cleanText(body.shot_number, 12) || String(nextOrder + 1),
@@ -635,7 +1060,12 @@ function addShotToScene(shotlistId, scene, body) {
     cleanText(body.shot_type, 80),
     Number.isFinite(Number(body.duration_minutes)) && Number(body.duration_minutes) > 0
       ? Math.round(Number(body.duration_minutes)) : 30,
-    cleanText(body.talent, 300), cleanText(body.costume, 300), cleanText(body.props, 600),
+    cleanInt(body.clip_length_seconds, { min: 0, max: 86400 }),
+    LENSES.includes(body.lens) ? body.lens : null,
+    cleanText(body.lens_detail, 120),
+    cleanText(body.set_design, 2000),
+    cleanTime(body.locked_start_time),
+    cleanText(body.costume, 300), cleanText(body.props, 600),
     cleanText(body.camera_notes, 2000)
   ).lastInsertRowid;
 }
@@ -710,7 +1140,8 @@ router.put('/:id/shots/:shotId', (req, res) => {
 
     db.prepare(`
       UPDATE shots SET scene_id = ?, sort_order = ?, shot_number = ?, title = ?, description = ?,
-             shot_type = ?, duration_minutes = ?, talent = ?, costume = ?, props = ?,
+             shot_type = ?, duration_minutes = ?, clip_length_seconds = ?, lens = ?, lens_detail = ?,
+             set_design = ?, locked_start_time = ?, costume = ?, props = ?,
              camera_notes = ?, status = ?, completed_by = ?, completed_at = ?
       WHERE id = ? AND shotlist_id = ?
     `).run(
@@ -724,7 +1155,12 @@ router.put('/:id/shots/:shotId', (req, res) => {
         ? (Number.isFinite(Number(body.duration_minutes)) && Number(body.duration_minutes) > 0
           ? Math.round(Number(body.duration_minutes)) : shot.duration_minutes)
         : shot.duration_minutes,
-      body.talent !== undefined ? cleanText(body.talent, 300) : shot.talent,
+      body.clip_length_seconds !== undefined
+        ? cleanInt(body.clip_length_seconds, { min: 0, max: 86400 }) : shot.clip_length_seconds,
+      body.lens !== undefined ? (LENSES.includes(body.lens) ? body.lens : null) : shot.lens,
+      body.lens_detail !== undefined ? cleanText(body.lens_detail, 120) : shot.lens_detail,
+      body.set_design !== undefined ? cleanText(body.set_design, 2000) : shot.set_design,
+      body.locked_start_time !== undefined ? cleanTime(body.locked_start_time) : shot.locked_start_time,
       body.costume !== undefined ? cleanText(body.costume, 300) : shot.costume,
       body.props !== undefined ? cleanText(body.props, 600) : shot.props,
       body.camera_notes !== undefined ? cleanText(body.camera_notes, 2000) : shot.camera_notes,
@@ -752,13 +1188,18 @@ router.post('/:id/shots/:shotId/duplicate', (req, res) => {
     const duplicate = db.transaction(() => {
       const newId = db.prepare(`
         INSERT INTO shots (shotlist_id, scene_id, sort_order, shot_number, title, description,
-                           shot_type, duration_minutes, talent, costume, props, camera_notes, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+                           shot_type, duration_minutes, clip_length_seconds, lens, lens_detail,
+                           set_design, costume, props, camera_notes, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
       `).run(
         shot.shotlist_id, shot.scene_id, nextOrder, String(nextOrder + 1),
         `${shot.title || 'Shot'} copy`, shot.description, shot.shot_type, shot.duration_minutes,
-        shot.talent, shot.costume, shot.props, shot.camera_notes
+        shot.clip_length_seconds, shot.lens, shot.lens_detail, shot.set_design,
+        shot.costume, shot.props, shot.camera_notes
       ).lastInsertRowid;
+      // The cast comes with the copy; the lock does not.
+      db.prepare('INSERT OR IGNORE INTO shot_characters (shot_id, character_id) SELECT ?, character_id FROM shot_characters WHERE shot_id = ?')
+        .run(newId, shot.id);
       // Media rows reference the same files; nothing is re-encoded.
       const insertMedia = db.prepare(
         'INSERT INTO shot_media (shot_id, kind, filename, thumb_filename, sort_order) VALUES (?, ?, ?, ?, ?)'
@@ -851,44 +1292,74 @@ router.delete('/:id/media/:mediaId', (req, res) => {
 });
 
 // ── Organize this ─────────────────────────────────────────────────────────────
+// One day at a time: a day is the unit that gets scheduled. Plans are stored
+// per day inside plan_json so organising Tuesday never discards Monday's plan.
 
 router.post('/:id/organize', async (req, res) => {
   try {
     const shotlist = getShotlistById(req.params.id);
     if (!shotlist) return res.status(404).json({ error: 'Shot list not found' });
-    if (!shotlist.shoot_date) return res.status(400).json({ error: 'Set a shoot date before organising the day' });
 
-    const scenes = getScenes(shotlist.id, 'user');
-    if (scenes.length === 0) return res.status(400).json({ error: 'Add some scenes first' });
-    const shotsByScene = new Map(scenes.map(s => [s.id, getShotsForScene(s.id)]));
+    const days = getDays(shotlist.id);
+    if (!days.length) return res.status(400).json({ error: 'Add a shoot day first' });
+
+    const requestedDay = req.body && req.body.dayId
+      ? days.find(d => d.id === Number(req.body.dayId))
+      : days[0];
+    if (!requestedDay) return res.status(400).json({ error: 'Unknown day' });
+
+    const allScenes = getScenes(shotlist.id, 'user');
+    const dayScenes = allScenes.filter(sc => sc.day_id === requestedDay.id);
+    if (dayScenes.length === 0) return res.status(400).json({ error: 'This day has no scenes to organise' });
+
+    const shotsByScene = new Map(allScenes.map(sc => [sc.id, getShotsForScene(sc.id)]));
     const locations = getLocations(shotlist.id);
+    const dayBreaks = getBreaks(shotlist.id).filter(b => b.day_id === requestedDay.id);
 
     const previous = readPlan(shotlist);
-    const result = await organize(shotlist, scenes, shotsByScene, locations, {
-      startSceneId: (req.body && req.body.startSceneId) || scenes[0].id,
+    const result = await organizeDay(shotlist, requestedDay, dayScenes, shotsByScene, dayBreaks, locations, {
+      startSceneId: (req.body && req.body.startSceneId) || dayScenes[0].id,
       cachedMatrix: previous ? previous.distance_cache : null,
     });
 
-    // The optimiser NEVER touches sort_order. It writes optimized_order on the
-    // scenes and plan_json only; Apply is a separate, explicit action.
+    // The optimiser NEVER touches sort_order. It writes optimized_order on this
+    // day's scenes and plan_json only; Apply is a separate, explicit action.
     const stored = {
-      plan: result.plan,
-      comparison: result.comparison,
-      current: result.current,
-      distance_cache: result.matrixCache || null,
+      ...(previous || {}),
+      distance_cache: result.matrixCache || (previous ? previous.distance_cache : null),
+      days: {
+        ...((previous && previous.days) || {}),
+        [requestedDay.id]: {
+          plan: result.plan,
+          comparison: result.comparison,
+          current: result.current,
+        },
+      },
     };
 
     const persist = db.transaction(() => {
       const update = db.prepare('UPDATE shotlist_scenes SET optimized_order = ? WHERE id = ? AND shotlist_id = ?');
-      db.prepare('UPDATE shotlist_scenes SET optimized_order = NULL WHERE shotlist_id = ?').run(shotlist.id);
+      // Only this day's scenes are re-numbered; other days keep their plans.
+      const base = allScenes.filter(sc => sc.day_id !== requestedDay.id).length;
+      db.prepare('UPDATE shotlist_scenes SET optimized_order = NULL WHERE day_id = ?').run(requestedDay.id);
       result.plan.order.forEach((sceneId, i) => update.run(i, sceneId, shotlist.id));
+      // Scenes on other days keep a stable optimised position after this one.
+      db.prepare(`
+        UPDATE shotlist_scenes SET optimized_order = sort_order + ?
+        WHERE shotlist_id = ? AND day_id != ? AND optimized_order IS NULL
+      `).run(result.plan.order.length, shotlist.id, requestedDay.id);
       db.prepare(`
         UPDATE shotlists SET plan_json = ?, optimizer_mode = ?, updated_at = datetime('now') WHERE id = ?
       `).run(JSON.stringify(stored), result.plan.distance_mode, shotlist.id);
     });
     persist();
 
-    res.json({ plan: result.plan, comparison: result.comparison, current: result.current });
+    res.json({
+      day_id: requestedDay.id,
+      plan: result.plan,
+      comparison: result.comparison,
+      current: result.current,
+    });
   } catch (err) {
     if (err && err.userMessage) return res.status(400).json({ error: err.message });
     console.error('Shot list organise failed:', err && err.message ? err.message : err);
@@ -897,26 +1368,35 @@ router.post('/:id/organize', async (req, res) => {
 });
 
 // Apply — the ONLY thing that copies the optimiser ordering into the user
-// ordering. Both orderings still persist afterwards.
+// ordering, and only for the day it was run on. Both orderings still persist.
 router.post('/:id/apply-plan', (req, res) => {
   try {
     const shotlist = getShotlistById(req.params.id);
     if (!shotlist) return res.status(404).json({ error: 'Shot list not found' });
 
-    const plan = readPlan(shotlist);
-    const order = plan && plan.plan && Array.isArray(plan.plan.order) ? plan.plan.order : null;
+    const stored = readPlan(shotlist);
+    const days = getDays(shotlist.id);
+    const dayId = req.body && req.body.dayId ? Number(req.body.dayId) : (days[0] ? days[0].id : null);
+    const dayPlan = stored && stored.days ? stored.days[dayId] : null;
+    const order = dayPlan && dayPlan.plan && Array.isArray(dayPlan.plan.order) ? dayPlan.plan.order : null;
     if (!order || order.length === 0) {
-      return res.status(400).json({ error: 'Run Organize this before applying a plan' });
+      return res.status(400).json({ error: 'Run Organize this on this day before applying a plan' });
     }
+
+    // Scenes on this day take the optimised sequence; every other day keeps the
+    // ordering it already had.
+    const dayScenes = getScenes(shotlist.id, 'user').filter(sc => sc.day_id === dayId);
+    const base = dayScenes.reduce((n, sc) => Math.min(n, sc.sort_order), Number.MAX_SAFE_INTEGER);
+    const offset = Number.isFinite(base) && base !== Number.MAX_SAFE_INTEGER ? base : 0;
 
     const apply = db.transaction(() => {
       const update = db.prepare('UPDATE shotlist_scenes SET sort_order = ? WHERE id = ? AND shotlist_id = ?');
-      order.forEach((sceneId, i) => update.run(i, sceneId, shotlist.id));
+      order.forEach((sceneId, i) => update.run(offset + i, sceneId, shotlist.id));
       db.prepare("UPDATE shotlists SET order_mode = 'user', updated_at = datetime('now') WHERE id = ?")
         .run(shotlist.id);
     });
     apply();
-    res.json({ ok: true });
+    res.json({ ok: true, day_id: dayId });
   } catch (err) {
     res.status(500).json({ error: 'Could not apply the plan' });
   }
@@ -955,13 +1435,9 @@ router.get('/:id/pdf/callsheet', (req, res) => {
   try {
     const shotlist = getShotlistById(req.params.id);
     if (!shotlist) return res.status(404).json({ error: 'Shot list not found' });
-    const bundle = loadBundle(shotlist);
     callSheetPdf(res, {
       shotlist,
-      rows: bundle.rows,
-      scenesById: bundle.scenesById,
-      shotsByScene: bundle.shotsByScene,
-      locationsById: bundle.locationsById,
+      bundle: loadBundle(shotlist),
       agency: getAgency(),
       orderLabel: orderLabelFor(shotlist),
     });
@@ -976,14 +1452,9 @@ router.get('/:id/pdf/photoboard', (req, res) => {
   try {
     const shotlist = getShotlistById(req.params.id);
     if (!shotlist) return res.status(404).json({ error: 'Shot list not found' });
-    const bundle = loadBundle(shotlist);
     photoBoardPdf(res, {
       shotlist,
-      rows: bundle.rows,
-      scenesById: bundle.scenesById,
-      shotsByScene: bundle.shotsByScene,
-      locationsById: bundle.locationsById,
-      mediaByShot: bundle.media,
+      bundle: loadBundle(shotlist),
       agency: getAgency(),
       orderLabel: orderLabelFor(shotlist),
     });

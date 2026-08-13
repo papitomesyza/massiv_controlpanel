@@ -3142,6 +3142,177 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
   text-transform: capitalize;
 }
 
+/* Shot lists V2 — days, cast, breaks, timeline */
+
+.shotlist-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.shotlist-panel-head > span:first-of-type {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.shotlist-hint {
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.shotlist-day-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+.shotlist-day-tab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  padding: 7px 11px;
+  border-radius: 10px;
+  border: 1px solid var(--border-default);
+  background: var(--overlay-02);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.shotlist-day-tab.on {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+.shotlist-day-tab-name { font-weight: 700; }
+.shotlist-day-tab-date { font-size: 11px; opacity: 0.8; }
+.shotlist-day-tab-edit { display: flex; padding: 2px; opacity: 0.85; }
+
+.shotlist-day-totals { padding: 12px 14px; }
+.shotlist-day-totals-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.shotlist-day-totals-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+  gap: 8px;
+}
+.shotlist-total {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 9px;
+  border-radius: 9px;
+  background: var(--overlay-02);
+}
+.shotlist-total.strong { background: var(--color-ink); color: var(--accent-contrast); }
+.shotlist-total-k {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  opacity: 0.7;
+}
+.shotlist-total-v { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+.shotlist-timeline { display: flex; flex-direction: column; }
+.shotlist-tl-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+.shotlist-tl-row:last-child { border-bottom: none; }
+.shotlist-tl-row.move, .shotlist-tl-row.break { color: var(--text-muted); }
+.shotlist-tl-time {
+  flex-shrink: 0;
+  min-width: 42px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.shotlist-tl-title {
+  flex: 1;
+  min-width: 96px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.shotlist-tl-note { flex-shrink: 0; font-size: 11px; color: var(--text-muted); }
+
+.shotlist-char-picker { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.shotlist-char-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border-default);
+  background: none;
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+}
+.shotlist-char-chip.on { border-color: var(--accent); background: var(--accent); color: var(--accent-contrast); }
+.shotlist-char-chip.add { border-style: dashed; }
+.shotlist-char-chip img { width: 16px; height: 16px; border-radius: 50%; object-fit: cover; }
+.shotlist-char-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--overlay-02);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.shotlist-break-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 9px;
+  border-radius: 10px;
+  background: var(--overlay-02);
+}
+
+.shotlist-move-fields {
+  padding: 10px 11px;
+  margin-bottom: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+}
+.shotlist-move-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+}
+
+.shotlist-warnings li { display: flex; align-items: flex-start; gap: 5px; }
+
 /* Location picker — Leaflet + OpenStreetMap, no map SDK key */
 .loc-picker { display: flex; flex-direction: column; gap: 8px; }
 .loc-picker-tools { display: flex; flex-direction: column; gap: 8px; }

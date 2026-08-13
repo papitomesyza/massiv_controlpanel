@@ -209,11 +209,10 @@ app.get('/s/:slug', (req, res, next) => {
     const agencyMap = {};
     agencyRows.forEach(r => { agencyMap[r.key] = r.value; });
 
-    const html = renderShotlist(
-      shotlist, bundle.rows, bundle.scenesById, bundle.shotsByScene,
-      bundle.locationsById, bundle.media,
-      { agency: { name: agencyMap.agency_name || null }, orderLabel: orderLabelFor(shotlist) }
-    );
+    const html = renderShotlist(shotlist, bundle, {
+      agency: { name: agencyMap.agency_name || null },
+      orderLabel: orderLabelFor(shotlist),
+    });
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     // No caching — a completion or a post-publish edit must show immediately
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');

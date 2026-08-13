@@ -776,6 +776,63 @@ function initDb() {
       created_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (shotlist_id) REFERENCES shotlists(id) ON DELETE CASCADE
     );
+
+    -- A shoot day owns its own date and times. shotlists.shoot_date/call_time
+    -- stay for compatibility but are no longer the source of truth.
+    CREATE TABLE IF NOT EXISTS shotlist_days (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      shotlist_id INTEGER NOT NULL,
+      day_number INTEGER DEFAULT 1,
+      shoot_date TEXT,
+      crew_call TEXT,
+      crew_call_offset_minutes INTEGER DEFAULT 30,
+      notes TEXT,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (shotlist_id) REFERENCES shotlists(id) ON DELETE CASCADE
+    );
+
+    -- Characters are defined once per shot list and reused across shots,
+    -- exactly like locations.
+    CREATE TABLE IF NOT EXISTS shotlist_characters (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      shotlist_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      performer TEXT,
+      kind TEXT DEFAULT 'principal',
+      costume TEXT,
+      notes TEXT,
+      photo_filename TEXT,
+      photo_thumb_filename TEXT,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (shotlist_id) REFERENCES shotlists(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS shot_characters (
+      shot_id INTEGER NOT NULL,
+      character_id INTEGER NOT NULL,
+      UNIQUE(shot_id, character_id),
+      FOREIGN KEY (shot_id) REFERENCES shots(id) ON DELETE CASCADE,
+      FOREIGN KEY (character_id) REFERENCES shotlist_characters(id) ON DELETE CASCADE
+    );
+
+    -- Meals and breaks sit between scenes in a day. A start_time makes one
+    -- immovable; without it, it floats where it sits in the running order.
+    CREATE TABLE IF NOT EXISTS shotlist_breaks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      shotlist_id INTEGER NOT NULL,
+      day_id INTEGER,
+      kind TEXT DEFAULT 'break',
+      label TEXT,
+      start_time TEXT,
+      duration_minutes INTEGER DEFAULT 30,
+      sort_order INTEGER DEFAULT 0,
+      notes TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (shotlist_id) REFERENCES shotlists(id) ON DELETE CASCADE,
+      FOREIGN KEY (day_id) REFERENCES shotlist_days(id) ON DELETE CASCADE
+    );
   `);
 
   // Alters
@@ -783,6 +840,30 @@ function initDb() {
     // Every shot belongs to a scene. Added as an alter (not in the create) so
     // shot lists built before scenes existed pick it up on the next boot.
     'ALTER TABLE shots ADD COLUMN scene_id INTEGER REFERENCES shotlist_scenes(id) ON DELETE CASCADE',
+
+    // Every scene belongs to a shoot day.
+    'ALTER TABLE shotlist_scenes ADD COLUMN day_id INTEGER REFERENCES shotlist_days(id) ON DELETE SET NULL',
+    // A set is normally dressed once for the whole scene; the shot field below
+    // is the per-shot deviation from it.
+    'ALTER TABLE shotlist_scenes ADD COLUMN set_design TEXT',
+    // An immovable anchor. It outranks the light window.
+    'ALTER TABLE shotlist_scenes ADD COLUMN locked_start_time TEXT',
+    // Per-move overrides for the company move INTO this scene. NULL means the
+    // shot list defaults apply.
+    'ALTER TABLE shotlist_scenes ADD COLUMN move_wrap_minutes INTEGER',
+    'ALTER TABLE shotlist_scenes ADD COLUMN move_setup_minutes INTEGER',
+
+    // How long the resulting clip runs in the edit — NOT duration_minutes,
+    // which is how long the shot takes to capture on the day.
+    'ALTER TABLE shots ADD COLUMN clip_length_seconds INTEGER',
+    'ALTER TABLE shots ADD COLUMN lens TEXT',
+    'ALTER TABLE shots ADD COLUMN lens_detail TEXT',
+    'ALTER TABLE shots ADD COLUMN set_design TEXT',
+    'ALTER TABLE shots ADD COLUMN locked_start_time TEXT',
+
+    // Company move defaults for the whole shot list, editable in the panel.
+    'ALTER TABLE shotlists ADD COLUMN move_wrap_minutes INTEGER DEFAULT 20',
+    'ALTER TABLE shotlists ADD COLUMN move_setup_minutes INTEGER DEFAULT 25',
   ].forEach(sql => { try { db.exec(sql); } catch (_) {} });
 
   // Backfills — sort_order is the user ordering, so any row that somehow
@@ -843,12 +924,104 @@ function initDb() {
     console.error('Scene backfill failed:', err.message);
   }
 
+  // Day backfill: every shot list made before shoot days existed gets a Day 1
+  // carrying its old shoot_date and call_time, and all of its scenes join it.
+  // The "has no day" guard makes every later boot a no-op.
+  try {
+    const dayless = db.prepare(`
+      SELECT s.* FROM shotlists s
+      WHERE NOT EXISTS (SELECT 1 FROM shotlist_days d WHERE d.shotlist_id = s.id)
+    `).all();
+
+    if (dayless.length) {
+      const insertDay = db.prepare(`
+        INSERT INTO shotlist_days (shotlist_id, day_number, shoot_date, crew_call, sort_order)
+        VALUES (?, 1, ?, ?, 0)
+      `);
+      const assignScenes = db.prepare('UPDATE shotlist_scenes SET day_id = ? WHERE shotlist_id = ?');
+      const migrate = db.transaction(() => {
+        for (const list of dayless) {
+          const dayId = insertDay.run(list.id, list.shoot_date, list.call_time).lastInsertRowid;
+          assignScenes.run(dayId, list.id);
+        }
+      });
+      migrate();
+      console.log(`INFO: Created Day 1 for ${dayless.length} existing shot list(s).`);
+    }
+  } catch (err) {
+    console.error('Shoot day backfill failed:', err.message);
+  }
+
+  // Any scene created between the two migrations still needs a day.
+  try {
+    db.exec(`
+      UPDATE shotlist_scenes SET day_id = (
+        SELECT d.id FROM shotlist_days d WHERE d.shotlist_id = shotlist_scenes.shotlist_id
+        ORDER BY d.sort_order ASC, d.id ASC LIMIT 1
+      ) WHERE day_id IS NULL
+    `);
+  } catch (_) {}
+
+  // Character backfill from the old free-text talent field: split on commas,
+  // create one character per distinct name in that shot list, and link it to
+  // the shots that named it. shots.talent is left in place, unread from then
+  // on. The settings guard makes this run exactly once.
+  try {
+    const done = db.prepare("SELECT value FROM settings WHERE key = 'shotlist_characters_backfilled'").get();
+    if (!done) {
+      const rows = db.prepare(
+        "SELECT id, shotlist_id, talent FROM shots WHERE talent IS NOT NULL AND TRIM(talent) != ''"
+      ).all();
+      // Somebody typed as "Extra 4" is an extra, and comes back as one — so the
+      // numbered-extra control carries on from where the old list left off
+      // instead of offering a number that is already taken.
+      const kindOf = name => (/^extras?\s*\d*$/i.test(name.trim()) ? 'extra' : 'principal');
+      const insertCharacter = db.prepare(`
+        INSERT INTO shotlist_characters (shotlist_id, name, kind, sort_order) VALUES (?, ?, ?, ?)
+      `);
+      const linkCharacter = db.prepare(
+        'INSERT OR IGNORE INTO shot_characters (shot_id, character_id) VALUES (?, ?)'
+      );
+
+      const migrate = db.transaction(() => {
+        const byList = new Map();   // shotlist id → Map(lowercased name → character id)
+        let created = 0;
+        for (const shot of rows) {
+          if (!byList.has(shot.shotlist_id)) byList.set(shot.shotlist_id, new Map());
+          const known = byList.get(shot.shotlist_id);
+          String(shot.talent).split(',').map(t => t.trim()).filter(Boolean).forEach(name => {
+            const key = name.toLowerCase();
+            if (!known.has(key)) {
+              known.set(key, insertCharacter.run(
+                shot.shotlist_id, name.slice(0, 120), kindOf(name), known.size
+              ).lastInsertRowid);
+              created++;
+            }
+            linkCharacter.run(shot.id, known.get(key));
+          });
+        }
+        db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('shotlist_characters_backfilled', '1')").run();
+        return created;
+      });
+      const created = migrate();
+      if (created) console.log(`INFO: Converted shot talent text into ${created} character(s).`);
+    }
+  } catch (err) {
+    console.error('Character backfill failed:', err.message);
+  }
+
   // Indexes
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_shotlists_slug ON shotlists(slug);
     CREATE INDEX IF NOT EXISTS idx_shots_shotlist ON shots(shotlist_id);
     CREATE INDEX IF NOT EXISTS idx_shots_scene ON shots(scene_id);
     CREATE INDEX IF NOT EXISTS idx_shotlist_scenes_shotlist ON shotlist_scenes(shotlist_id);
+    CREATE INDEX IF NOT EXISTS idx_shotlist_scenes_day ON shotlist_scenes(day_id);
+    CREATE INDEX IF NOT EXISTS idx_shotlist_days_shotlist ON shotlist_days(shotlist_id);
+    CREATE INDEX IF NOT EXISTS idx_shotlist_characters_shotlist ON shotlist_characters(shotlist_id);
+    CREATE INDEX IF NOT EXISTS idx_shot_characters_shot ON shot_characters(shot_id);
+    CREATE INDEX IF NOT EXISTS idx_shot_characters_character ON shot_characters(character_id);
+    CREATE INDEX IF NOT EXISTS idx_shotlist_breaks_day ON shotlist_breaks(day_id);
     CREATE INDEX IF NOT EXISTS idx_shot_media_shot ON shot_media(shot_id);
     CREATE INDEX IF NOT EXISTS idx_shotlist_locations_shotlist ON shotlist_locations(shotlist_id);
     CREATE INDEX IF NOT EXISTS idx_shot_activity_shotlist ON shot_activity(shotlist_id);
