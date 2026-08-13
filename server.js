@@ -239,16 +239,32 @@ app.get('/c/:slug', (req, res, next) => {
     ).get(req.params.slug);
     if (!shotlist) return miss();
 
-    const { getCharacters, getShotCountsByCharacter } = require('./lib/shotlistStore');
+    const { loadBundle, getShotCountsByCharacter, castSchedule } = require('./lib/shotlistStore');
     const { renderCasting } = require('./lib/renderCasting');
 
     const agencyRows = db.prepare("SELECT key, value FROM settings WHERE key IN ('agency_name')").all();
     const agencyMap = {};
     agencyRows.forEach(r => { agencyMap[r.key] = r.value; });
 
-    const html = renderCasting(shotlist, getCharacters(shotlist.id), {
+    // The schedule is derived from the same timeline the crew page and the call
+    // sheet are built from, so a casting agency can never be told a different
+    // time from the one the unit is working to.
+    const bundle = loadBundle(shotlist);
+
+    const html = renderCasting(shotlist, bundle.characters, {
       agency: { name: agencyMap.agency_name || null },
       shotCounts: getShotCountsByCharacter(shotlist.id),
+      schedule: castSchedule(bundle),
+      days: bundle.timelines.map(t => ({
+        day_number: t.day.day_number,
+        shoot_date: t.day.shoot_date,
+        crew_call: t.totals.crew_call,
+        wrap: t.totals.wrap,
+        locations: [...new Set(
+          t.items.filter(i => i.kind === 'scene' && i.location_name).map(i => i.location_name)
+        )],
+      })),
+      locations: bundle.locations,
     });
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     // No caching — an edit must show immediately (media stays long-cached)
