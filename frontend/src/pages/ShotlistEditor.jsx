@@ -43,6 +43,18 @@ function fmtDuration(minutes) {
   return rest ? `${h}h ${rest}m` : `${h}h`;
 }
 
+// "30–40", "40+", "under 12" — the age a role is cast for, worded exactly as
+// the crew page and the PDFs word it.
+function fmtAgeRange(min, max) {
+  const lo = min == null || min === '' ? null : Number(min);
+  const hi = max == null || max === '' ? null : Number(max);
+  if (lo == null && hi == null) return '';
+  if (lo != null && hi == null) return `${lo}+`;
+  if (lo == null && hi != null) return `under ${hi}`;
+  if (lo === hi) return String(lo);
+  return `${lo}–${hi}`;
+}
+
 // "2:05" — clip seconds as a running time.
 function fmtClip(seconds) {
   const s = Math.max(0, Math.round(Number(seconds) || 0));
@@ -233,7 +245,8 @@ function CharacterPicker({ characters, selected, onChange, onAddExtra }) {
             type="button"
             className={`shotlist-char-chip${chosen.has(c.id) ? ' on' : ''}`}
             onClick={() => toggle(c.id)}
-            title={c.performer ? `${c.name} — ${c.performer}` : c.name}
+            title={[c.name, fmtAgeRange(c.age_min, c.age_max) && `age ${fmtAgeRange(c.age_min, c.age_max)}`, c.performer]
+              .filter(Boolean).join(' — ')}
           >
             {c.photo_thumb_filename || c.photo_filename ? (
               <img src={`/s-media/${c.photo_thumb_filename || c.photo_filename}`} alt="" />
@@ -953,6 +966,8 @@ function CharactersPanel({ shotlistId, characters, onChanged, onAddExtra }) {
         costume: editing.costume, notes: editing.notes,
         photo_filename: editing.photo_filename || null,
         photo_thumb_filename: editing.photo_thumb_filename || null,
+        age_min: editing.age_min === '' ? null : editing.age_min,
+        age_max: editing.age_max === '' ? null : editing.age_max,
       };
       if (editing.id) await api.put(`/shotlists/${shotlistId}/characters/${editing.id}`, body);
       else await api.post(`/shotlists/${shotlistId}/characters`, body);
@@ -1020,7 +1035,9 @@ function CharactersPanel({ shotlistId, characters, onChanged, onAddExtra }) {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: '13px', fontWeight: 600 }}>{c.name}</div>
               <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                {c.kind === 'extra' ? 'Extra' : 'Principal'}{c.performer ? ` · ${c.performer}` : ''}
+                {c.kind === 'extra' ? 'Extra' : 'Principal'}
+                {fmtAgeRange(c.age_min, c.age_max) ? ` · age ${fmtAgeRange(c.age_min, c.age_max)}` : ''}
+                {c.performer ? ` · ${c.performer}` : ''}
               </div>
             </div>
             <button className="btn-ghost" style={{ padding: '4px 6px' }} title="Edit" onClick={() => setEditing({ ...c })}>
@@ -1053,6 +1070,36 @@ function CharactersPanel({ shotlistId, characters, onChanged, onAddExtra }) {
             <label className="form-label">Performer</label>
             <input className="input" value={editing.performer || ''}
               onChange={e => setEditing({ ...editing, performer: e.target.value })} placeholder="Who plays them" />
+          </div>
+          {/* The age the ROLE is cast for, which is not the performer's own
+              age. Either end can stand alone. */}
+          <div className="form-row">
+            <label className="form-label">Age range for casting</label>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <input
+                className="input" type="number" min="0" max="120" style={{ flex: 1 }} placeholder="From"
+                value={editing.age_min == null ? '' : editing.age_min}
+                onChange={e => setEditing({ ...editing, age_min: e.target.value === '' ? null : Number(e.target.value) })}
+              />
+              <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>to</span>
+              <input
+                className="input" type="number" min="0" max="120" style={{ flex: 1 }} placeholder="To"
+                value={editing.age_max == null ? '' : editing.age_max}
+                onChange={e => setEditing({ ...editing, age_max: e.target.value === '' ? null : Number(e.target.value) })}
+              />
+              {(editing.age_min != null || editing.age_max != null) && (
+                <button className="btn btn-ghost btn-sm" title="Clear the age range"
+                  onClick={() => setEditing({ ...editing, age_min: null, age_max: null })}>
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+            <p className="shotlist-hint">
+              {fmtAgeRange(editing.age_min, editing.age_max)
+                ? `Casting for ${fmtAgeRange(editing.age_min, editing.age_max)}. `
+                : ''}
+              Leave one end empty for an open range — "40 to blank" reads as 40+.
+            </p>
           </div>
           <div className="form-row">
             <label className="form-label">Costume</label>

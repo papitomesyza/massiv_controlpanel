@@ -68,6 +68,16 @@ function cleanText(v, max = 4000) {
   return s.slice(0, max);
 }
 
+// The age a role is cast for. Either end may stand alone ("40+", "under 12"),
+// so neither is required — but when both are given they are put the right way
+// round rather than rejected, because a swapped pair is a typo, not a refusal.
+function cleanAgeRange(minValue, maxValue) {
+  let min = cleanInt(minValue, { min: 0, max: 120 });
+  let max = cleanInt(maxValue, { min: 0, max: 120 });
+  if (min != null && max != null && min > max) [min, max] = [max, min];
+  return { min, max };
+}
+
 // Media filenames are generated server-side; anything with a separator in it
 // is a tampering attempt.
 function cleanFilename(v) {
@@ -658,15 +668,18 @@ router.post('/:id/characters', (req, res) => {
       'SELECT COALESCE(MAX(sort_order), -1) AS m FROM shotlist_characters WHERE shotlist_id = ?'
     ).get(shotlist.id).m + 1;
 
+    const age = cleanAgeRange(body.age_min, body.age_max);
+
     const r = db.prepare(`
       INSERT INTO shotlist_characters (shotlist_id, name, performer, kind, costume, notes,
-                                       photo_filename, photo_thumb_filename, sort_order)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                       photo_filename, photo_thumb_filename, age_min, age_max, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       shotlist.id, name, cleanText(body.performer, 120),
       CHARACTER_KINDS.includes(body.kind) ? body.kind : 'principal',
       cleanText(body.costume, 300), cleanText(body.notes, 1000),
       cleanFilename(body.photo_filename), cleanFilename(body.photo_thumb_filename),
+      age.min, age.max,
       nextOrder
     );
     touch(shotlist.id);
@@ -712,9 +725,18 @@ router.put('/:id/characters/:characterId', (req, res) => {
       return res.status(400).json({ error: 'Character name required' });
     }
 
+    // The two ends are validated together — a range is only sane as a pair, so
+    // touching either one re-checks both. An explicit null clears that end.
+    const age = (body.age_min !== undefined || body.age_max !== undefined)
+      ? cleanAgeRange(
+        body.age_min !== undefined ? body.age_min : character.age_min,
+        body.age_max !== undefined ? body.age_max : character.age_max
+      )
+      : { min: character.age_min, max: character.age_max };
+
     db.prepare(`
       UPDATE shotlist_characters SET name = ?, performer = ?, kind = ?, costume = ?, notes = ?,
-             photo_filename = ?, photo_thumb_filename = ?
+             photo_filename = ?, photo_thumb_filename = ?, age_min = ?, age_max = ?
       WHERE id = ? AND shotlist_id = ?
     `).run(
       body.name !== undefined ? cleanText(body.name, 120) : character.name,
@@ -724,6 +746,7 @@ router.put('/:id/characters/:characterId', (req, res) => {
       body.notes !== undefined ? cleanText(body.notes, 1000) : character.notes,
       body.photo_filename !== undefined ? cleanFilename(body.photo_filename) : character.photo_filename,
       body.photo_thumb_filename !== undefined ? cleanFilename(body.photo_thumb_filename) : character.photo_thumb_filename,
+      age.min, age.max,
       character.id, req.params.id
     );
     touch(req.params.id);

@@ -864,6 +864,12 @@ function initDb() {
     // Company move defaults for the whole shot list, editable in the panel.
     'ALTER TABLE shotlists ADD COLUMN move_wrap_minutes INTEGER DEFAULT 20',
     'ALTER TABLE shotlists ADD COLUMN move_setup_minutes INTEGER DEFAULT 25',
+
+    // The age a role is cast for, which is a range and not the performer's own
+    // age. Either end may stand alone: "40+" and "under 12" are both real
+    // casting briefs, so neither column is required.
+    'ALTER TABLE shotlist_characters ADD COLUMN age_min INTEGER',
+    'ALTER TABLE shotlist_characters ADD COLUMN age_max INTEGER',
   ].forEach(sql => { try { db.exec(sql); } catch (_) {} });
 
   // Backfills — sort_order is the user ordering, so any row that somehow
