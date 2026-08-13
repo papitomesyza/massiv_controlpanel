@@ -138,11 +138,58 @@ app.use('/api/projects', requireAuth, (req, res, next) => {
 // Filenames are timestamp-unique, so long immutable caching is safe. Both
 // routes share one handler: same traversal guard, same mime map, same headers.
 const { serveMediaFile } = require('./lib/mediaStore');
+const { coverPng } = require('./lib/renderCover');
 const PRESENTATION_MEDIA_DIR = path.join(DATA_DIR, 'presentation-media');
 const SHOTLIST_MEDIA_DIR = path.join(DATA_DIR, 'shotlist-media');
 
 app.get('/p-media/:filename', (req, res) => serveMediaFile(req, res, PRESENTATION_MEDIA_DIR));
-app.get('/s-media/:filename', (req, res) => serveMediaFile(req, res, SHOTLIST_MEDIA_DIR));
+app.get('/shotlist-media/:filename', (req, res) => serveMediaFile(req, res, SHOTLIST_MEDIA_DIR));
+
+// Link preview covers. Unfurlers will not run JavaScript and will not take an
+// SVG, so each public page has a real PNG at a stable URL showing the project
+// name and what the link is — nothing from inside the document, since a
+// preview is shown in a chat list before anyone has opened it.
+function sendCover(req, res, { title, kind }) {
+  const agencyRow = db.prepare("SELECT value FROM settings WHERE key = 'agency_name'").get();
+  coverPng({ title, kind, agency: agencyRow ? agencyRow.value : null })
+    .then(png => {
+      res.setHeader('Content-Type', 'image/png');
+      // Long enough that an unfurler retrying does not redraw it, short enough
+      // that a renamed project catches up on its own.
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      res.send(png);
+    })
+    .catch(err => {
+      console.error('Cover render failed:', err && err.message ? err.message : err);
+      res.status(404).end();
+    });
+}
+
+app.get('/shotlist/:slug/cover.png', (req, res) => {
+  try {
+    const shotlist = db.prepare(
+      "SELECT title FROM shotlists WHERE slug = ? AND status = 'published'"
+    ).get(req.params.slug);
+    if (!shotlist) return res.status(404).end();
+    sendCover(req, res, { title: shotlist.title, kind: 'Shot list' });
+  } catch (err) {
+    console.error('Shot list cover failed:', err && err.message ? err.message : err);
+    res.status(404).end();
+  }
+});
+
+app.get('/c/:slug/cover.png', (req, res) => {
+  try {
+    const shotlist = db.prepare(
+      "SELECT title FROM shotlists WHERE casting_slug = ? AND casting_status = 'published'"
+    ).get(req.params.slug);
+    if (!shotlist) return res.status(404).end();
+    sendCover(req, res, { title: shotlist.title, kind: 'Casting' });
+  } catch (err) {
+    console.error('Casting cover failed:', err && err.message ? err.message : err);
+    res.status(404).end();
+  }
+});
 
 // Public pitch presentations — published only; drafts and unknown slugs fall
 // through to the SPA's generic behavior, revealing nothing. Must be registered
@@ -191,7 +238,7 @@ app.get('/p/:slug', (req, res, next) => {
 // like the pitch route does on this domain, revealing nothing. Registered
 // alongside the pitch route, BEFORE the static middleware and the SPA
 // catch-all.
-app.get('/s/:slug', (req, res, next) => {
+app.get('/shotlist/:slug', (req, res, next) => {
   const onPitchHost = isPitchHost(req);
   const miss = () => (onPitchHost ? sendPitch404(req, res) : next());
 
@@ -212,6 +259,9 @@ app.get('/s/:slug', (req, res, next) => {
     const html = renderShotlist(shotlist, bundle, {
       agency: { name: agencyMap.agency_name || null },
       orderLabel: orderLabelFor(shotlist),
+      // Built from the incoming host, so a shot list opened on the public
+      // domain advertises that domain and never the panel's.
+      origin: requestOrigin(req),
     });
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     // No caching — a completion or a post-publish edit must show immediately
@@ -253,6 +303,7 @@ app.get('/c/:slug', (req, res, next) => {
 
     const html = renderCasting(shotlist, bundle.characters, {
       agency: { name: agencyMap.agency_name || null },
+      origin: requestOrigin(req),
       shotCounts: getShotCountsByCharacter(shotlist.id),
       schedule: castSchedule(bundle),
       days: bundle.timelines.map(t => ({

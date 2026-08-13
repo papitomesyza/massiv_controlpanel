@@ -65,7 +65,7 @@ function fmtClip(seconds) {
 
 function thumbFor(m) {
   const name = m.thumb_filename || m.filename;
-  return name ? `/s-media/${name}` : null;
+  return name ? `/shotlist-media/${name}` : null;
 }
 
 function dayLabel(day) {
@@ -249,7 +249,7 @@ function CharacterPicker({ characters, selected, onChange, onAddExtra }) {
               .filter(Boolean).join(' — ')}
           >
             {c.photo_thumb_filename || c.photo_filename ? (
-              <img src={`/s-media/${c.photo_thumb_filename || c.photo_filename}`} alt="" />
+              <img src={`/shotlist-media/${c.photo_thumb_filename || c.photo_filename}`} alt="" />
             ) : (
               <Users size={10} />
             )}
@@ -1003,7 +1003,7 @@ function WardrobePicker({ shotlistId, character, onChanged }) {
         {items.map(m => (
           <div key={m.id} className="shotlist-wardrobe-item">
             <div style={{ position: 'relative' }}>
-              <img src={`/s-media/${m.thumb_filename || m.filename}`} alt="" />
+              <img src={`/shotlist-media/${m.thumb_filename || m.filename}`} alt="" />
               <button
                 type="button" title="Remove this look" onClick={() => remove(m)}
                 className="shotlist-wardrobe-x"
@@ -1087,10 +1087,11 @@ function CastingShare({ shotlistId, shotlist, base, onChanged }) {
           <div className="shotlist-casting-url">
             <a href={url} target="_blank" rel="noreferrer">{url}</a>
             <button className="btn-ghost" style={{ padding: '3px 5px', color: copied ? 'var(--success)' : undefined }}
-              onClick={copy} title="Copy the casting link">
+              onClick={copy} title={`Copy the casting link (${base.host})`}>
               {copied ? <Check size={12} /> : <Link2 size={12} />}
             </button>
           </div>
+          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{base.host}</span>
           <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
             <button className="btn btn-ghost btn-sm" disabled={busy}
               onClick={() => act('unpublish', 'Stop sharing the casting? The agency link stops working.')}>
@@ -1146,7 +1147,7 @@ function SortableCharacter({ character: c, onEdit, onDuplicate, onDelete }) {
         <GripVertical size={13} />
       </span>
       {c.photo_thumb_filename || c.photo_filename ? (
-        <img src={`/s-media/${c.photo_thumb_filename || c.photo_filename}`} alt=""
+        <img src={`/shotlist-media/${c.photo_thumb_filename || c.photo_filename}`} alt=""
           style={{ width: 30, height: 30, objectFit: 'cover', borderRadius: '50%', border: '1px solid var(--border-default)' }} />
       ) : (
         <span className="shotlist-char-avatar"><Users size={13} /></span>
@@ -1376,7 +1377,7 @@ function CharactersPanel({ shotlistId, shotlist, base, characters, onChanged, on
             <label className="form-label">Casting photo</label>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               {editing.photo_thumb_filename || editing.photo_filename ? (
-                <img src={`/s-media/${editing.photo_thumb_filename || editing.photo_filename}`} alt=""
+                <img src={`/shotlist-media/${editing.photo_thumb_filename || editing.photo_filename}`} alt=""
                   style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border-default)' }} />
               ) : null}
               <button className="btn btn-secondary btn-sm" onClick={() => fileRef.current?.click()} disabled={uploading}>
@@ -2014,7 +2015,7 @@ export default function ShotlistEditor() {
   );
 
   const isPublished = shotlist.status === 'published';
-  const publicUrl = shotlist.slug ? `${base.base}/s/${shotlist.slug}` : null;
+  const publicUrl = shotlist.slug ? `${base.base}/shotlist/${shotlist.slug}` : null;
   const completed = scenes.reduce((n, s) => n + (s.shots || []).filter(sh => sh.status === 'completed').length, 0);
 
   const activeDay = days.find(d => d.id === activeDayId) || null;
@@ -2065,9 +2066,12 @@ export default function ShotlistEditor() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px', fontSize: '12px', color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
           <Globe size={12} color="var(--success)" />
           <a href={publicUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--text-secondary)' }}>{publicUrl}</a>
-          <button className="btn-ghost" style={{ padding: '3px 5px', color: copied ? 'var(--success)' : undefined }} onClick={() => copyText(publicUrl)} title="Copy crew link">
+          <button className="btn-ghost" style={{ padding: '3px 5px', color: copied ? 'var(--success)' : undefined }} onClick={() => copyText(publicUrl)} title={`Copy crew link (${base.host})`}>
             {copied ? <Check size={12} /> : <Link2 size={12} />}
           </button>
+          {/* Which domain a copied link points at, the same way the pitch
+              share control shows it. */}
+          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{base.host}</span>
           {!shotlist.has_passcode && (
             <span style={{ fontSize: '11px', color: 'var(--warning)' }}>
               No passcode: the crew can read the list but cannot tick shots off.

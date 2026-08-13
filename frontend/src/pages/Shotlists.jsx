@@ -81,7 +81,7 @@ function NewShotlistModal({ projects, onClose, onCreated }) {
 function ShotlistCard({ shotlist, base, onDelete }) {
   const navigate = useNavigate();
   const [copied, setCopied] = useState(false);
-  const publicUrl = shotlist.slug ? `${base.base}/s/${shotlist.slug}` : null;
+  const publicUrl = shotlist.slug ? `${base.base}/shotlist/${shotlist.slug}` : null;
   const isPublished = shotlist.status === 'published';
 
   async function copyLink(e) {
