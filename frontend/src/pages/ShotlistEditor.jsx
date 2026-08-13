@@ -1119,11 +1119,76 @@ function CastingShare({ shotlistId, shotlist, base, onChanged }) {
   );
 }
 
+// One cast row, draggable by its handle. The handle is its own control so a
+// tap on the row's buttons never starts a drag.
+function SortableCharacter({ character: c, onEdit, onDuplicate, onDelete }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: `char-${c.id}` });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className="shotlist-loc-row"
+      style={{
+        transform: CSS.Transform.toString(transform), transition,
+        opacity: isDragging ? 0.5 : 1, zIndex: isDragging ? 999 : undefined, position: 'relative',
+      }}
+      {...attributes}
+    >
+      <span
+        {...listeners}
+        title="Drag to reorder the cast"
+        style={{
+          cursor: isDragging ? 'grabbing' : 'grab', color: 'var(--text-muted)',
+          touchAction: 'none', display: 'flex', padding: '2px', flexShrink: 0,
+        }}
+      >
+        <GripVertical size={13} />
+      </span>
+      {c.photo_thumb_filename || c.photo_filename ? (
+        <img src={`/s-media/${c.photo_thumb_filename || c.photo_filename}`} alt=""
+          style={{ width: 30, height: 30, objectFit: 'cover', borderRadius: '50%', border: '1px solid var(--border-default)' }} />
+      ) : (
+        <span className="shotlist-char-avatar"><Users size={13} /></span>
+      )}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: '13px', fontWeight: 600 }}>{c.name}</div>
+        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+          {c.kind === 'extra' ? 'Extra' : 'Principal'}
+          {fmtAgeRange(c.age_min, c.age_max) ? ` · age ${fmtAgeRange(c.age_min, c.age_max)}` : ''}
+          {c.performer ? ` · ${c.performer}` : ''}
+          {(c.wardrobe || []).length ? ` · ${c.wardrobe.length} look${c.wardrobe.length === 1 ? '' : 's'}` : ''}
+        </div>
+      </div>
+      <button className="btn-ghost" style={{ padding: '4px 6px' }} title="Edit" onClick={() => onEdit(c)}>
+        <Settings2 size={12} />
+      </button>
+      <button className="btn-ghost" style={{ padding: '4px 6px' }}
+        title="Duplicate this part with its brief and wardrobe" onClick={() => onDuplicate(c)}>
+        <Copy size={12} />
+      </button>
+      <button className="btn-ghost" style={{ padding: '4px 6px', color: 'var(--danger)' }} title="Delete" onClick={() => onDelete(c)}>
+        <Trash2 size={12} />
+      </button>
+    </div>
+  );
+}
+
 function CharactersPanel({ shotlistId, shotlist, base, characters, onChanged, onAddExtra, onReload }) {
   const [editing, setEditing] = useState(null);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef(null);
   const [uploading, setUploading] = useState(false);
+
+  // The cast is dragged locally for an immediate result and resynced whenever
+  // the server sends a fresh list.
+  const [list, setList] = useState(characters);
+  useEffect(() => { setList(characters); }, [characters]);
+
+  const castSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
+  );
 
   // Wardrobe is saved the moment it is uploaded, so the open modal takes the
   // fresh list back from the server — but only that field, or it would discard
@@ -1187,6 +1252,27 @@ function CharactersPanel({ shotlistId, shotlist, base, characters, onChanged, on
     } catch (err) { alert(err.message || 'Could not duplicate the character'); }
   }
 
+  async function handleDragEnd({ active, over }) {
+    if (!over || active.id === over.id) return;
+    const ids = list.map(c => `char-${c.id}`);
+    const oldIndex = ids.indexOf(active.id);
+    const newIndex = ids.indexOf(over.id);
+    if (oldIndex < 0 || newIndex < 0) return;
+
+    // Move it locally first so the drag lands where it was dropped, then let
+    // the server confirm; a failure puts the list back rather than leaving the
+    // panel showing an order that was never saved.
+    const next = arrayMove(list, oldIndex, newIndex);
+    setList(next);
+    try {
+      await api.patch(`/shotlists/${shotlistId}/characters/reorder`, { characterIds: next.map(c => c.id) });
+      await onChanged();
+    } catch (err) {
+      setList(characters);
+      alert(err.message || 'Could not reorder the cast');
+    }
+  }
+
   return (
     <div className="card" style={{ padding: '12px 14px' }}>
       <div className="shotlist-panel-head">
@@ -1207,37 +1293,26 @@ function CharactersPanel({ shotlistId, shotlist, base, characters, onChanged, on
         </p>
       )}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        {characters.map(c => (
-          <div key={c.id} className="shotlist-loc-row">
-            {c.photo_thumb_filename || c.photo_filename ? (
-              <img src={`/s-media/${c.photo_thumb_filename || c.photo_filename}`} alt=""
-                style={{ width: 30, height: 30, objectFit: 'cover', borderRadius: '50%', border: '1px solid var(--border-default)' }} />
-            ) : (
-              <span className="shotlist-char-avatar"><Users size={13} /></span>
-            )}
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: '13px', fontWeight: 600 }}>{c.name}</div>
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                {c.kind === 'extra' ? 'Extra' : 'Principal'}
-                {fmtAgeRange(c.age_min, c.age_max) ? ` · age ${fmtAgeRange(c.age_min, c.age_max)}` : ''}
-                {c.performer ? ` · ${c.performer}` : ''}
-                {(c.wardrobe || []).length ? ` · ${c.wardrobe.length} look${c.wardrobe.length === 1 ? '' : 's'}` : ''}
-              </div>
-            </div>
-            <button className="btn-ghost" style={{ padding: '4px 6px' }} title="Edit" onClick={() => setEditing({ ...c })}>
-              <Settings2 size={12} />
-            </button>
-            <button className="btn-ghost" style={{ padding: '4px 6px' }}
-              title="Duplicate this part with its brief and wardrobe" onClick={() => duplicate(c)}>
-              <Copy size={12} />
-            </button>
-            <button className="btn-ghost" style={{ padding: '4px 6px', color: 'var(--danger)' }} title="Delete" onClick={() => remove(c)}>
-              <Trash2 size={12} />
-            </button>
+      <DndContext sensors={castSensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={list.map(c => `char-${c.id}`)} strategy={verticalListSortingStrategy}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {list.map(c => (
+              <SortableCharacter
+                key={c.id}
+                character={c}
+                onEdit={ch => setEditing({ ...ch })}
+                onDuplicate={duplicate}
+                onDelete={remove}
+              />
+            ))}
           </div>
-        ))}
-      </div>
+        </SortableContext>
+      </DndContext>
+      {list.length > 1 && (
+        <p className="shotlist-hint" style={{ marginTop: 0 }}>
+          Drag to reorder — this is the order the shot picker, the casting page and the photo board use.
+        </p>
+      )}
 
       <CastingShare shotlistId={shotlistId} shotlist={shotlist} base={base} onChanged={onReload} />
 

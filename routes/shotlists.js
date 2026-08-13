@@ -826,6 +826,27 @@ router.put('/:id/characters/:characterId', (req, res) => {
   }
 });
 
+// Cast order is the order everywhere — the picker chips, the casting grid and
+// the photo board all read sort_order — so dragging a part in the panel moves
+// it on every surface. Scoped to this shot list, so an id from another one is
+// simply not updated.
+router.patch('/:id/characters/reorder', (req, res) => {
+  try {
+    const { characterIds } = req.body || {};
+    if (!Array.isArray(characterIds)) return res.status(400).json({ error: 'characterIds array required' });
+
+    const update = db.prepare('UPDATE shotlist_characters SET sort_order = ? WHERE id = ? AND shotlist_id = ?');
+    const updateAll = db.transaction(ids => {
+      ids.forEach((cid, index) => update.run(index, cid, req.params.id));
+    });
+    updateAll(characterIds);
+    touch(req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not reorder the cast' });
+  }
+});
+
 router.delete('/:id/characters/:characterId', (req, res) => {
   try {
     // The shot links cascade with the character.
