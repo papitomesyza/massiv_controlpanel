@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft, Plus, X, Trash2, GripVertical, ChevronDown, ChevronRight, Copy,
   Globe, EyeOff, Link2, Check, Settings2, MapPin, KeyRound, FileText, Image as ImageIcon,
-  Upload, Loader2, Wand2, History, RotateCcw, Sun,
+  Loader2, Wand2, History, RotateCcw, Sun, Clapperboard,
 } from 'lucide-react';
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors,
@@ -17,7 +17,7 @@ import { api, fmtDate } from '../api';
 
 const SHOT_TYPES = [
   'Wide', 'Medium', 'Close-up', 'Detail', 'Portrait', 'Group', 'Product',
-  'Landscape', 'Overhead', 'Motion', 'Behind the scenes',
+  'Landscape', 'Overhead', 'Drone', 'Motion', 'Behind the scenes',
 ];
 
 function thumbFor(m) {
@@ -36,12 +36,12 @@ function Field({ label, children, style }) {
   );
 }
 
-function TextField({ label, value, onChange, placeholder, textarea, polish, aiEnabled }) {
+function TextField({ label, value, onChange, placeholder, textarea, rows, polish, aiEnabled }) {
   const [loading, setLoading] = useState(false);
   return (
     <Field label={label}>
       {textarea ? (
-        <textarea className="input" rows={3} value={value || ''} disabled={loading}
+        <textarea className="input" rows={rows || 3} value={value || ''} disabled={loading}
           onChange={e => onChange(e.target.value)} placeholder={placeholder} />
       ) : (
         <input className="input" value={value || ''} disabled={loading}
@@ -66,7 +66,7 @@ function SelectField({ label, value, onChange, options, style }) {
 
 // ── Shot media picker (reference / scout) ────────────────────────────────────
 
-function MediaPicker({ shot, kind, onChanged }) {
+function MediaPicker({ shotlistId, shot, kind, onChanged }) {
   const inputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   const items = (shot.media || []).filter(m => m.kind === kind);
@@ -81,7 +81,7 @@ function MediaPicker({ shot, kind, onChanged }) {
         const fd = new FormData();
         fd.append('image', file);
         const res = await api.postForm('/shotlists/upload', fd);
-        await api.post(`/shotlists/${shot.shotlist_id}/shots/${shot.id}/media`, {
+        await api.post(`/shotlists/${shotlistId}/shots/${shot.id}/media`, {
           kind, filename: res.filename, thumb_filename: res.thumb,
         });
       }
@@ -95,7 +95,7 @@ function MediaPicker({ shot, kind, onChanged }) {
 
   async function remove(m) {
     try {
-      await api.del(`/shotlists/${shot.shotlist_id}/media/${m.id}`);
+      await api.del(`/shotlists/${shotlistId}/media/${m.id}`);
       await onChanged();
     } catch (err) { alert(err.message || 'Could not remove the image'); }
   }
@@ -139,46 +139,39 @@ function MediaPicker({ shot, kind, onChanged }) {
   );
 }
 
-// ── One sortable shot ────────────────────────────────────────────────────────
+// ── One shot, inside its scene ───────────────────────────────────────────────
 
 function SortableShot({
-  shot, index, expanded, onToggle, onChange, onDelete, onDuplicate,
-  locations, windows, aiEnabled, onMediaChanged,
+  shotlistId, shot, index, expanded, onToggle, onChange, onDelete, onDuplicate,
+  scenes, aiEnabled, onMediaChanged,
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: shot.id });
-  const windowOptions = (shot.space === 'interior' ? windows.interior : windows.exterior) || [];
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: `shot-${shot.id}` });
 
   return (
     <div
       ref={setNodeRef}
-      className="card"
+      className="shotlist-shot"
       style={{
         transform: CSS.Transform.toString(transform), transition,
-        opacity: isDragging ? 0.5 : 1, zIndex: isDragging ? 999 : undefined,
-        position: 'relative', padding: 0, overflow: 'visible',
+        opacity: isDragging ? 0.5 : 1, zIndex: isDragging ? 999 : undefined, position: 'relative',
       }}
       {...attributes}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px', cursor: 'pointer' }}
-        onClick={() => onToggle(shot.id)}>
+      <div className="shotlist-shot-head" onClick={() => onToggle(shot.id)}>
         <span
           {...listeners}
           onClick={e => e.stopPropagation()}
-          title="Drag to reorder"
+          title="Drag to reorder within the scene"
           style={{ cursor: isDragging ? 'grabbing' : 'grab', color: 'var(--text-muted)', touchAction: 'none', display: 'flex', padding: '2px' }}
         >
-          <GripVertical size={14} />
+          <GripVertical size={13} />
         </span>
         <span className="shotlist-num">{shot.shot_number || index + 1}</span>
         <span style={{ fontSize: '13px', fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {shot.title || 'Untitled shot'}
         </span>
-        <span className="shotlist-chip">{shot.space === 'interior' ? 'INT' : 'EXT'}</span>
-        {shot.light_window_label && (
-          <span className={`shotlist-chip${shot.light_window_hard ? ' hard' : ''}`} title={shot.light_window_range}>
-            {shot.light_window_label}
-          </span>
-        )}
+        {shot.shot_type && <span className="shotlist-chip">{shot.shot_type}</span>}
+        <span className="shotlist-chip">{shot.duration_minutes || 30}m</span>
         <button className="btn-ghost" style={{ padding: '3px 5px' }} title="Duplicate shot"
           onClick={e => { e.stopPropagation(); onDuplicate(shot); }}>
           <Copy size={12} />
@@ -187,19 +180,19 @@ function SortableShot({
           onClick={e => { e.stopPropagation(); onDelete(shot); }}>
           <Trash2 size={12} />
         </button>
-        {expanded ? <ChevronDown size={14} color="var(--text-muted)" /> : <ChevronRight size={14} color="var(--text-muted)" />}
+        {expanded ? <ChevronDown size={13} color="var(--text-muted)" /> : <ChevronRight size={13} color="var(--text-muted)" />}
       </div>
 
       {expanded && (
-        <div style={{ padding: '10px 14px 14px', borderTop: '1px solid var(--border-subtle)' }}>
+        <div className="shotlist-shot-body">
           <div className="shotlist-field-row">
             <TextField label="Shot number" value={shot.shot_number} onChange={v => onChange(shot.id, { shot_number: v })} />
-            <TextField label="Title" value={shot.title} onChange={v => onChange(shot.id, { title: v })} placeholder="What is being shot" />
+            <TextField label="Title" value={shot.title} onChange={v => onChange(shot.id, { title: v })} placeholder="e.g. Drone city view" />
           </div>
 
           <TextField
             label="Description" value={shot.description} onChange={v => onChange(shot.id, { description: v })}
-            textarea polish aiEnabled={aiEnabled} placeholder="What happens in this setup"
+            textarea polish aiEnabled={aiEnabled} placeholder="What happens in this shot"
           />
 
           <div className="shotlist-field-row">
@@ -214,31 +207,6 @@ function SortableShot({
           </div>
 
           <div className="shotlist-field-row">
-            <SelectField
-              label="Space" value={shot.space || 'exterior'}
-              onChange={v => onChange(shot.id, { space: v })}
-              options={[{ value: 'interior', label: 'Interior' }, { value: 'exterior', label: 'Exterior' }]}
-            />
-            <SelectField
-              label="Light window" value={shot.light_window || ''}
-              onChange={v => onChange(shot.id, { light_window: v })}
-              options={windowOptions.map(w => ({ value: w.key, label: `${w.label}${w.hard ? ' (hard)' : ''}` }))}
-            />
-          </div>
-          {shot.light_window_range && (
-            <p className="shotlist-window-note">
-              <Sun size={11} /> {shot.light_window_label}: {shot.light_window_range}
-              {shot.light_window_approximate ? ' — pin this shot’s location for exact times' : ''}
-            </p>
-          )}
-
-          <SelectField
-            label="Location" value={shot.location_id == null ? '' : String(shot.location_id)}
-            onChange={v => onChange(shot.id, { location_id: v ? Number(v) : null })}
-            options={[{ value: '', label: '— none —' }, ...locations.map(l => ({ value: String(l.id), label: l.name }))]}
-          />
-
-          <div className="shotlist-field-row">
             <TextField label="Talent" value={shot.talent} onChange={v => onChange(shot.id, { talent: v })} />
             <TextField label="Costume" value={shot.costume} onChange={v => onChange(shot.id, { costume: v })} />
           </div>
@@ -248,8 +216,163 @@ function SortableShot({
             textarea polish aiEnabled={aiEnabled}
           />
 
-          <MediaPicker shot={shot} kind="reference" onChanged={onMediaChanged} />
-          <MediaPicker shot={shot} kind="scout" onChanged={onMediaChanged} />
+          {scenes.length > 1 && (
+            <SelectField
+              label="Move to scene" value={String(shot.scene_id)}
+              onChange={v => onChange(shot.id, { scene_id: Number(v) })}
+              options={scenes.map(sc => ({ value: String(sc.id), label: `${sc.scene_number ? `${sc.scene_number}. ` : ''}${sc.title || 'Untitled scene'}` }))}
+            />
+          )}
+
+          <MediaPicker shotlistId={shotlistId} shot={shot} kind="reference" onChanged={onMediaChanged} />
+          <MediaPicker shotlistId={shotlistId} shot={shot} kind="scout" onChanged={onMediaChanged} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── One scene, with its shots inside ─────────────────────────────────────────
+
+function SortableScene({
+  shotlistId, scene, index, expanded, onToggle, onChange, onDelete, onDuplicate,
+  locations, windows, scenes, aiEnabled, onReload,
+  expandedShotId, onToggleShot, onShotChange, onShotDelete, onShotDuplicate, onAddShot, onShotsReorder,
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: `scene-${scene.id}` });
+  const windowOptions = (scene.space === 'interior' ? windows.interior : windows.exterior) || [];
+  const shots = scene.shots || [];
+
+  const shotSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
+  );
+
+  function handleShotDragEnd({ active, over }) {
+    if (!over || active.id === over.id) return;
+    const ids = shots.map(s => `shot-${s.id}`);
+    const oldIndex = ids.indexOf(active.id);
+    const newIndex = ids.indexOf(over.id);
+    if (oldIndex < 0 || newIndex < 0) return;
+    onShotsReorder(scene, arrayMove(shots, oldIndex, newIndex));
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      className="card shotlist-scene"
+      style={{
+        transform: CSS.Transform.toString(transform), transition,
+        opacity: isDragging ? 0.5 : 1, zIndex: isDragging ? 999 : undefined,
+        position: 'relative', padding: 0, overflow: 'visible',
+      }}
+      {...attributes}
+    >
+      <div className="shotlist-scene-head" onClick={() => onToggle(scene.id)}>
+        <span
+          {...listeners}
+          onClick={e => e.stopPropagation()}
+          title="Drag to reorder scenes"
+          style={{ cursor: isDragging ? 'grabbing' : 'grab', color: 'var(--text-muted)', touchAction: 'none', display: 'flex', padding: '2px' }}
+        >
+          <GripVertical size={15} />
+        </span>
+        <span className="shotlist-scene-num">{scene.scene_number || index + 1}</span>
+        <span className="shotlist-scene-title">{scene.title || 'Untitled scene'}</span>
+        <span className="shotlist-chip">{scene.space === 'interior' ? 'INT' : 'EXT'}</span>
+        {scene.light_window_label && (
+          <span className={`shotlist-chip${scene.light_window_hard ? ' hard' : ''}`} title={scene.light_window_range}>
+            {scene.light_window_label}
+          </span>
+        )}
+        <span className="shotlist-chip">{shots.length} shot{shots.length === 1 ? '' : 's'}</span>
+        <button className="btn-ghost" style={{ padding: '3px 5px' }} title="Duplicate scene with its shots"
+          onClick={e => { e.stopPropagation(); onDuplicate(scene); }}>
+          <Copy size={13} />
+        </button>
+        <button className="btn-ghost" style={{ padding: '3px 5px', color: 'var(--danger)' }} title="Delete scene"
+          onClick={e => { e.stopPropagation(); onDelete(scene); }}>
+          <Trash2 size={13} />
+        </button>
+        {expanded ? <ChevronDown size={15} color="var(--text-muted)" /> : <ChevronRight size={15} color="var(--text-muted)" />}
+      </div>
+
+      {expanded && (
+        <div className="shotlist-scene-body">
+          <div className="shotlist-field-row">
+            <TextField label="Scene number" value={scene.scene_number} onChange={v => onChange(scene.id, { scene_number: v })} />
+            <TextField label="Scene title" value={scene.title} onChange={v => onChange(scene.id, { title: v })} placeholder="e.g. The Eagle" />
+          </div>
+
+          <TextField
+            label="Scene description" value={scene.description} onChange={v => onChange(scene.id, { description: v })}
+            textarea rows={4} polish aiEnabled={aiEnabled}
+            placeholder="The screenplay for this scene: what happens, who is in it, how it plays"
+          />
+
+          <SelectField
+            label="Location" value={scene.location_id == null ? '' : String(scene.location_id)}
+            onChange={v => onChange(scene.id, { location_id: v ? Number(v) : null })}
+            options={[{ value: '', label: '— none —' }, ...locations.map(l => ({ value: String(l.id), label: l.name }))]}
+          />
+
+          <div className="shotlist-field-row">
+            <SelectField
+              label="Space" value={scene.space || 'exterior'}
+              onChange={v => onChange(scene.id, { space: v })}
+              options={[{ value: 'interior', label: 'Interior' }, { value: 'exterior', label: 'Exterior' }]}
+            />
+            <SelectField
+              label="Light window" value={scene.light_window || ''}
+              onChange={v => onChange(scene.id, { light_window: v })}
+              options={windowOptions.map(w => ({ value: w.key, label: `${w.label}${w.hard ? ' (hard)' : ''}` }))}
+            />
+          </div>
+          {scene.light_window_range && (
+            <p className="shotlist-window-note">
+              <Sun size={11} /> {scene.light_window_label}: {scene.light_window_range}
+              {scene.light_window_approximate ? ' — pin this scene’s location for exact times' : ''}
+            </p>
+          )}
+
+          <TextField label="Scene notes" value={scene.notes} onChange={v => onChange(scene.id, { notes: v })} textarea rows={2} />
+
+          {/* Coverage */}
+          <div className="shotlist-shots-header">
+            <span>Shots</span>
+            <button className="btn btn-secondary btn-sm" onClick={() => onAddShot(scene)}>
+              <Plus size={13} /> Add shot
+            </button>
+          </div>
+
+          {shots.length === 0 ? (
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '0 0 8px' }}>
+              No shots yet. Add the coverage for this scene.
+            </p>
+          ) : (
+            <DndContext sensors={shotSensors} collisionDetection={closestCenter} onDragEnd={handleShotDragEnd}>
+              <SortableContext items={shots.map(s => `shot-${s.id}`)} strategy={verticalListSortingStrategy}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {shots.map((shot, i) => (
+                    <SortableShot
+                      key={shot.id}
+                      shotlistId={shotlistId}
+                      shot={shot}
+                      index={i}
+                      expanded={expandedShotId === shot.id}
+                      onToggle={onToggleShot}
+                      onChange={onShotChange}
+                      onDelete={onShotDelete}
+                      onDuplicate={onShotDuplicate}
+                      scenes={scenes}
+                      aiEnabled={aiEnabled}
+                      onMediaChanged={onReload}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
+          )}
         </div>
       )}
     </div>
@@ -259,7 +382,7 @@ function SortableShot({
 // ── Locations panel ──────────────────────────────────────────────────────────
 
 function LocationsPanel({ shotlistId, locations, onChanged }) {
-  const [editing, setEditing] = useState(null); // location row or { new: true }
+  const [editing, setEditing] = useState(null);
 
   function startNew() {
     setEditing({ name: '', address: '', lat: null, lng: null, notes: '' });
@@ -276,7 +399,7 @@ function LocationsPanel({ shotlistId, locations, onChanged }) {
   }
 
   async function remove(loc) {
-    if (!confirm(`Delete location "${loc.name}"? Shots using it keep their other details.`)) return;
+    if (!confirm(`Delete location "${loc.name}"? Scenes using it keep their other details.`)) return;
     try {
       await api.del(`/shotlists/${shotlistId}/locations/${loc.id}`);
       await onChanged();
@@ -295,7 +418,7 @@ function LocationsPanel({ shotlistId, locations, onChanged }) {
 
       {locations.length === 0 && (
         <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '0 0 8px' }}>
-          No locations yet. Pin one so light windows and travel times are real.
+          No locations yet. Pin one so scene light windows and travel times are real.
         </p>
       )}
 
@@ -355,22 +478,22 @@ function LocationsPanel({ shotlistId, locations, onChanged }) {
 
 // ── Organize this ────────────────────────────────────────────────────────────
 
-function OrganizePanel({ shotlistId, shots, plan, onPlanned, onApplied }) {
-  const [startShotId, setStartShotId] = useState(shots.length ? String(shots[0].id) : '');
+function OrganizePanel({ shotlistId, scenes, plan, onPlanned, onApplied }) {
+  const [startSceneId, setStartSceneId] = useState(scenes.length ? String(scenes[0].id) : '');
   const [running, setRunning] = useState(false);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (shots.length && !shots.some(s => String(s.id) === startShotId)) {
-      setStartShotId(String(shots[0].id));
+    if (scenes.length && !scenes.some(s => String(s.id) === startSceneId)) {
+      setStartSceneId(String(scenes[0].id));
     }
-  }, [shots.map(s => s.id).join(','), startShotId]);
+  }, [scenes.map(s => s.id).join(','), startSceneId]);
 
   async function run() {
     setRunning(true); setError('');
     try {
-      const res = await api.post(`/shotlists/${shotlistId}/organize`, { startShotId: Number(startShotId) });
+      const res = await api.post(`/shotlists/${shotlistId}/organize`, { startSceneId: Number(startSceneId) });
       onPlanned(res);
     } catch (err) {
       setError(err.message || 'Could not organise the day');
@@ -380,7 +503,7 @@ function OrganizePanel({ shotlistId, shots, plan, onPlanned, onApplied }) {
   }
 
   async function apply() {
-    if (!confirm('Apply the optimised order? It becomes your order. The optimised plan is kept too.')) return;
+    if (!confirm('Apply the optimised scene order? It becomes your order. The optimised plan is kept too.')) return;
     setApplying(true);
     try {
       await api.post(`/shotlists/${shotlistId}/apply-plan`, {});
@@ -406,12 +529,16 @@ function OrganizePanel({ shotlistId, shots, plan, onPlanned, onApplied }) {
 
       <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 160 }}>
-          <label className="form-label" style={{ fontSize: '11px' }}>Start with</label>
-          <select className="select" style={{ width: '100%' }} value={startShotId} onChange={e => setStartShotId(e.target.value)}>
-            {shots.map(s => <option key={s.id} value={s.id}>{s.shot_number ? `${s.shot_number}. ` : ''}{s.title || 'Untitled shot'}</option>)}
+          <label className="form-label" style={{ fontSize: '11px' }}>Start with scene</label>
+          <select className="select" style={{ width: '100%' }} value={startSceneId} onChange={e => setStartSceneId(e.target.value)}>
+            {scenes.map(s => (
+              <option key={s.id} value={s.id}>
+                {s.scene_number ? `${s.scene_number}. ` : ''}{s.title || 'Untitled scene'}
+              </option>
+            ))}
           </select>
         </div>
-        <button className="btn btn-primary btn-sm" onClick={run} disabled={running || shots.length === 0}>
+        <button className="btn btn-primary btn-sm" onClick={run} disabled={running || scenes.length === 0}>
           {running ? <Loader2 size={13} className="pitch-spin" /> : <Wand2 size={13} />}
           {running ? 'Planning…' : 'Organize this'}
         </button>
@@ -438,18 +565,19 @@ function OrganizePanel({ shotlistId, shots, plan, onPlanned, onApplied }) {
                 <span>{c.optimised.travel_km} km · {c.optimised.travel_minutes} min travel · ends {c.optimised.end_label || '—'} · {c.optimised.warning_count} warning{c.optimised.warning_count === 1 ? '' : 's'}</span>
               </div>
               <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                {c.moved_count} shot{c.moved_count === 1 ? '' : 's'} move · fixes {c.fixes.length} conflict{c.fixes.length === 1 ? '' : 's'} · introduces {c.introduces.length}
+                {c.moved_count} scene{c.moved_count === 1 ? '' : 's'} move · fixes {c.fixes.length} conflict{c.fixes.length === 1 ? '' : 's'} · introduces {c.introduces.length}
               </div>
             </div>
           )}
 
           <div className="shotlist-plan">
             {p.rows.map(r => {
-              const move = c && c.moves.find(m => m.shot_id === r.shot_id);
+              const move = c && c.moves.find(m => m.scene_id === r.scene_id);
               return (
-                <div key={r.shot_id} className="shotlist-plan-row">
+                <div key={r.scene_id} className="shotlist-plan-row">
                   <span className="shotlist-plan-time">{r.start_label}</span>
-                  <span className="shotlist-plan-title">{r.title || 'Untitled shot'}</span>
+                  <span className="shotlist-plan-title">{r.title || 'Untitled scene'}</span>
+                  <span className="shotlist-chip">{r.shot_count} shot{r.shot_count === 1 ? '' : 's'}</span>
                   <span className={`shotlist-chip${r.light_window_hard ? ' hard' : ''}`}>{r.light_window_label}</span>
                   {r.travel_out_minutes > 0 && (
                     <span className="shotlist-plan-travel">→ {r.travel_out_minutes} min / {r.travel_out_km} km</span>
@@ -492,7 +620,8 @@ export default function ShotlistEditor() {
   const aiEnabled = useAiPolishAvailable();
 
   const [shotlist, setShotlist] = useState(null);
-  const [shots, setShots] = useState([]);
+  const [scenes, setScenes] = useState([]);
+  const [shotCount, setShotCount] = useState(0);
   const [locations, setLocations] = useState([]);
   const [activity, setActivity] = useState([]);
   const [plan, setPlan] = useState(null);
@@ -500,7 +629,8 @@ export default function ShotlistEditor() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saveState, setSaveState] = useState('saved');
-  const [expandedId, setExpandedId] = useState(null);
+  const [expandedSceneId, setExpandedSceneId] = useState(null);
+  const [expandedShotId, setExpandedShotId] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showPasscode, setShowPasscode] = useState(false);
   const [showActivity, setShowActivity] = useState(false);
@@ -508,6 +638,7 @@ export default function ShotlistEditor() {
   const [working, setWorking] = useState(false);
   const [base, setBase] = useState({ base: window.location.origin, host: window.location.host, custom: false });
 
+  const dirtyScenes = useRef(new Map());
   const dirtyShots = useRef(new Map());
   const dirtyList = useRef(null);
   const saveTimer = useRef(null);
@@ -520,7 +651,8 @@ export default function ShotlistEditor() {
   const load = useCallback(async () => {
     const data = await api.get(`/shotlists/${id}`);
     setShotlist(data.shotlist);
-    setShots(data.shots);
+    setScenes(data.scenes);
+    setShotCount(data.shot_count || 0);
     setLocations(data.locations);
     setActivity(data.activity || []);
     setPlan(data.plan || null);
@@ -537,23 +669,29 @@ export default function ShotlistEditor() {
   }, [id]);
 
   const flush = useCallback(async () => {
-    const entries = [...dirtyShots.current.entries()];
+    const sceneEntries = [...dirtyScenes.current.entries()];
+    dirtyScenes.current.clear();
+    const shotEntries = [...dirtyShots.current.entries()];
     dirtyShots.current.clear();
     const listPatch = dirtyList.current;
     dirtyList.current = null;
-    if (entries.length === 0 && !listPatch) return;
+    if (!sceneEntries.length && !shotEntries.length && !listPatch) return;
     try {
-      for (const [shotId, patch] of entries) {
+      for (const [sceneId, patch] of sceneEntries) {
+        await api.put(`/shotlists/${id}/scenes/${sceneId}`, patch);
+      }
+      for (const [shotId, patch] of shotEntries) {
         await api.put(`/shotlists/${id}/shots/${shotId}`, patch);
       }
       if (listPatch) await api.put(`/shotlists/${id}`, listPatch);
       setSaveState('saved');
-      // Light windows are resolved server-side, so pull the shots back after a
+      // Light windows are resolved server-side, so pull the scenes back after a
       // save that could have changed space, window or location — but only if
       // nothing new has been typed since, or the refetch would overwrite it.
       const data = await api.get(`/shotlists/${id}`);
-      if (dirtyShots.current.size === 0 && !dirtyList.current) {
-        setShots(data.shots);
+      if (dirtyScenes.current.size === 0 && dirtyShots.current.size === 0 && !dirtyList.current) {
+        setScenes(data.scenes);
+        setShotCount(data.shot_count || 0);
         setShotlist(data.shotlist);
       }
     } catch (err) {
@@ -569,9 +707,25 @@ export default function ShotlistEditor() {
     saveTimer.current = setTimeout(flush, 800);
   }
 
+  function handleSceneChange(sceneId, patch) {
+    setScenes(prev => prev.map(s => s.id === sceneId ? { ...s, ...patch } : s));
+    dirtyScenes.current.set(sceneId, { ...(dirtyScenes.current.get(sceneId) || {}), ...patch });
+    queueSave();
+  }
+
   function handleShotChange(shotId, patch) {
-    setShots(prev => prev.map(s => s.id === shotId ? { ...s, ...patch } : s));
+    setScenes(prev => prev.map(scene => ({
+      ...scene,
+      shots: (scene.shots || []).map(s => s.id === shotId ? { ...s, ...patch } : s),
+    })));
     dirtyShots.current.set(shotId, { ...(dirtyShots.current.get(shotId) || {}), ...patch });
+    // Moving a shot between scenes restructures the stack, so save it now.
+    if (patch.scene_id !== undefined) {
+      clearTimeout(saveTimer.current);
+      setSaveState('saving');
+      flush().then(load).catch(() => {});
+      return;
+    }
     queueSave();
   }
 
@@ -581,13 +735,45 @@ export default function ShotlistEditor() {
     queueSave();
   }
 
-  async function addShot() {
+  async function addScene() {
     try {
       setSaveState('saving');
       await flush();
-      const res = await api.post(`/shotlists/${id}/shots`, {});
+      const res = await api.post(`/shotlists/${id}/scenes`, {});
       await load();
-      setExpandedId(res.id);
+      setExpandedSceneId(res.id);
+      setSaveState('saved');
+    } catch (err) {
+      setSaveState('error');
+      alert(err.message || 'Could not add the scene');
+    }
+  }
+
+  async function duplicateScene(scene) {
+    try {
+      await flush();
+      await api.post(`/shotlists/${id}/scenes/${scene.id}/duplicate`, {});
+      await load();
+    } catch (err) { alert(err.message || 'Could not duplicate the scene'); }
+  }
+
+  async function deleteScene(scene) {
+    const count = (scene.shots || []).length;
+    if (!confirm(`Delete "${scene.title || 'this scene'}"${count ? ` and its ${count} shot${count === 1 ? '' : 's'}` : ''}? This cannot be undone.`)) return;
+    try {
+      dirtyScenes.current.delete(scene.id);
+      await api.del(`/shotlists/${id}/scenes/${scene.id}`);
+      await load();
+    } catch (err) { alert(err.message || 'Could not delete the scene'); }
+  }
+
+  async function addShot(scene) {
+    try {
+      setSaveState('saving');
+      await flush();
+      const res = await api.post(`/shotlists/${id}/scenes/${scene.id}/shots`, {});
+      await load();
+      setExpandedShotId(res.id);
       setSaveState('saved');
     } catch (err) {
       setSaveState('error');
@@ -612,15 +798,26 @@ export default function ShotlistEditor() {
     } catch (err) { alert(err.message || 'Could not delete the shot'); }
   }
 
-  async function handleDragEnd({ active, over }) {
+  async function handleSceneDragEnd({ active, over }) {
     if (!over || active.id === over.id) return;
-    const oldIndex = shots.findIndex(s => s.id === active.id);
-    const newIndex = shots.findIndex(s => s.id === over.id);
-    const next = arrayMove(shots, oldIndex, newIndex);
-    setShots(next);
+    const ids = scenes.map(s => `scene-${s.id}`);
+    const oldIndex = ids.indexOf(active.id);
+    const newIndex = ids.indexOf(over.id);
+    if (oldIndex < 0 || newIndex < 0) return;
+    const next = arrayMove(scenes, oldIndex, newIndex);
+    setScenes(next);
     try {
       setSaveState('saving');
-      await api.patch(`/shotlists/${id}/shots/reorder`, { shotIds: next.map(s => s.id) });
+      await api.patch(`/shotlists/${id}/scenes/reorder`, { sceneIds: next.map(s => s.id) });
+      setSaveState('saved');
+    } catch (err) { setSaveState('error'); }
+  }
+
+  async function handleShotsReorder(scene, nextShots) {
+    setScenes(prev => prev.map(s => s.id === scene.id ? { ...s, shots: nextShots } : s));
+    try {
+      setSaveState('saving');
+      await api.patch(`/shotlists/${id}/scenes/${scene.id}/shots/reorder`, { shotIds: nextShots.map(s => s.id) });
       setSaveState('saved');
     } catch (err) { setSaveState('error'); }
   }
@@ -676,7 +873,7 @@ export default function ShotlistEditor() {
 
   const isPublished = shotlist.status === 'published';
   const publicUrl = shotlist.slug ? `${base.base}/s/${shotlist.slug}` : null;
-  const completed = shots.filter(s => s.status === 'completed').length;
+  const completed = scenes.reduce((n, s) => n + (s.shots || []).filter(sh => sh.status === 'completed').length, 0);
 
   return (
     <div>
@@ -747,7 +944,8 @@ export default function ShotlistEditor() {
           Optimised order
         </button>
         <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: 'auto' }}>
-          {shots.length} shot{shots.length === 1 ? '' : 's'}{completed ? ` · ${completed} complete` : ''}
+          {scenes.length} scene{scenes.length === 1 ? '' : 's'} · {shotCount} shot{shotCount === 1 ? '' : 's'}
+          {completed ? ` · ${completed} complete` : ''}
         </span>
         <button className="btn btn-ghost btn-sm" onClick={() => setShowActivity(true)}>
           <History size={13} /> Activity
@@ -758,30 +956,48 @@ export default function ShotlistEditor() {
       </div>
 
       <div className="shotlist-editor">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', minWidth: 0 }}>
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext items={shots.map(s => s.id)} strategy={verticalListSortingStrategy}>
-              {shots.map((s, i) => (
-                <SortableShot
-                  key={s.id}
-                  shot={s}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', minWidth: 0 }}>
+          {scenes.length === 0 && (
+            <div className="card" style={{ padding: '32px 20px', textAlign: 'center' }}>
+              <Clapperboard size={28} color="var(--text-muted)" style={{ margin: '0 auto 10px', display: 'block' }} />
+              <p style={{ color: 'var(--text-secondary)', fontSize: '13px', margin: 0 }}>
+                Start with a scene: set where it happens and in what light, then add the shots inside it.
+              </p>
+            </div>
+          )}
+
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleSceneDragEnd}>
+            <SortableContext items={scenes.map(s => `scene-${s.id}`)} strategy={verticalListSortingStrategy}>
+              {scenes.map((scene, i) => (
+                <SortableScene
+                  key={scene.id}
+                  shotlistId={id}
+                  scene={scene}
                   index={i}
-                  expanded={expandedId === s.id}
-                  onToggle={sid => setExpandedId(prev => prev === sid ? null : sid)}
-                  onChange={handleShotChange}
-                  onDelete={deleteShot}
-                  onDuplicate={duplicateShot}
+                  expanded={expandedSceneId === scene.id}
+                  onToggle={sid => setExpandedSceneId(prev => prev === sid ? null : sid)}
+                  onChange={handleSceneChange}
+                  onDelete={deleteScene}
+                  onDuplicate={duplicateScene}
                   locations={locations}
                   windows={windows}
+                  scenes={scenes}
                   aiEnabled={aiEnabled}
-                  onMediaChanged={load}
+                  onReload={load}
+                  expandedShotId={expandedShotId}
+                  onToggleShot={sid => setExpandedShotId(prev => prev === sid ? null : sid)}
+                  onShotChange={handleShotChange}
+                  onShotDelete={deleteShot}
+                  onShotDuplicate={duplicateShot}
+                  onAddShot={addShot}
+                  onShotsReorder={handleShotsReorder}
                 />
               ))}
             </SortableContext>
           </DndContext>
 
-          <button className="btn btn-secondary" style={{ justifyContent: 'center' }} onClick={addShot}>
-            <Plus size={15} /> Add shot
+          <button className="btn btn-secondary" style={{ justifyContent: 'center' }} onClick={addScene}>
+            <Plus size={15} /> Add scene
           </button>
         </div>
 
@@ -789,7 +1005,7 @@ export default function ShotlistEditor() {
           <LocationsPanel shotlistId={id} locations={locations} onChanged={load} />
           <OrganizePanel
             shotlistId={id}
-            shots={shots}
+            scenes={scenes}
             plan={plan}
             onPlanned={res => setPlan({ plan: res.plan, comparison: res.comparison, current: res.current })}
             onApplied={async () => { await load(); }}

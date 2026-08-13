@@ -708,6 +708,29 @@ function initDb() {
       FOREIGN KEY (shotlist_id) REFERENCES shotlists(id) ON DELETE CASCADE
     );
 
+    -- A scene is the unit the day is planned around: it owns the location, the
+    -- interior/exterior call and the light window. Its shots are the coverage
+    -- inside it, and they inherit all three.
+    CREATE TABLE IF NOT EXISTS shotlist_scenes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      shotlist_id INTEGER NOT NULL,
+      sort_order INTEGER DEFAULT 0,
+      optimized_order INTEGER,
+      scene_number TEXT,
+      title TEXT,
+      description TEXT,
+      location_id INTEGER,
+      space TEXT DEFAULT 'exterior',
+      light_window TEXT DEFAULT 'daylight',
+      notes TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (shotlist_id) REFERENCES shotlists(id) ON DELETE CASCADE,
+      FOREIGN KEY (location_id) REFERENCES shotlist_locations(id) ON DELETE SET NULL
+    );
+
+    -- shots.location_id / space / light_window predate scenes. They are left in
+    -- place so nothing is lost on an upgrade, but the scene is the only source
+    -- of truth now: nothing reads or writes them any more.
     CREATE TABLE IF NOT EXISTS shots (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       shotlist_id INTEGER NOT NULL,
@@ -755,6 +778,13 @@ function initDb() {
     );
   `);
 
+  // Alters
+  [
+    // Every shot belongs to a scene. Added as an alter (not in the create) so
+    // shot lists built before scenes existed pick it up on the next boot.
+    'ALTER TABLE shots ADD COLUMN scene_id INTEGER REFERENCES shotlist_scenes(id) ON DELETE CASCADE',
+  ].forEach(sql => { try { db.exec(sql); } catch (_) {} });
+
   // Backfills — sort_order is the user ordering, so any row that somehow
   // arrived without one falls back to its id. The IS NULL guard makes every
   // later boot a no-op.
@@ -762,10 +792,63 @@ function initDb() {
     db.exec('UPDATE shots SET sort_order = id WHERE sort_order IS NULL');
   } catch (_) {}
 
+  // Scene backfill for shot lists made before scenes existed: walk each list in
+  // user order and open a new scene whenever the location, space or light
+  // window changes, so the shape of the day survives the upgrade intact. The
+  // scene_id IS NULL guard makes every later boot a no-op.
+  try {
+    const orphanLists = db.prepare(
+      'SELECT DISTINCT shotlist_id FROM shots WHERE scene_id IS NULL'
+    ).all();
+
+    if (orphanLists.length) {
+      const listShots = db.prepare(
+        'SELECT * FROM shots WHERE shotlist_id = ? AND scene_id IS NULL ORDER BY sort_order ASC, id ASC'
+      );
+      const nextSceneOrder = db.prepare(
+        'SELECT COALESCE(MAX(sort_order), -1) AS m FROM shotlist_scenes WHERE shotlist_id = ?'
+      );
+      const insertScene = db.prepare(`
+        INSERT INTO shotlist_scenes (shotlist_id, sort_order, scene_number, title, location_id, space, light_window)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `);
+      const locationName = db.prepare('SELECT name FROM shotlist_locations WHERE id = ?');
+      const attach = db.prepare('UPDATE shots SET scene_id = ? WHERE id = ?');
+
+      const migrate = db.transaction(() => {
+        for (const { shotlist_id } of orphanLists) {
+          let order = nextSceneOrder.get(shotlist_id).m + 1;
+          let key = null;
+          let sceneId = null;
+          for (const shot of listShots.all(shotlist_id)) {
+            const shotKey = `${shot.location_id}|${shot.space}|${shot.light_window}`;
+            if (shotKey !== key) {
+              const loc = shot.location_id ? locationName.get(shot.location_id) : null;
+              const title = (loc && loc.name) || shot.title || `Scene ${order + 1}`;
+              sceneId = insertScene.run(
+                shotlist_id, order, String(order + 1), title,
+                shot.location_id, shot.space || 'exterior', shot.light_window || 'daylight'
+              ).lastInsertRowid;
+              key = shotKey;
+              order++;
+            }
+            attach.run(sceneId, shot.id);
+          }
+        }
+      });
+      migrate();
+      console.log(`INFO: Grouped existing shots into scenes for ${orphanLists.length} shot list(s).`);
+    }
+  } catch (err) {
+    console.error('Scene backfill failed:', err.message);
+  }
+
   // Indexes
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_shotlists_slug ON shotlists(slug);
     CREATE INDEX IF NOT EXISTS idx_shots_shotlist ON shots(shotlist_id);
+    CREATE INDEX IF NOT EXISTS idx_shots_scene ON shots(scene_id);
+    CREATE INDEX IF NOT EXISTS idx_shotlist_scenes_shotlist ON shotlist_scenes(shotlist_id);
     CREATE INDEX IF NOT EXISTS idx_shot_media_shot ON shot_media(shot_id);
     CREATE INDEX IF NOT EXISTS idx_shotlist_locations_shotlist ON shotlist_locations(shotlist_id);
     CREATE INDEX IF NOT EXISTS idx_shot_activity_shotlist ON shot_activity(shotlist_id);

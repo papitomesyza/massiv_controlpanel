@@ -11,8 +11,8 @@ const {
 } = require('../lib/sunWindows');
 const { hashPasscode } = require('../lib/shotlistAuth');
 const {
-  getShotlistById, getLocations, getShots, getMediaByShot, getActivity,
-  logActivity, touch, loadBundle, orderLabelFor,
+  getShotlistById, getLocations, getScenes, getShotsForScene, getMediaByShot,
+  getActivity, logActivity, touch, loadBundle, sceneDuration, orderLabelFor,
 } = require('../lib/shotlistStore');
 const { callSheetPdf, photoBoardPdf } = require('../lib/shotlistPdf');
 
@@ -184,6 +184,7 @@ router.get('/', (req, res) => {
   try {
     const rows = db.prepare(`
       SELECT s.*, p.title AS project_title,
+             (SELECT COUNT(*) FROM shotlist_scenes sc WHERE sc.shotlist_id = s.id) AS scene_count,
              (SELECT COUNT(*) FROM shots sh WHERE sh.shotlist_id = s.id) AS shot_count,
              (SELECT COUNT(*) FROM shots sh WHERE sh.shotlist_id = s.id AND sh.status = 'completed') AS completed_count
       FROM shotlists s
@@ -227,16 +228,22 @@ router.get('/:id', (req, res) => {
     const locations = getLocations(shotlist.id);
     // The panel always edits the USER ordering; the optimised one is shown
     // separately in the comparison.
-    const shots = getShots(shotlist.id, 'user');
-    const media = getMediaByShot(shots.map(s => s.id));
+    const scenes = getScenes(shotlist.id, 'user');
+    const shotsByScene = new Map(scenes.map(s => [s.id, getShotsForScene(s.id)]));
+    const allShots = scenes.flatMap(s => shotsByScene.get(s.id) || []);
+    const media = getMediaByShot(allShots.map(s => s.id));
 
     const locById = new Map(locations.map(l => [l.id, l]));
-    const shaped = shots.map(s => {
-      const loc = s.location_id != null ? locById.get(s.location_id) : null;
-      const win = resolveWindow(s.light_window, shotlist.shoot_date, loc ? loc.lat : null, loc ? loc.lng : null);
+    // The light window belongs to the scene, and it is resolved from that
+    // scene's own coordinates.
+    const shaped = scenes.map(scene => {
+      const loc = scene.location_id != null ? locById.get(scene.location_id) : null;
+      const win = resolveWindow(scene.light_window, shotlist.shoot_date, loc ? loc.lat : null, loc ? loc.lng : null);
+      const shots = (shotsByScene.get(scene.id) || []).map(s => ({ ...s, media: media.get(s.id) || [] }));
       return {
-        ...s,
-        media: media.get(s.id) || [],
+        ...scene,
+        shots,
+        duration_minutes: sceneDuration(shots),
         light_window_label: win ? win.label : '',
         light_window_range: win ? win.range_label : '',
         light_window_hard: win ? win.hard : false,
@@ -251,7 +258,8 @@ router.get('/:id', (req, res) => {
     res.json({
       shotlist: publicShape(shotlist),
       project,
-      shots: shaped,
+      scenes: shaped,
+      shot_count: allShots.length,
       locations,
       plan: readPlan(shotlist),
       activity: getActivity(shotlist.id, 60),
@@ -355,8 +363,8 @@ router.post('/:id/publish', (req, res) => {
     const shotlist = getShotlistById(req.params.id);
     if (!shotlist) return res.status(404).json({ error: 'Shot list not found' });
 
-    const count = db.prepare('SELECT COUNT(*) AS c FROM shots WHERE shotlist_id = ?').get(shotlist.id).c;
-    if (count === 0) return res.status(400).json({ error: 'Add at least one shot before publishing' });
+    const count = db.prepare('SELECT COUNT(*) AS c FROM shotlist_scenes WHERE shotlist_id = ?').get(shotlist.id).c;
+    if (count === 0) return res.status(400).json({ error: 'Add at least one scene before publishing' });
 
     const slug = shotlist.slug || generateSlug(shotlist.title, shotlist.id);
     db.prepare(`
@@ -447,7 +455,9 @@ router.delete('/:id/locations/:locationId', (req, res) => {
   }
 });
 
-// ── Shots ─────────────────────────────────────────────────────────────────────
+// ── Scenes ────────────────────────────────────────────────────────────────────
+// A scene owns the location, the interior/exterior call and the light window.
+// Its shots are the coverage inside it and inherit all three.
 
 function resolveLocationId(shotlistId, value) {
   if (value === null || value === undefined || value === '') return null;
@@ -456,37 +466,222 @@ function resolveLocationId(shotlistId, value) {
   return loc ? loc.id : null;
 }
 
-router.post('/:id/shots', (req, res) => {
+function getScene(shotlistId, sceneId) {
+  return db.prepare('SELECT * FROM shotlist_scenes WHERE id = ? AND shotlist_id = ?')
+    .get(sceneId, shotlistId);
+}
+
+router.post('/:id/scenes', (req, res) => {
   try {
     const shotlist = getShotlistById(req.params.id);
     if (!shotlist) return res.status(404).json({ error: 'Shot list not found' });
 
     const body = req.body || {};
     const space = SPACES.includes(body.space) ? body.space : 'exterior';
-    const nextOrder = db.prepare('SELECT COALESCE(MAX(sort_order), -1) AS m FROM shots WHERE shotlist_id = ?')
+    const nextOrder = db.prepare('SELECT COALESCE(MAX(sort_order), -1) AS m FROM shotlist_scenes WHERE shotlist_id = ?')
       .get(shotlist.id).m + 1;
-    const nextNumber = cleanText(body.shot_number, 12) || String(nextOrder + 1);
 
     const r = db.prepare(`
-      INSERT INTO shots (shotlist_id, sort_order, shot_number, title, description, shot_type, space,
-                         light_window, duration_minutes, talent, costume, props, camera_notes,
-                         location_id, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+      INSERT INTO shotlist_scenes (shotlist_id, sort_order, scene_number, title, description,
+                                   location_id, space, light_window, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      shotlist.id, nextOrder, nextNumber,
-      cleanText(body.title, 200) || 'New shot',
-      cleanText(body.description, 4000),
-      cleanText(body.shot_type, 80),
+      shotlist.id, nextOrder,
+      cleanText(body.scene_number, 12) || String(nextOrder + 1),
+      cleanText(body.title, 200) || 'New scene',
+      cleanText(body.description, 8000),
+      resolveLocationId(shotlist.id, body.location_id),
       space,
       cleanWindow(space, body.light_window),
-      Number.isFinite(Number(body.duration_minutes)) && Number(body.duration_minutes) > 0
-        ? Math.round(Number(body.duration_minutes)) : 30,
-      cleanText(body.talent, 300), cleanText(body.costume, 300), cleanText(body.props, 600),
-      cleanText(body.camera_notes, 2000),
-      resolveLocationId(shotlist.id, body.location_id)
+      cleanText(body.notes, 4000)
     );
     touch(shotlist.id);
     res.json({ id: r.lastInsertRowid });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not add the scene' });
+  }
+});
+
+router.put('/:id/scenes/:sceneId', (req, res) => {
+  try {
+    const scene = getScene(req.params.id, req.params.sceneId);
+    if (!scene) return res.status(404).json({ error: 'Scene not found' });
+
+    const body = req.body || {};
+    const space = body.space !== undefined
+      ? (SPACES.includes(body.space) ? body.space : scene.space)
+      : scene.space;
+    // Switching space re-validates the window against that space's catalogue.
+    const lightWindow = body.light_window !== undefined || body.space !== undefined
+      ? cleanWindow(space, body.light_window !== undefined ? body.light_window : scene.light_window)
+      : scene.light_window;
+
+    db.prepare(`
+      UPDATE shotlist_scenes SET scene_number = ?, title = ?, description = ?, location_id = ?,
+             space = ?, light_window = ?, notes = ?
+      WHERE id = ? AND shotlist_id = ?
+    `).run(
+      body.scene_number !== undefined ? cleanText(body.scene_number, 12) : scene.scene_number,
+      body.title !== undefined ? (cleanText(body.title, 200) || 'Untitled scene') : scene.title,
+      body.description !== undefined ? cleanText(body.description, 8000) : scene.description,
+      body.location_id !== undefined ? resolveLocationId(req.params.id, body.location_id) : scene.location_id,
+      space,
+      lightWindow,
+      body.notes !== undefined ? cleanText(body.notes, 4000) : scene.notes,
+      scene.id, req.params.id
+    );
+    touch(req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not save the scene' });
+  }
+});
+
+// Duplicating a scene copies its shots too — coverage is the point of a scene.
+router.post('/:id/scenes/:sceneId/duplicate', (req, res) => {
+  try {
+    const scene = getScene(req.params.id, req.params.sceneId);
+    if (!scene) return res.status(404).json({ error: 'Scene not found' });
+
+    const nextOrder = db.prepare('SELECT COALESCE(MAX(sort_order), -1) AS m FROM shotlist_scenes WHERE shotlist_id = ?')
+      .get(scene.shotlist_id).m + 1;
+
+    const duplicate = db.transaction(() => {
+      const newSceneId = db.prepare(`
+        INSERT INTO shotlist_scenes (shotlist_id, sort_order, scene_number, title, description,
+                                     location_id, space, light_window, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        scene.shotlist_id, nextOrder, String(nextOrder + 1), `${scene.title || 'Scene'} copy`,
+        scene.description, scene.location_id, scene.space, scene.light_window, scene.notes
+      ).lastInsertRowid;
+
+      const insertShot = db.prepare(`
+        INSERT INTO shots (shotlist_id, scene_id, sort_order, shot_number, title, description,
+                           shot_type, duration_minutes, talent, costume, props, camera_notes, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+      `);
+      const insertMedia = db.prepare(
+        'INSERT INTO shot_media (shot_id, kind, filename, thumb_filename, sort_order) VALUES (?, ?, ?, ?, ?)'
+      );
+      const sceneMedia = db.prepare('SELECT * FROM shot_media WHERE shot_id = ? ORDER BY sort_order ASC, id ASC');
+
+      getShotsForScene(scene.id).forEach((shot, i) => {
+        const newShotId = insertShot.run(
+          scene.shotlist_id, newSceneId, i, shot.shot_number, shot.title, shot.description,
+          shot.shot_type, shot.duration_minutes, shot.talent, shot.costume, shot.props, shot.camera_notes
+        ).lastInsertRowid;
+        // Media rows reference the same files; nothing is re-encoded.
+        sceneMedia.all(shot.id).forEach(m =>
+          insertMedia.run(newShotId, m.kind, m.filename, m.thumb_filename, m.sort_order));
+      });
+
+      return newSceneId;
+    });
+
+    const id = duplicate();
+    touch(req.params.id);
+    res.json({ id });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not duplicate the scene' });
+  }
+});
+
+router.delete('/:id/scenes/:sceneId', (req, res) => {
+  try {
+    // The scene's shots (and their media rows) cascade with it.
+    const r = db.prepare('DELETE FROM shotlist_scenes WHERE id = ? AND shotlist_id = ?')
+      .run(req.params.sceneId, req.params.id);
+    if (r.changes === 0) return res.status(404).json({ error: 'Scene not found' });
+    touch(req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not delete the scene' });
+  }
+});
+
+// Reorder the USER ordering of scenes — the optimised ordering is untouched.
+router.patch('/:id/scenes/reorder', (req, res) => {
+  try {
+    const { sceneIds } = req.body || {};
+    if (!Array.isArray(sceneIds)) return res.status(400).json({ error: 'sceneIds array required' });
+    const update = db.prepare('UPDATE shotlist_scenes SET sort_order = ? WHERE id = ? AND shotlist_id = ?');
+    const updateAll = db.transaction(ids => {
+      ids.forEach((sid, index) => update.run(index, sid, req.params.id));
+    });
+    updateAll(sceneIds);
+    touch(req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not reorder the scenes' });
+  }
+});
+
+// ── Shots (inside a scene) ────────────────────────────────────────────────────
+
+function addShotToScene(shotlistId, scene, body) {
+  const nextOrder = db.prepare('SELECT COALESCE(MAX(sort_order), -1) AS m FROM shots WHERE scene_id = ?')
+    .get(scene.id).m + 1;
+
+  return db.prepare(`
+    INSERT INTO shots (shotlist_id, scene_id, sort_order, shot_number, title, description, shot_type,
+                       duration_minutes, talent, costume, props, camera_notes, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+  `).run(
+    shotlistId, scene.id, nextOrder,
+    cleanText(body.shot_number, 12) || String(nextOrder + 1),
+    cleanText(body.title, 200) || 'New shot',
+    cleanText(body.description, 4000),
+    cleanText(body.shot_type, 80),
+    Number.isFinite(Number(body.duration_minutes)) && Number(body.duration_minutes) > 0
+      ? Math.round(Number(body.duration_minutes)) : 30,
+    cleanText(body.talent, 300), cleanText(body.costume, 300), cleanText(body.props, 600),
+    cleanText(body.camera_notes, 2000)
+  ).lastInsertRowid;
+}
+
+router.post('/:id/scenes/:sceneId/shots', (req, res) => {
+  try {
+    const scene = getScene(req.params.id, req.params.sceneId);
+    if (!scene) return res.status(404).json({ error: 'Scene not found' });
+    const id = addShotToScene(req.params.id, scene, req.body || {});
+    touch(req.params.id);
+    res.json({ id });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not add the shot' });
+  }
+});
+
+// Kept for callers that do not name a scene: the shot lands in the last scene,
+// and a list with no scenes yet gets one so a shot is never orphaned.
+router.post('/:id/shots', (req, res) => {
+  try {
+    const shotlist = getShotlistById(req.params.id);
+    if (!shotlist) return res.status(404).json({ error: 'Shot list not found' });
+
+    const body = req.body || {};
+    let scene = body.scene_id
+      ? getScene(shotlist.id, body.scene_id)
+      : db.prepare('SELECT * FROM shotlist_scenes WHERE shotlist_id = ? ORDER BY sort_order DESC, id DESC LIMIT 1')
+        .get(shotlist.id);
+
+    if (!scene) {
+      const space = SPACES.includes(body.space) ? body.space : 'exterior';
+      const newId = db.prepare(`
+        INSERT INTO shotlist_scenes (shotlist_id, sort_order, scene_number, title, location_id, space, light_window)
+        VALUES (?, 0, '1', 'Scene 1', ?, ?, ?)
+      `).run(
+        shotlist.id,
+        resolveLocationId(shotlist.id, body.location_id),
+        space,
+        cleanWindow(space, body.light_window)
+      ).lastInsertRowid;
+      scene = getScene(shotlist.id, newId);
+    }
+
+    const id = addShotToScene(shotlist.id, scene, body);
+    touch(shotlist.id);
+    res.json({ id, scene_id: scene.id });
   } catch (err) {
     res.status(500).json({ error: 'Could not add the shot' });
   }
@@ -499,29 +694,32 @@ router.put('/:id/shots/:shotId', (req, res) => {
     if (!shot) return res.status(404).json({ error: 'Shot not found' });
 
     const body = req.body || {};
-    const space = body.space !== undefined
-      ? (SPACES.includes(body.space) ? body.space : shot.space)
-      : shot.space;
-    // Switching space re-validates the window against that space's catalogue.
-    const lightWindow = body.light_window !== undefined || body.space !== undefined
-      ? cleanWindow(space, body.light_window !== undefined ? body.light_window : shot.light_window)
-      : shot.light_window;
-
     const status = body.status !== undefined && STATUSES.includes(body.status) ? body.status : shot.status;
 
+    // Moving a shot to another scene is how coverage gets regrouped; it lands
+    // at the end of the target scene.
+    let sceneId = shot.scene_id;
+    let sortOrder = shot.sort_order;
+    if (body.scene_id !== undefined && Number(body.scene_id) !== Number(shot.scene_id)) {
+      const target = getScene(req.params.id, body.scene_id);
+      if (!target) return res.status(400).json({ error: 'Unknown scene' });
+      sceneId = target.id;
+      sortOrder = db.prepare('SELECT COALESCE(MAX(sort_order), -1) AS m FROM shots WHERE scene_id = ?')
+        .get(target.id).m + 1;
+    }
+
     db.prepare(`
-      UPDATE shots SET shot_number = ?, title = ?, description = ?, shot_type = ?, space = ?,
-             light_window = ?, duration_minutes = ?, talent = ?, costume = ?, props = ?,
-             camera_notes = ?, location_id = ?, status = ?,
-             completed_by = ?, completed_at = ?
+      UPDATE shots SET scene_id = ?, sort_order = ?, shot_number = ?, title = ?, description = ?,
+             shot_type = ?, duration_minutes = ?, talent = ?, costume = ?, props = ?,
+             camera_notes = ?, status = ?, completed_by = ?, completed_at = ?
       WHERE id = ? AND shotlist_id = ?
     `).run(
+      sceneId,
+      sortOrder,
       body.shot_number !== undefined ? cleanText(body.shot_number, 12) : shot.shot_number,
       body.title !== undefined ? (cleanText(body.title, 200) || 'Untitled shot') : shot.title,
       body.description !== undefined ? cleanText(body.description, 4000) : shot.description,
       body.shot_type !== undefined ? cleanText(body.shot_type, 80) : shot.shot_type,
-      space,
-      lightWindow,
       body.duration_minutes !== undefined
         ? (Number.isFinite(Number(body.duration_minutes)) && Number(body.duration_minutes) > 0
           ? Math.round(Number(body.duration_minutes)) : shot.duration_minutes)
@@ -530,7 +728,6 @@ router.put('/:id/shots/:shotId', (req, res) => {
       body.costume !== undefined ? cleanText(body.costume, 300) : shot.costume,
       body.props !== undefined ? cleanText(body.props, 600) : shot.props,
       body.camera_notes !== undefined ? cleanText(body.camera_notes, 2000) : shot.camera_notes,
-      body.location_id !== undefined ? resolveLocationId(req.params.id, body.location_id) : shot.location_id,
       status,
       status === 'completed' ? shot.completed_by : null,
       status === 'completed' ? shot.completed_at : null,
@@ -549,21 +746,19 @@ router.post('/:id/shots/:shotId/duplicate', (req, res) => {
       .get(req.params.shotId, req.params.id);
     if (!shot) return res.status(404).json({ error: 'Shot not found' });
 
-    const nextOrder = db.prepare('SELECT COALESCE(MAX(sort_order), -1) AS m FROM shots WHERE shotlist_id = ?')
-      .get(shot.shotlist_id).m + 1;
+    const nextOrder = db.prepare('SELECT COALESCE(MAX(sort_order), -1) AS m FROM shots WHERE scene_id = ?')
+      .get(shot.scene_id).m + 1;
 
     const duplicate = db.transaction(() => {
-      const r = db.prepare(`
-        INSERT INTO shots (shotlist_id, sort_order, shot_number, title, description, shot_type, space,
-                           light_window, duration_minutes, talent, costume, props, camera_notes,
-                           location_id, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+      const newId = db.prepare(`
+        INSERT INTO shots (shotlist_id, scene_id, sort_order, shot_number, title, description,
+                           shot_type, duration_minutes, talent, costume, props, camera_notes, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
       `).run(
-        shot.shotlist_id, nextOrder, String(nextOrder + 1), `${shot.title || 'Shot'} copy`,
-        shot.description, shot.shot_type, shot.space, shot.light_window, shot.duration_minutes,
-        shot.talent, shot.costume, shot.props, shot.camera_notes, shot.location_id
-      );
-      const newId = r.lastInsertRowid;
+        shot.shotlist_id, shot.scene_id, nextOrder, String(nextOrder + 1),
+        `${shot.title || 'Shot'} copy`, shot.description, shot.shot_type, shot.duration_minutes,
+        shot.talent, shot.costume, shot.props, shot.camera_notes
+      ).lastInsertRowid;
       // Media rows reference the same files; nothing is re-encoded.
       const insertMedia = db.prepare(
         'INSERT INTO shot_media (shot_id, kind, filename, thumb_filename, sort_order) VALUES (?, ?, ?, ?, ?)'
@@ -594,14 +789,14 @@ router.delete('/:id/shots/:shotId', (req, res) => {
   }
 });
 
-// Reorder the USER ordering — the optimised ordering is untouched.
-router.patch('/:id/shots/reorder', (req, res) => {
+// Reorder the shots INSIDE one scene.
+router.patch('/:id/scenes/:sceneId/shots/reorder', (req, res) => {
   try {
     const { shotIds } = req.body || {};
     if (!Array.isArray(shotIds)) return res.status(400).json({ error: 'shotIds array required' });
-    const update = db.prepare('UPDATE shots SET sort_order = ? WHERE id = ? AND shotlist_id = ?');
+    const update = db.prepare('UPDATE shots SET sort_order = ? WHERE id = ? AND scene_id = ?');
     const updateAll = db.transaction(ids => {
-      ids.forEach((sid, index) => update.run(index, sid, req.params.id));
+      ids.forEach((sid, index) => update.run(index, sid, req.params.sceneId));
     });
     updateAll(shotIds);
     touch(req.params.id);
@@ -663,18 +858,19 @@ router.post('/:id/organize', async (req, res) => {
     if (!shotlist) return res.status(404).json({ error: 'Shot list not found' });
     if (!shotlist.shoot_date) return res.status(400).json({ error: 'Set a shoot date before organising the day' });
 
-    const shots = getShots(shotlist.id, 'user');
-    if (shots.length === 0) return res.status(400).json({ error: 'Add some shots first' });
+    const scenes = getScenes(shotlist.id, 'user');
+    if (scenes.length === 0) return res.status(400).json({ error: 'Add some scenes first' });
+    const shotsByScene = new Map(scenes.map(s => [s.id, getShotsForScene(s.id)]));
     const locations = getLocations(shotlist.id);
 
     const previous = readPlan(shotlist);
-    const result = await organize(shotlist, shots, locations, {
-      startShotId: (req.body && req.body.startShotId) || shots[0].id,
+    const result = await organize(shotlist, scenes, shotsByScene, locations, {
+      startSceneId: (req.body && req.body.startSceneId) || scenes[0].id,
       cachedMatrix: previous ? previous.distance_cache : null,
     });
 
-    // The optimiser NEVER touches sort_order. It writes optimized_order and
-    // plan_json only; Apply is a separate, explicit action.
+    // The optimiser NEVER touches sort_order. It writes optimized_order on the
+    // scenes and plan_json only; Apply is a separate, explicit action.
     const stored = {
       plan: result.plan,
       comparison: result.comparison,
@@ -683,9 +879,9 @@ router.post('/:id/organize', async (req, res) => {
     };
 
     const persist = db.transaction(() => {
-      const update = db.prepare('UPDATE shots SET optimized_order = ? WHERE id = ? AND shotlist_id = ?');
-      db.prepare('UPDATE shots SET optimized_order = NULL WHERE shotlist_id = ?').run(shotlist.id);
-      result.plan.order.forEach((shotId, i) => update.run(i, shotId, shotlist.id));
+      const update = db.prepare('UPDATE shotlist_scenes SET optimized_order = ? WHERE id = ? AND shotlist_id = ?');
+      db.prepare('UPDATE shotlist_scenes SET optimized_order = NULL WHERE shotlist_id = ?').run(shotlist.id);
+      result.plan.order.forEach((sceneId, i) => update.run(i, sceneId, shotlist.id));
       db.prepare(`
         UPDATE shotlists SET plan_json = ?, optimizer_mode = ?, updated_at = datetime('now') WHERE id = ?
       `).run(JSON.stringify(stored), result.plan.distance_mode, shotlist.id);
@@ -714,8 +910,8 @@ router.post('/:id/apply-plan', (req, res) => {
     }
 
     const apply = db.transaction(() => {
-      const update = db.prepare('UPDATE shots SET sort_order = ? WHERE id = ? AND shotlist_id = ?');
-      order.forEach((shotId, i) => update.run(i, shotId, shotlist.id));
+      const update = db.prepare('UPDATE shotlist_scenes SET sort_order = ? WHERE id = ? AND shotlist_id = ?');
+      order.forEach((sceneId, i) => update.run(i, sceneId, shotlist.id));
       db.prepare("UPDATE shotlists SET order_mode = 'user', updated_at = datetime('now') WHERE id = ?")
         .run(shotlist.id);
     });
@@ -763,7 +959,8 @@ router.get('/:id/pdf/callsheet', (req, res) => {
     callSheetPdf(res, {
       shotlist,
       rows: bundle.rows,
-      shotsById: bundle.shotsById,
+      scenesById: bundle.scenesById,
+      shotsByScene: bundle.shotsByScene,
       locationsById: bundle.locationsById,
       agency: getAgency(),
       orderLabel: orderLabelFor(shotlist),
@@ -783,7 +980,8 @@ router.get('/:id/pdf/photoboard', (req, res) => {
     photoBoardPdf(res, {
       shotlist,
       rows: bundle.rows,
-      shotsById: bundle.shotsById,
+      scenesById: bundle.scenesById,
+      shotsByScene: bundle.shotsByScene,
       locationsById: bundle.locationsById,
       mediaByShot: bundle.media,
       agency: getAgency(),

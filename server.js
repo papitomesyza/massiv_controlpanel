@@ -210,7 +210,8 @@ app.get('/s/:slug', (req, res, next) => {
     agencyRows.forEach(r => { agencyMap[r.key] = r.value; });
 
     const html = renderShotlist(
-      shotlist, bundle.rows, bundle.shotsById, bundle.locationsById, bundle.media,
+      shotlist, bundle.rows, bundle.scenesById, bundle.shotsByScene,
+      bundle.locationsById, bundle.media,
       { agency: { name: agencyMap.agency_name || null }, orderLabel: orderLabelFor(shotlist) }
     );
     res.setHeader('Content-Type', 'text/html; charset=utf-8');

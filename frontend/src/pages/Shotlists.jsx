@@ -114,6 +114,7 @@ function ShotlistCard({ shotlist, base, onDelete }) {
         <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
           {shotlist.shoot_date ? fmtDate(shotlist.shoot_date) : 'No shoot date'}
           {shotlist.call_time ? ` · call ${shotlist.call_time}` : ''}
+          {` · ${shotlist.scene_count} scene${shotlist.scene_count === 1 ? '' : 's'}`}
           {` · ${shotlist.shot_count} shot${shotlist.shot_count === 1 ? '' : 's'}`}
           {shotlist.completed_count > 0 ? ` · ${shotlist.completed_count} done` : ''}
         </span>
@@ -164,7 +165,7 @@ export default function Shotlists() {
   }, []);
 
   async function handleDelete(shotlist) {
-    if (!confirm(`Delete "${shotlist.title}"? Its shots, locations and activity go with it.${shotlist.status === 'published' ? ' The public link will stop working.' : ''}`)) return;
+    if (!confirm(`Delete "${shotlist.title}"? Its scenes, shots, locations and activity go with it.${shotlist.status === 'published' ? ' The public link will stop working.' : ''}`)) return;
     try {
       await api.del(`/shotlists/${shotlist.id}`);
       await load();
@@ -190,7 +191,7 @@ export default function Shotlists() {
         <div className="card" style={{ padding: '48px 20px', textAlign: 'center' }}>
           <ListVideo size={32} color="var(--text-muted)" style={{ margin: '0 auto 12px', display: 'block' }} />
           <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
-            No shot lists yet. Create one to plan a shoot day.
+            No shot lists yet. Create one to plan a shoot day, scene by scene.
           </p>
         </div>
       ) : (
