@@ -4,7 +4,7 @@ import {
   ArrowLeft, Plus, X, Trash2, GripVertical, ChevronDown, ChevronRight, Copy,
   Globe, EyeOff, Link2, Check, Settings2, MapPin, KeyRound, FileText, Image as ImageIcon,
   Loader2, Wand2, History, RotateCcw, Sun, Clapperboard, Lock, Unlock, Users, UserPlus,
-  Truck, Coffee, CalendarDays, Timer, Film, AlertTriangle,
+  Truck, Coffee, CalendarDays, Timer, Film, AlertTriangle, Share2,
 } from 'lucide-react';
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors,
@@ -1035,7 +1035,91 @@ function WardrobePicker({ shotlistId, character, onChanged }) {
 
 // ── Characters ───────────────────────────────────────────────────────────────
 
-function CharactersPanel({ shotlistId, characters, onChanged, onAddExtra }) {
+// The casting agency's link. A separate publication from the crew link — an
+// agency gets the cast grid and nothing else — and it can be rotated to cut
+// off a link that has travelled further than intended.
+function CastingShare({ shotlistId, shotlist, base, onChanged }) {
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const shared = shotlist.casting_status === 'published';
+  const url = shotlist.casting_slug ? `${base.base}/c/${shotlist.casting_slug}` : null;
+
+  async function act(path, confirmText) {
+    if (confirmText && !confirm(confirmText)) return;
+    setBusy(true);
+    try {
+      await api.post(`/shotlists/${shotlistId}/casting/${path}`, {});
+      await onChanged();
+    } catch (err) {
+      alert(err.message || 'Could not update the casting link');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function copy() {
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch (_) {
+      const ta = document.createElement('textarea');
+      ta.value = url;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <div className="shotlist-casting-share">
+      <div className="shotlist-casting-head">
+        <Share2 size={12} />
+        <span>Casting link</span>
+        {shared && <span className="shotlist-chip">shared</span>}
+      </div>
+
+      {shared && url ? (
+        <>
+          <div className="shotlist-casting-url">
+            <a href={url} target="_blank" rel="noreferrer">{url}</a>
+            <button className="btn-ghost" style={{ padding: '3px 5px', color: copied ? 'var(--success)' : undefined }}
+              onClick={copy} title="Copy the casting link">
+              {copied ? <Check size={12} /> : <Link2 size={12} />}
+            </button>
+          </div>
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+            <button className="btn btn-ghost btn-sm" disabled={busy}
+              onClick={() => act('unpublish', 'Stop sharing the casting? The agency link stops working.')}>
+              <EyeOff size={12} /> Stop sharing
+            </button>
+            <button className="btn btn-ghost btn-sm" disabled={busy}
+              onClick={() => act('rotate', 'Make a new casting link? The old one stops working immediately.')}>
+              <RotateCcw size={12} /> New link
+            </button>
+          </div>
+          <p className="shotlist-hint">
+            Cast, age ranges, costume notes and wardrobe only — no schedule, no locations, no call times. Read only.
+          </p>
+        </>
+      ) : (
+        <>
+          <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => act('publish')}>
+            <Share2 size={12} /> Share with a casting agency
+          </button>
+          <p className="shotlist-hint">
+            A view-only grid of the cast on your public domain. It shows nothing else from the shot list.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+function CharactersPanel({ shotlistId, shotlist, base, characters, onChanged, onAddExtra, onReload }) {
   const [editing, setEditing] = useState(null);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef(null);
@@ -1096,6 +1180,13 @@ function CharactersPanel({ shotlistId, characters, onChanged, onAddExtra }) {
     try { await onAddExtra(); } finally { setBusy(false); }
   }
 
+  async function duplicate(c) {
+    try {
+      await api.post(`/shotlists/${shotlistId}/characters/${c.id}/duplicate`, {});
+      await onChanged();
+    } catch (err) { alert(err.message || 'Could not duplicate the character'); }
+  }
+
   return (
     <div className="card" style={{ padding: '12px 14px' }}>
       <div className="shotlist-panel-head">
@@ -1137,12 +1228,18 @@ function CharactersPanel({ shotlistId, characters, onChanged, onAddExtra }) {
             <button className="btn-ghost" style={{ padding: '4px 6px' }} title="Edit" onClick={() => setEditing({ ...c })}>
               <Settings2 size={12} />
             </button>
+            <button className="btn-ghost" style={{ padding: '4px 6px' }}
+              title="Duplicate this part with its brief and wardrobe" onClick={() => duplicate(c)}>
+              <Copy size={12} />
+            </button>
             <button className="btn-ghost" style={{ padding: '4px 6px', color: 'var(--danger)' }} title="Delete" onClick={() => remove(c)}>
               <Trash2 size={12} />
             </button>
           </div>
         ))}
       </div>
+
+      <CastingShare shotlistId={shotlistId} shotlist={shotlist} base={base} onChanged={onReload} />
 
       {editing && (
         <Modal title={editing.id ? 'Edit character' : 'Add character'} onClose={() => setEditing(null)}>
@@ -2001,7 +2098,15 @@ export default function ShotlistEditor() {
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', minWidth: 0 }}>
           <LocationsPanel shotlistId={id} locations={locations} onChanged={load} />
-          <CharactersPanel shotlistId={id} characters={characters} onChanged={load} onAddExtra={addExtra} />
+          <CharactersPanel
+            shotlistId={id}
+            shotlist={shotlist}
+            base={base}
+            characters={characters}
+            onChanged={load}
+            onAddExtra={addExtra}
+            onReload={load}
+          />
           <BreaksPanel
             shotlistId={id}
             dayId={activeDayId}

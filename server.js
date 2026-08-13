@@ -226,6 +226,43 @@ app.get('/s/:slug', (req, res, next) => {
   }
 });
 
+// Public casting grid — the casting agency's view, published separately from
+// the crew link. Same miss behaviour as the pitch and shot list routes: an
+// unshared or unknown slug reveals nothing.
+app.get('/c/:slug', (req, res, next) => {
+  const onPitchHost = isPitchHost(req);
+  const miss = () => (onPitchHost ? sendPitch404(req, res) : next());
+
+  try {
+    const shotlist = db.prepare(
+      "SELECT * FROM shotlists WHERE casting_slug = ? AND casting_status = 'published'"
+    ).get(req.params.slug);
+    if (!shotlist) return miss();
+
+    const { getCharacters, getShotCountsByCharacter } = require('./lib/shotlistStore');
+    const { renderCasting } = require('./lib/renderCasting');
+
+    const agencyRows = db.prepare("SELECT key, value FROM settings WHERE key IN ('agency_name')").all();
+    const agencyMap = {};
+    agencyRows.forEach(r => { agencyMap[r.key] = r.value; });
+
+    const html = renderCasting(shotlist, getCharacters(shotlist.id), {
+      agency: { name: agencyMap.agency_name || null },
+      shotCounts: getShotCountsByCharacter(shotlist.id),
+    });
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    // No caching — an edit must show immediately (media stays long-cached)
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.send(html);
+  } catch (err) {
+    // No global error handler here — a failure must behave like a miss rather
+    // than render Express's default stack page.
+    console.error('Public casting render failed:', err && err.message ? err.message : err);
+    if (onPitchHost) return sendPitch404(req, res);
+    return next();
+  }
+});
+
 app.use(express.static(path.join(__dirname, 'dist')));
 app.get('*', (req, res) => {
   const indexPath = path.join(__dirname, 'dist', 'index.html');

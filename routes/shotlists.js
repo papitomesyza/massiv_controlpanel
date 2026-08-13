@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const crypto = require('crypto');
 const path = require('path');
 const multer = require('multer');
 const { db } = require('../db/database');
@@ -112,6 +113,22 @@ function generateSlug(title, excludeId) {
     n++;
   }
   return slug;
+}
+
+// The casting link goes to people outside the production, so its slug is not
+// derived from the title alone the way the crew slug is — a random suffix
+// means knowing the project name is not enough to find it.
+function generateCastingSlug(title) {
+  const base = String(title || '').toLowerCase().trim()
+    .replace(/[^a-z0-9]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'casting';
+  const exists = db.prepare('SELECT id FROM shotlists WHERE casting_slug = ?');
+  for (let i = 0; i < 10; i++) {
+    const slug = `${base}-${crypto.randomBytes(5).toString('hex')}`;
+    if (!exists.get(slug)) return slug;
+  }
+  // Ten collisions on 40 random bits will not happen, but never return a
+  // duplicate: fall back to something that cannot collide.
+  return `${base}-${Date.now().toString(36)}${crypto.randomBytes(5).toString('hex')}`;
 }
 
 // Never leaks passcode_hash to the client.
@@ -486,6 +503,59 @@ router.post('/:id/unpublish', (req, res) => {
   }
 });
 
+// ── Casting share link ────────────────────────────────────────────────────────
+// A separate publication from the crew link, for a casting agency: the cast
+// grid and nothing else, read only. Publishing one never publishes the other.
+
+router.post('/:id/casting/publish', (req, res) => {
+  try {
+    const shotlist = getShotlistById(req.params.id);
+    if (!shotlist) return res.status(404).json({ error: 'Shot list not found' });
+
+    const count = db.prepare('SELECT COUNT(*) AS c FROM shotlist_characters WHERE shotlist_id = ?')
+      .get(shotlist.id).c;
+    if (count === 0) return res.status(400).json({ error: 'Add at least one character before sharing the casting' });
+
+    const slug = shotlist.casting_slug || generateCastingSlug(shotlist.title);
+    db.prepare(`
+      UPDATE shotlists SET casting_status = 'published', casting_slug = ?,
+             casting_published_at = datetime('now'), updated_at = datetime('now')
+      WHERE id = ?
+    `).run(slug, shotlist.id);
+    res.json({ ok: true, casting_slug: slug });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not share the casting' });
+  }
+});
+
+router.post('/:id/casting/unpublish', (req, res) => {
+  try {
+    const r = db.prepare(
+      "UPDATE shotlists SET casting_status = 'draft', updated_at = datetime('now') WHERE id = ?"
+    ).run(req.params.id);
+    if (r.changes === 0) return res.status(404).json({ error: 'Shot list not found' });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not stop sharing the casting' });
+  }
+});
+
+// A new link invalidates the old one — the way to cut off an agency that
+// should no longer have access without unsharing from everyone else later.
+router.post('/:id/casting/rotate', (req, res) => {
+  try {
+    const shotlist = getShotlistById(req.params.id);
+    if (!shotlist) return res.status(404).json({ error: 'Shot list not found' });
+
+    const slug = generateCastingSlug(shotlist.title);
+    db.prepare("UPDATE shotlists SET casting_slug = ?, updated_at = datetime('now') WHERE id = ?")
+      .run(slug, shotlist.id);
+    res.json({ ok: true, casting_slug: slug });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not make a new casting link' });
+  }
+});
+
 // ── Locations ─────────────────────────────────────────────────────────────────
 
 router.post('/:id/locations', (req, res) => {
@@ -766,6 +836,61 @@ router.delete('/:id/characters/:characterId', (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: 'Could not delete the character' });
+  }
+});
+
+// Duplicating a part copies the brief — the age range, the costume note, the
+// casting photo and every wardrobe look — but NOT the shot links: the copy is
+// a new part that is not in any scene yet. A numbered extra continues the
+// sequence rather than becoming "Extra 3 copy".
+router.post('/:id/characters/:characterId/duplicate', (req, res) => {
+  try {
+    const character = db.prepare('SELECT * FROM shotlist_characters WHERE id = ? AND shotlist_id = ?')
+      .get(req.params.characterId, req.params.id);
+    if (!character) return res.status(404).json({ error: 'Character not found' });
+
+    const existing = getCharacters(req.params.id);
+    let name = `${character.name} copy`;
+    if (/^extra\s+\d+$/i.test(String(character.name || '').trim())) {
+      let n = 0;
+      existing.forEach(c => {
+        const m = /^extra\s+(\d+)$/i.exec(String(c.name || '').trim());
+        if (m) n = Math.max(n, Number(m[1]));
+      });
+      name = `Extra ${n + 1}`;
+    }
+    const nextOrder = existing.reduce((m, c) => Math.max(m, Number(c.sort_order) || 0), -1) + 1;
+
+    const duplicate = db.transaction(() => {
+      const newId = db.prepare(`
+        INSERT INTO shotlist_characters (shotlist_id, name, performer, kind, costume, notes,
+                                         photo_filename, photo_thumb_filename, age_min, age_max, sort_order)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        character.shotlist_id, name.slice(0, 120), character.performer, character.kind,
+        character.costume, character.notes, character.photo_filename, character.photo_thumb_filename,
+        character.age_min, character.age_max, nextOrder
+      ).lastInsertRowid;
+
+      // The wardrobe comes along: same files, new rows, so removing a look from
+      // one part never touches the other.
+      const looks = db.prepare(
+        'SELECT * FROM shotlist_character_media WHERE character_id = ? ORDER BY sort_order ASC, id ASC'
+      ).all(character.id);
+      const insertLook = db.prepare(`
+        INSERT INTO shotlist_character_media (character_id, kind, label, filename, thumb_filename, sort_order)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
+      looks.forEach((w, i) => insertLook.run(newId, w.kind, w.label, w.filename, w.thumb_filename, i));
+
+      return newId;
+    });
+
+    const id = duplicate();
+    touch(req.params.id);
+    res.json({ id, name });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not duplicate the character' });
   }
 });
 

@@ -885,6 +885,13 @@ function initDb() {
     // casting briefs, so neither column is required.
     'ALTER TABLE shotlist_characters ADD COLUMN age_min INTEGER',
     'ALTER TABLE shotlist_characters ADD COLUMN age_max INTEGER',
+
+    // The casting share link is its own publication, separate from the crew
+    // link: a casting agency gets the cast grid and nothing else, and
+    // publishing one never publishes the other.
+    'ALTER TABLE shotlists ADD COLUMN casting_slug TEXT',
+    "ALTER TABLE shotlists ADD COLUMN casting_status TEXT DEFAULT 'draft'",
+    'ALTER TABLE shotlists ADD COLUMN casting_published_at TEXT',
   ].forEach(sql => { try { db.exec(sql); } catch (_) {} });
 
   // Backfills — sort_order is the user ordering, so any row that somehow
@@ -1040,6 +1047,7 @@ function initDb() {
     CREATE INDEX IF NOT EXISTS idx_shotlist_scenes_day ON shotlist_scenes(day_id);
     CREATE INDEX IF NOT EXISTS idx_shotlist_days_shotlist ON shotlist_days(shotlist_id);
     CREATE INDEX IF NOT EXISTS idx_shotlist_characters_shotlist ON shotlist_characters(shotlist_id);
+    CREATE INDEX IF NOT EXISTS idx_shotlists_casting_slug ON shotlists(casting_slug);
     CREATE INDEX IF NOT EXISTS idx_character_media_character ON shotlist_character_media(character_id);
     CREATE INDEX IF NOT EXISTS idx_shot_characters_shot ON shot_characters(shot_id);
     CREATE INDEX IF NOT EXISTS idx_shot_characters_character ON shot_characters(character_id);
