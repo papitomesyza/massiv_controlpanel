@@ -1180,7 +1180,8 @@ router.put('/:id/scenes/:sceneId', (req, res) => {
     db.prepare(`
       UPDATE shotlist_scenes SET day_id = ?, scene_number = ?, title = ?, description = ?, location_id = ?,
              space = ?, light_window = ?, set_design = ?, locked_start_time = ?,
-             move_wrap_minutes = ?, move_setup_minutes = ?, move_locked_start_time = ?, notes = ?
+             move_wrap_minutes = ?, move_setup_minutes = ?, move_travel_minutes = ?,
+             move_locked_start_time = ?, notes = ?
       WHERE id = ? AND shotlist_id = ?
     `).run(
       dayId,
@@ -1199,6 +1200,9 @@ router.put('/:id/scenes/:sceneId', (req, res) => {
         ? cleanInt(body.move_wrap_minutes, { min: 0, max: 480 }) : scene.move_wrap_minutes,
       body.move_setup_minutes !== undefined
         ? cleanInt(body.move_setup_minutes, { min: 0, max: 480 }) : scene.move_setup_minutes,
+      // An explicit null hands travel back to the distance estimate.
+      body.move_travel_minutes !== undefined
+        ? cleanInt(body.move_travel_minutes, { min: 0, max: 1440 }) : scene.move_travel_minutes,
       // When the unit departs. An explicit null lets the move leave as soon as
       // the previous scene ends again.
       body.move_locked_start_time !== undefined

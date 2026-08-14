@@ -872,6 +872,10 @@ function initDb() {
     // whole unit — a dawn drone shot ends at 06:00 but the company does not
     // depart until 08:00. NULL keeps the old "leave immediately" behaviour.
     'ALTER TABLE shotlist_scenes ADD COLUMN move_locked_start_time TEXT',
+    // Travel time is normally derived from the distance between the two pins,
+    // which knows nothing about a mountain road, a ferry or rush hour. NULL
+    // keeps the computed figure; a number replaces it.
+    'ALTER TABLE shotlist_scenes ADD COLUMN move_travel_minutes INTEGER',
 
     // How long the resulting clip runs in the edit — NOT duration_minutes,
     // which is how long the shot takes to capture on the day.

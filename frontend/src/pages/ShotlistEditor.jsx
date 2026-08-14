@@ -815,20 +815,133 @@ function DayTotals({ day, totals, warnings }) {
 
 // The day as it actually runs: scenes, the company moves between them and the
 // breaks, on one clock.
-function TimelinePreview({ timeline }) {
+// A company move is generated between two scenes rather than stored as a row,
+// but it is still an event you should be able to click and set — so the
+// timeline row opens an editor for it. Everything it holds is editable: when
+// the unit leaves, how long the wrap, the travel and the set up take.
+function MoveModal({ shotlistId, move, onClose, onSaved }) {
+  const [draft, setDraft] = useState({
+    move_wrap_minutes: move.wrap_minutes,
+    move_travel_minutes: move.travel_overridden ? move.travel_minutes : null,
+    move_setup_minutes: move.setup_minutes,
+    move_locked_start_time: move.locked_time || null,
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const travelShown = draft.move_travel_minutes == null
+    ? (move.travel_computed_minutes ?? move.travel_minutes)
+    : draft.move_travel_minutes;
+  const total = (Number(draft.move_wrap_minutes) || 0)
+    + (Number(travelShown) || 0)
+    + (Number(draft.move_setup_minutes) || 0);
+
+  async function save() {
+    setSaving(true); setError('');
+    try {
+      await api.put(`/shotlists/${shotlistId}/scenes/${move.scene_id}`, draft);
+      await onSaved();
+      onClose();
+    } catch (err) {
+      setError(err.message || 'Could not save the company move');
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal title={`Company move to ${move.to_name || 'the next location'}`} onClose={onClose}>
+      <p className="shotlist-hint" style={{ marginTop: 0 }}>
+        {move.from_name || 'The previous location'} → {move.to_name || 'the next location'}
+        {move.travel_km ? ` · ${move.travel_km} km apart` : ''}
+      </p>
+
+      <div style={{ display: 'flex', gap: '10px' }}>
+        <div className="form-row" style={{ flex: 1 }}>
+          <label className="form-label">Wrap out (min)</label>
+          <input className="input" type="number" min="0" step="5" value={draft.move_wrap_minutes ?? ''}
+            onChange={e => setDraft({ ...draft, move_wrap_minutes: e.target.value === '' ? null : Number(e.target.value) })} />
+        </div>
+        <div className="form-row" style={{ flex: 1 }}>
+          <label className="form-label">Travel (min)</label>
+          <input className="input" type="number" min="0" step="5" value={travelShown ?? ''}
+            onChange={e => setDraft({ ...draft, move_travel_minutes: e.target.value === '' ? null : Number(e.target.value) })} />
+        </div>
+        <div className="form-row" style={{ flex: 1 }}>
+          <label className="form-label">Set up (min)</label>
+          <input className="input" type="number" min="0" step="5" value={draft.move_setup_minutes ?? ''}
+            onChange={e => setDraft({ ...draft, move_setup_minutes: e.target.value === '' ? null : Number(e.target.value) })} />
+        </div>
+      </div>
+
+      <p className="shotlist-hint" style={{ marginTop: 0 }}>
+        {draft.move_travel_minutes == null
+          ? `Travel is estimated from the distance (${move.travel_computed_minutes ?? move.travel_minutes} min). Type over it if the road says otherwise.`
+          : `Travel is set by hand. The distance estimate is ${move.travel_computed_minutes ?? move.travel_minutes} min.`}
+        {draft.move_travel_minutes != null && (
+          <>
+            {' '}
+            <button type="button" className="btn-ghost" style={{ padding: 0, textDecoration: 'underline' }}
+              onClick={() => setDraft({ ...draft, move_travel_minutes: null })}>
+              Use the estimate
+            </button>
+          </>
+        )}
+      </p>
+
+      <div className="form-row">
+        <label className="form-label">Depart at</label>
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+          <input className="input" type="time" style={{ flex: 1 }} value={draft.move_locked_start_time || ''}
+            onChange={e => setDraft({ ...draft, move_locked_start_time: e.target.value || null })} />
+          {draft.move_locked_start_time && (
+            <button type="button" className="btn btn-ghost btn-sm" title="Leave as soon as the previous scene ends"
+              onClick={() => setDraft({ ...draft, move_locked_start_time: null })}>
+              <Unlock size={13} />
+            </button>
+          )}
+        </div>
+        <p className="shotlist-hint">
+          Empty means the unit leaves the moment the previous scene ends. Set it when that scene did not
+          need the whole crew.
+        </p>
+      </div>
+
+      <div className="shotlist-move-total">
+        <span>Total on the day</span>
+        <b>{fmtDuration(total)}</b>
+      </div>
+
+      {error && <p style={{ color: 'var(--danger)', fontSize: '12px' }}>{error}</p>}
+      <div className="modal-footer">
+        <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" onClick={save} disabled={saving}>
+          {saving ? 'Saving…' : 'Save move'}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function TimelinePreview({ shotlistId, timeline, onChanged }) {
   const items = (timeline && timeline.items) || [];
+  const [editingMove, setEditingMove] = useState(null);
   if (!items.length) return null;
   return (
     <div className="card" style={{ padding: '12px 14px' }}>
       <div className="shotlist-panel-head">
         <Timer size={14} color="var(--accent)" />
         <span>Day timeline</span>
+        <span className="shotlist-hint" style={{ margin: 0 }}>Tap a company move to set its times</span>
       </div>
       <div className="shotlist-timeline">
         {items.map((it, i) => {
           if (it.kind === 'move') {
             return (
-              <div key={`m${i}`} className="shotlist-tl-row move">
+              <div key={`m${i}`} className="shotlist-tl-row move clickable"
+                role="button" tabIndex={0}
+                title="Set this company move"
+                onClick={() => setEditingMove(it)}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setEditingMove(it); } }}>
                 <span className="shotlist-tl-time">{it.start_label}</span>
                 <Truck size={12} />
                 <span className="shotlist-tl-title">
@@ -838,7 +951,7 @@ function TimelinePreview({ timeline }) {
                   <span className="shotlist-chip hard"><Lock size={9} /> departs {it.locked_time}</span>
                 )}
                 <span className="shotlist-tl-note">
-                  wrap {it.wrap_minutes}m + travel {it.travel_minutes}m + set up {it.setup_minutes}m = {fmtDuration(it.duration_minutes)}
+                  wrap {it.wrap_minutes}m + travel {it.travel_minutes}m{it.travel_overridden ? '*' : ''} + set up {it.setup_minutes}m = {fmtDuration(it.duration_minutes)}
                   {it.overridden ? ' (override)' : ''}
                   {it.hold_minutes > 0 ? ` · unit holds ${fmtDuration(it.hold_minutes)} first` : ''}
                 </span>
@@ -881,6 +994,15 @@ function TimelinePreview({ timeline }) {
           );
         })}
       </div>
+
+      {editingMove && (
+        <MoveModal
+          shotlistId={shotlistId}
+          move={editingMove}
+          onClose={() => setEditingMove(null)}
+          onSaved={onChanged}
+        />
+      )}
     </div>
   );
 }
@@ -2249,7 +2371,7 @@ export default function ShotlistEditor() {
             <Plus size={15} /> Add scene to {dayLabel(activeDay)}
           </button>
 
-          <TimelinePreview timeline={dayTimeline} />
+          <TimelinePreview shotlistId={id} timeline={dayTimeline} onChanged={load} />
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', minWidth: 0 }}>
