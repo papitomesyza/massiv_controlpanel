@@ -867,6 +867,11 @@ function initDb() {
     // shot list defaults apply.
     'ALTER TABLE shotlist_scenes ADD COLUMN move_wrap_minutes INTEGER',
     'ALTER TABLE shotlist_scenes ADD COLUMN move_setup_minutes INTEGER',
+    // When the unit actually travels. Without it the move leaves the moment the
+    // previous scene ends, which is wrong whenever that scene did not need the
+    // whole unit — a dawn drone shot ends at 06:00 but the company does not
+    // depart until 08:00. NULL keeps the old "leave immediately" behaviour.
+    'ALTER TABLE shotlist_scenes ADD COLUMN move_locked_start_time TEXT',
 
     // How long the resulting clip runs in the edit — NOT duration_minutes,
     // which is how long the shot takes to capture on the day.
@@ -885,6 +890,13 @@ function initDb() {
     // casting briefs, so neither column is required.
     'ALTER TABLE shotlist_characters ADD COLUMN age_min INTEGER',
     'ALTER TABLE shotlist_characters ADD COLUMN age_max INTEGER',
+
+    // Which side of a company move a break falls on. before_move means the
+    // crew eats at the location it is already at, before anything is wrapped;
+    // after_move means it wraps, travels, sets up and eats at the new place.
+    // after_move is the default because that is how a meal is actually served
+    // on set — nobody eats halfway through loading the truck.
+    "ALTER TABLE shotlist_breaks ADD COLUMN placement TEXT DEFAULT 'after_move'",
 
     // The casting share link is its own publication, separate from the crew
     // link: a casting agency gets the cast grid and nothing else, and
@@ -988,6 +1000,18 @@ function initDb() {
         ORDER BY d.sort_order ASC, d.id ASC LIMIT 1
       ) WHERE day_id IS NULL
     `);
+  } catch (_) {}
+
+  // Every break that existed before sides did belongs on the after_move side:
+  // that is where a meal is really eaten, and it is the behaviour that was
+  // wanted all along. SQLite fills the new column with its default for rows
+  // that already exist, so this only catches a row that somehow holds NULL —
+  // and the IS NULL guard makes every later boot a no-op either way.
+  try {
+    const r = db.prepare(
+      "UPDATE shotlist_breaks SET placement = 'after_move' WHERE placement IS NULL OR placement = ''"
+    ).run();
+    if (r.changes) console.log(`INFO: Placed ${r.changes} existing break(s) after the company move.`);
   } catch (_) {}
 
   // Character backfill from the old free-text talent field: split on commas,

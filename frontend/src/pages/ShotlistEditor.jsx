@@ -68,6 +68,12 @@ function thumbFor(m) {
   return name ? `/shotlist-media/${name}` : null;
 }
 
+// The web copy is only ever a .webp when the upload was animated — stills are
+// always written as .jpg — so the flag needs no column of its own.
+function isAnimated(m) {
+  return /\.webp$/i.test((m && m.filename) || '');
+}
+
 function dayLabel(day) {
   if (!day) return 'Day';
   return `Day ${day.day_number || 1}`;
@@ -173,6 +179,13 @@ function MediaPicker({ shotlistId, shot, kind, onChanged }) {
         {items.map(m => (
           <div key={m.id} style={{ position: 'relative' }}>
             <img src={thumbFor(m)} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border-default)' }} />
+            {isAnimated(m) && (
+              <span title="Animated — plays full size" style={{
+                position: 'absolute', bottom: 2, left: 2, fontSize: '8px', fontWeight: 800,
+                letterSpacing: '0.06em', padding: '1px 3px', borderRadius: 3,
+                background: 'rgba(0,0,0,0.72)', color: '#fff',
+              }}>GIF</span>
+            )}
             <button
               type="button"
               onClick={() => remove(m)}
@@ -199,7 +212,7 @@ function MediaPicker({ shotlistId, shot, kind, onChanged }) {
         >
           {uploading ? <Loader2 size={15} className="pitch-spin" /> : <Plus size={15} />}
         </button>
-        <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" multiple
+        <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple
           style={{ display: 'none' }} onChange={handleFiles} />
       </div>
     </Field>
@@ -578,6 +591,12 @@ function SortableScene({
                 />
               </Field>
             </div>
+            <LockField
+              label="Depart at"
+              value={scene.move_locked_start_time}
+              onChange={v => onChange(scene.id, { move_locked_start_time: v })}
+              hint="When the unit actually travels. Leave empty and it leaves as soon as the previous scene ends — set it when that scene did not need the whole crew, like a dawn drone shot."
+            />
             <p className="shotlist-hint">
               An override sticks until you clear it. Empty means the shot list defaults; travel time is added on top.
             </p>
@@ -815,9 +834,13 @@ function TimelinePreview({ timeline }) {
                 <span className="shotlist-tl-title">
                   Company move{it.to_name ? ` to ${it.to_name}` : ''}
                 </span>
+                {it.locked && (
+                  <span className="shotlist-chip hard"><Lock size={9} /> departs {it.locked_time}</span>
+                )}
                 <span className="shotlist-tl-note">
                   wrap {it.wrap_minutes}m + travel {it.travel_minutes}m + set up {it.setup_minutes}m = {fmtDuration(it.duration_minutes)}
                   {it.overridden ? ' (override)' : ''}
+                  {it.hold_minutes > 0 ? ` · unit holds ${fmtDuration(it.hold_minutes)} first` : ''}
                 </span>
               </div>
             );
@@ -829,7 +852,16 @@ function TimelinePreview({ timeline }) {
                 <Coffee size={12} />
                 <span className="shotlist-tl-title">{it.label}</span>
                 {it.fixed && <span className="shotlist-chip hard"><Lock size={9} /> fixed</span>}
-                <span className="shotlist-tl-note">{fmtDuration(it.duration_minutes)}</span>
+                {/* The side only means something where a move exists. */}
+                {it.placement_applies && (
+                  <span className="shotlist-chip">
+                    {it.placement === 'before_move' ? 'before the move' : 'after the move'}
+                  </span>
+                )}
+                {it.end_of_day && <span className="shotlist-chip">end of day</span>}
+                <span className="shotlist-tl-note">
+                  {it.location_name ? `${it.location_name} · ` : ''}{fmtDuration(it.duration_minutes)}
+                </span>
               </div>
             );
           }
@@ -855,14 +887,32 @@ function TimelinePreview({ timeline }) {
 
 // ── Meals and breaks ─────────────────────────────────────────────────────────
 
-function BreaksPanel({ shotlistId, dayId, breaks, scenes, onChanged }) {
+function BreaksPanel({ shotlistId, dayId, breaks, scenes, timeline, onChanged }) {
   const [busy, setBusy] = useState(false);
 
-  async function add() {
+  // Which scenes are arrived at by a company move — the only ones where the
+  // side of the break means anything.
+  const movesByScene = new Map(
+    ((timeline && timeline.items) || []).filter(i => i.kind === 'move').map(i => [i.scene_id, i])
+  );
+  const moveSceneIds = new Set(movesByScene.keys());
+  // A break at or past the end of the list is an end-of-day break, and stays
+  // there when scenes are added later.
+  const END_OF_DAY = 999;
+  const sceneAt = order => (order >= scenes.length ? null : scenes[order]);
+  const hasMove = order => {
+    const sc = sceneAt(order);
+    return !!(sc && moveSceneIds.has(sc.id));
+  };
+
+  async function add(sortOrder) {
     setBusy(true);
     try {
       await api.post(`/shotlists/${shotlistId}/breaks`, {
-        day_id: dayId, kind: 'lunch', duration_minutes: 45, sort_order: Math.ceil(scenes.length / 2),
+        day_id: dayId,
+        kind: sortOrder === END_OF_DAY ? 'dinner' : 'lunch',
+        duration_minutes: 45,
+        sort_order: sortOrder,
       });
       await onChanged();
     } catch (err) { alert(err.message || 'Could not add the break'); }
@@ -887,9 +937,9 @@ function BreaksPanel({ shotlistId, dayId, breaks, scenes, onChanged }) {
   const positions = [
     ...scenes.map((s, i) => ({
       value: String(i),
-      label: `Before ${s.scene_number ? `${s.scene_number}. ` : ''}${s.title || 'scene'}`,
+      label: `At ${s.scene_number ? `${s.scene_number}. ` : ''}${s.title || 'scene'}`,
     })),
-    { value: String(scenes.length), label: 'After the last scene' },
+    { value: String(END_OF_DAY), label: 'End of the day' },
   ];
 
   return (
@@ -897,7 +947,12 @@ function BreaksPanel({ shotlistId, dayId, breaks, scenes, onChanged }) {
       <div className="shotlist-panel-head">
         <Coffee size={14} color="var(--accent)" />
         <span>Meals and breaks</span>
-        <button className="btn btn-secondary btn-sm" onClick={add} disabled={busy || !dayId}>
+        <button className="btn btn-ghost btn-sm" onClick={() => add(END_OF_DAY)} disabled={busy || !dayId}
+          title="A wrap meal or a dinner after the last scene">
+          <Plus size={13} /> End of day
+        </button>
+        <button className="btn btn-secondary btn-sm" onClick={() => add(Math.ceil(scenes.length / 2))}
+          disabled={busy || !dayId}>
           <Plus size={13} /> Add
         </button>
       </div>
@@ -938,11 +993,33 @@ function BreaksPanel({ shotlistId, dayId, breaks, scenes, onChanged }) {
               <input className="input" type="number" min="5" step="5" style={{ width: 72 }}
                 value={b.duration_minutes || 30} title="Minutes"
                 onChange={e => patch(b, { duration_minutes: Number(e.target.value) })} />
-              <select className="select" style={{ flex: 1, minWidth: 0 }} value={String(b.sort_order || 0)}
+              <select className="select" style={{ flex: 1, minWidth: 0 }}
+                value={String((b.sort_order || 0) >= scenes.length ? END_OF_DAY : b.sort_order || 0)}
                 onChange={e => patch(b, { sort_order: Number(e.target.value) })}>
                 {positions.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
               </select>
             </div>
+
+            {/* Which side of the company move the crew eats on. Only a scene
+                arrived at by a move has two sides to choose between. */}
+            {hasMove(b.sort_order || 0) ? (
+              <select className="select" style={{ width: '100%' }}
+                value={b.placement === 'before_move' ? 'before_move' : 'after_move'}
+                onChange={e => patch(b, { placement: e.target.value })}>
+                <option value="after_move">
+                  After the move — eaten at {movesByScene.get(sceneAt(b.sort_order || 0)?.id)?.to_name || 'the new location'}
+                </option>
+                <option value="before_move">
+                  Before the move — eaten where the crew already is
+                </option>
+              </select>
+            ) : (
+              <p className="shotlist-hint" style={{ marginTop: 0 }}>
+                {(b.sort_order || 0) >= scenes.length
+                  ? 'Eaten where the day finishes.'
+                  : 'No company move here, so there is no side to choose — it sits before the scene.'}
+              </p>
+            )}
           </div>
         ))}
       </div>
@@ -2191,6 +2268,7 @@ export default function ShotlistEditor() {
             dayId={activeDayId}
             breaks={dayBreaks}
             scenes={dayScenes}
+            timeline={dayTimeline}
             onChanged={load}
           />
           <OrganizePanel

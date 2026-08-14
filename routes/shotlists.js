@@ -19,6 +19,7 @@ const {
 const {
   buildDayTimeline, sceneDuration, clipSeconds, sumTotals,
   BREAK_KINDS, defaultBreakLabel, DEFAULT_CREW_CALL_OFFSET,
+  BREAK_PLACEMENTS, DEFAULT_BREAK_PLACEMENT, END_OF_DAY_ORDER,
 } = require('../lib/shotlistSchedule');
 const { callSheetPdf, photoBoardPdf } = require('../lib/shotlistPdf');
 
@@ -1027,14 +1028,16 @@ router.post('/:id/breaks', (req, res) => {
 
     const kind = BREAK_KINDS.includes(body.kind) ? body.kind : 'break';
     const r = db.prepare(`
-      INSERT INTO shotlist_breaks (shotlist_id, day_id, kind, label, start_time, duration_minutes, sort_order, notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO shotlist_breaks (shotlist_id, day_id, kind, label, start_time, duration_minutes,
+                                   sort_order, placement, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       shotlist.id, day.id, kind,
       cleanText(body.label, 80) || defaultBreakLabel(kind),
       cleanTime(body.start_time),
       cleanInt(body.duration_minutes, { min: 5, max: 480 }) ?? 45,
-      cleanInt(body.sort_order, { min: 0, max: 999 }) ?? 0,
+      cleanInt(body.sort_order, { min: 0, max: END_OF_DAY_ORDER }) ?? 0,
+      BREAK_PLACEMENTS.includes(body.placement) ? body.placement : DEFAULT_BREAK_PLACEMENT,
       cleanText(body.notes, 1000)
     );
     touch(shotlist.id);
@@ -1060,7 +1063,7 @@ router.put('/:id/breaks/:breakId', (req, res) => {
 
     db.prepare(`
       UPDATE shotlist_breaks SET day_id = ?, kind = ?, label = ?, start_time = ?,
-             duration_minutes = ?, sort_order = ?, notes = ?
+             duration_minutes = ?, sort_order = ?, placement = ?, notes = ?
       WHERE id = ? AND shotlist_id = ?
     `).run(
       dayId,
@@ -1071,7 +1074,14 @@ router.put('/:id/breaks/:breakId', (req, res) => {
       body.duration_minutes !== undefined
         ? (cleanInt(body.duration_minutes, { min: 5, max: 480 }) ?? row.duration_minutes)
         : row.duration_minutes,
-      body.sort_order !== undefined ? (cleanInt(body.sort_order, { min: 0, max: 999 }) ?? row.sort_order) : row.sort_order,
+      body.sort_order !== undefined
+        ? (cleanInt(body.sort_order, { min: 0, max: END_OF_DAY_ORDER }) ?? row.sort_order)
+        : row.sort_order,
+      // The side is changed in place; an unknown value leaves it alone rather
+      // than quietly moving a meal to the other side of a move.
+      body.placement !== undefined && BREAK_PLACEMENTS.includes(body.placement)
+        ? body.placement
+        : (row.placement || DEFAULT_BREAK_PLACEMENT),
       body.notes !== undefined ? cleanText(body.notes, 1000) : row.notes,
       row.id, req.params.id
     );
@@ -1170,7 +1180,7 @@ router.put('/:id/scenes/:sceneId', (req, res) => {
     db.prepare(`
       UPDATE shotlist_scenes SET day_id = ?, scene_number = ?, title = ?, description = ?, location_id = ?,
              space = ?, light_window = ?, set_design = ?, locked_start_time = ?,
-             move_wrap_minutes = ?, move_setup_minutes = ?, notes = ?
+             move_wrap_minutes = ?, move_setup_minutes = ?, move_locked_start_time = ?, notes = ?
       WHERE id = ? AND shotlist_id = ?
     `).run(
       dayId,
@@ -1189,6 +1199,10 @@ router.put('/:id/scenes/:sceneId', (req, res) => {
         ? cleanInt(body.move_wrap_minutes, { min: 0, max: 480 }) : scene.move_wrap_minutes,
       body.move_setup_minutes !== undefined
         ? cleanInt(body.move_setup_minutes, { min: 0, max: 480 }) : scene.move_setup_minutes,
+      // When the unit departs. An explicit null lets the move leave as soon as
+      // the previous scene ends again.
+      body.move_locked_start_time !== undefined
+        ? cleanTime(body.move_locked_start_time) : scene.move_locked_start_time,
       body.notes !== undefined ? cleanText(body.notes, 4000) : scene.notes,
       scene.id, req.params.id
     );
