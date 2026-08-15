@@ -783,6 +783,23 @@ function initDb() {
       FOREIGN KEY (scene_id) REFERENCES shotlist_scenes(id) ON DELETE CASCADE
     );
 
+    -- Everything uploaded for this shot list, in one place. The attach tables
+    -- (shot_media, scene media, wardrobe) reference files by name, so the same
+    -- upload can be used as a reference on one shot, an angle on another and a
+    -- scout photo on the scene without being uploaded three times. This is the
+    -- catalogue of what exists; the attach rows are what uses it.
+    CREATE TABLE IF NOT EXISTS shotlist_media_library (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      shotlist_id INTEGER NOT NULL,
+      filename TEXT NOT NULL,
+      thumb_filename TEXT,
+      label TEXT,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(shotlist_id, filename),
+      FOREIGN KEY (shotlist_id) REFERENCES shotlists(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS shot_activity (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       shotlist_id INTEGER NOT NULL,
@@ -1022,6 +1039,41 @@ function initDb() {
     `);
   } catch (_) {}
 
+  // Everything already attached anywhere in a shot list is catalogued into its
+  // library, so an existing list does not open onto an empty picker. Filenames
+  // are unique per list, so re-running inserts nothing — the guard is the
+  // UNIQUE constraint itself rather than a settings key.
+  try {
+    const register = db.prepare(`
+      INSERT OR IGNORE INTO shotlist_media_library (shotlist_id, filename, thumb_filename, sort_order)
+      VALUES (?, ?, ?, ?)
+    `);
+    const rows = db.prepare(`
+      SELECT s.shotlist_id AS shotlist_id, m.filename AS filename, m.thumb_filename AS thumb_filename
+      FROM shot_media m JOIN shots s ON s.id = m.shot_id
+      UNION
+      SELECT sc.shotlist_id, m.filename, m.thumb_filename
+      FROM shotlist_scene_media m JOIN shotlist_scenes sc ON sc.id = m.scene_id
+      UNION
+      SELECT c.shotlist_id, m.filename, m.thumb_filename
+      FROM shotlist_character_media m JOIN shotlist_characters c ON c.id = m.character_id
+      UNION
+      SELECT shotlist_id, photo_filename, photo_thumb_filename
+      FROM shotlist_characters WHERE photo_filename IS NOT NULL AND photo_filename != ''
+    `).all();
+    let added = 0;
+    const seed = db.transaction(() => {
+      rows.forEach((r, i) => {
+        if (!r.filename) return;
+        added += register.run(r.shotlist_id, r.filename, r.thumb_filename, i).changes;
+      });
+    });
+    seed();
+    if (added) console.log(`INFO: Catalogued ${added} existing upload(s) into shot list libraries.`);
+  } catch (err) {
+    console.error('Media library backfill failed:', err.message);
+  }
+
   // Scout photos moved up to the scene, so what is left on a shot is the
   // framing photographed on the recce — an angle. The rows are renamed rather
   // than moved: a photo attached to one shot describes that shot's angle, and
@@ -1114,6 +1166,7 @@ function initDb() {
     CREATE INDEX IF NOT EXISTS idx_shotlist_breaks_day ON shotlist_breaks(day_id);
     CREATE INDEX IF NOT EXISTS idx_shot_media_shot ON shot_media(shot_id);
     CREATE INDEX IF NOT EXISTS idx_scene_media_scene ON shotlist_scene_media(scene_id);
+    CREATE INDEX IF NOT EXISTS idx_media_library_shotlist ON shotlist_media_library(shotlist_id);
     CREATE INDEX IF NOT EXISTS idx_shotlist_locations_shotlist ON shotlist_locations(shotlist_id);
     CREATE INDEX IF NOT EXISTS idx_shot_activity_shotlist ON shot_activity(shotlist_id);
   `);

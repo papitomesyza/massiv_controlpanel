@@ -354,6 +354,7 @@ router.get('/:id', (req, res) => {
       scenes: shaped,
       characters,
       breaks,
+      library: getLibrary(shotlist.id),
       timelines,
       totals: sumTotals(timelines.map(t => t.totals)),
       shot_count: allShots.length,
@@ -822,6 +823,10 @@ router.put('/:id/characters/:characterId', (req, res) => {
       age.min, age.max,
       character.id, req.params.id
     );
+    if (body.photo_filename !== undefined) {
+      registerInLibrary(req.params.id, cleanFilename(body.photo_filename),
+        cleanFilename(body.photo_thumb_filename));
+    }
     touch(req.params.id);
     res.json({ ok: true });
   } catch (err) {
@@ -918,6 +923,169 @@ router.post('/:id/characters/:characterId/duplicate', (req, res) => {
   }
 });
 
+// ── Media library ─────────────────────────────────────────────────────────────
+// Upload once into the shot list, then pick the same file as a reference on one
+// shot, an angle on another and a scout photo on the scene. The attach tables
+// already reference files by name, so nothing here needs a new attach path —
+// this is the catalogue of what has been uploaded, and where it is used.
+
+function libraryUsage(shotlistId) {
+  const counts = new Map();
+  const bump = rows => rows.forEach(r => {
+    if (!r.filename) return;
+    counts.set(r.filename, (counts.get(r.filename) || 0) + r.c);
+  });
+  bump(db.prepare(`
+    SELECT m.filename AS filename, COUNT(*) AS c FROM shot_media m
+    JOIN shots s ON s.id = m.shot_id WHERE s.shotlist_id = ? GROUP BY m.filename
+  `).all(shotlistId));
+  bump(db.prepare(`
+    SELECT m.filename AS filename, COUNT(*) AS c FROM shotlist_scene_media m
+    JOIN shotlist_scenes sc ON sc.id = m.scene_id WHERE sc.shotlist_id = ? GROUP BY m.filename
+  `).all(shotlistId));
+  bump(db.prepare(`
+    SELECT m.filename AS filename, COUNT(*) AS c FROM shotlist_character_media m
+    JOIN shotlist_characters c ON c.id = m.character_id WHERE c.shotlist_id = ? GROUP BY m.filename
+  `).all(shotlistId));
+  bump(db.prepare(`
+    SELECT photo_filename AS filename, COUNT(*) AS c FROM shotlist_characters
+    WHERE shotlist_id = ? AND photo_filename IS NOT NULL AND photo_filename != ''
+    GROUP BY photo_filename
+  `).all(shotlistId));
+  return counts;
+}
+
+function getLibrary(shotlistId) {
+  const rows = db.prepare(
+    'SELECT * FROM shotlist_media_library WHERE shotlist_id = ? ORDER BY sort_order ASC, id ASC'
+  ).all(shotlistId);
+  const usage = libraryUsage(shotlistId);
+  return rows.map(r => ({ ...r, used_count: usage.get(r.filename) || 0 }));
+}
+
+// Anything attached anywhere is catalogued, so the library fills itself
+// whether the file arrived through the library page or through a picker.
+function registerInLibrary(shotlistId, filename, thumb) {
+  if (!filename) return;
+  try {
+    const nextOrder = db.prepare(
+      'SELECT COALESCE(MAX(sort_order), -1) AS m FROM shotlist_media_library WHERE shotlist_id = ?'
+    ).get(shotlistId).m + 1;
+    db.prepare(`
+      INSERT OR IGNORE INTO shotlist_media_library (shotlist_id, filename, thumb_filename, sort_order)
+      VALUES (?, ?, ?, ?)
+    `).run(shotlistId, filename, thumb || null, nextOrder);
+  } catch (_) {
+    // Cataloguing is a convenience — it must never fail an attach.
+  }
+}
+
+router.get('/:id/library', (req, res) => {
+  try {
+    const shotlist = getShotlistById(req.params.id);
+    if (!shotlist) return res.status(404).json({ error: 'Shot list not found' });
+    res.json(getLibrary(shotlist.id));
+  } catch (err) {
+    res.status(500).json({ error: 'Could not load the library' });
+  }
+});
+
+// Registers an already-uploaded file. The upload itself still goes through
+// /shotlists/upload, so the media pipeline stays in one place.
+router.post('/:id/library', (req, res) => {
+  try {
+    const shotlist = getShotlistById(req.params.id);
+    if (!shotlist) return res.status(404).json({ error: 'Shot list not found' });
+
+    const body = req.body || {};
+    const filename = cleanFilename(body.filename);
+    if (!filename) return res.status(400).json({ error: 'Invalid filename' });
+    const thumb = cleanFilename(body.thumb_filename);
+
+    const nextOrder = db.prepare(
+      'SELECT COALESCE(MAX(sort_order), -1) AS m FROM shotlist_media_library WHERE shotlist_id = ?'
+    ).get(shotlist.id).m + 1;
+
+    // The same file registered twice is not an error — it is already there.
+    db.prepare(`
+      INSERT OR IGNORE INTO shotlist_media_library (shotlist_id, filename, thumb_filename, label, sort_order)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(shotlist.id, filename, thumb, cleanText(body.label, 120), nextOrder);
+
+    const row = db.prepare('SELECT * FROM shotlist_media_library WHERE shotlist_id = ? AND filename = ?')
+      .get(shotlist.id, filename);
+    touch(shotlist.id);
+    res.json(row);
+  } catch (err) {
+    res.status(500).json({ error: 'Could not add to the library' });
+  }
+});
+
+router.put('/:id/library/:mediaId', (req, res) => {
+  try {
+    const row = db.prepare('SELECT * FROM shotlist_media_library WHERE id = ? AND shotlist_id = ?')
+      .get(req.params.mediaId, req.params.id);
+    if (!row) return res.status(404).json({ error: 'Not in this library' });
+
+    const body = req.body || {};
+    if (body.label !== undefined) {
+      db.prepare('UPDATE shotlist_media_library SET label = ? WHERE id = ?')
+        .run(cleanText(body.label, 120), row.id);
+    }
+    touch(req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not rename it' });
+  }
+});
+
+// Removing something from the library takes it out of the catalogue only.
+// Anywhere it is already attached keeps working — pulling a photo out from
+// under a shot that uses it would be a surprise, so it is refused instead
+// unless the caller says to detach it everywhere.
+router.delete('/:id/library/:mediaId', (req, res) => {
+  try {
+    const row = db.prepare('SELECT * FROM shotlist_media_library WHERE id = ? AND shotlist_id = ?')
+      .get(req.params.mediaId, req.params.id);
+    if (!row) return res.status(404).json({ error: 'Not in this library' });
+
+    const used = libraryUsage(req.params.id).get(row.filename) || 0;
+    const detach = String(req.query.detach || '') === '1';
+    if (used > 0 && !detach) {
+      return res.status(400).json({
+        error: `This photo is used in ${used} place${used === 1 ? '' : 's'}. Remove it there first, or delete it everywhere.`,
+        used_count: used,
+      });
+    }
+
+    const remove = db.transaction(() => {
+      if (detach) {
+        db.prepare(`
+          DELETE FROM shot_media WHERE filename = ? AND shot_id IN (SELECT id FROM shots WHERE shotlist_id = ?)
+        `).run(row.filename, req.params.id);
+        db.prepare(`
+          DELETE FROM shotlist_scene_media WHERE filename = ?
+            AND scene_id IN (SELECT id FROM shotlist_scenes WHERE shotlist_id = ?)
+        `).run(row.filename, req.params.id);
+        db.prepare(`
+          DELETE FROM shotlist_character_media WHERE filename = ?
+            AND character_id IN (SELECT id FROM shotlist_characters WHERE shotlist_id = ?)
+        `).run(row.filename, req.params.id);
+        db.prepare(`
+          UPDATE shotlist_characters SET photo_filename = NULL, photo_thumb_filename = NULL
+          WHERE shotlist_id = ? AND photo_filename = ?
+        `).run(req.params.id, row.filename);
+      }
+      db.prepare('DELETE FROM shotlist_media_library WHERE id = ?').run(row.id);
+    });
+    remove();
+    touch(req.params.id);
+    res.json({ ok: true, detached: detach, was_used: used });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not remove it from the library' });
+  }
+});
+
 // ── Scout photos on a scene ───────────────────────────────────────────────────
 // What the recce brings back is the PLACE — the room, the approach, the light
 // at that hour — and that is true of every shot taken there, so it hangs off
@@ -941,6 +1109,7 @@ router.post('/:id/scenes/:sceneId/media', (req, res) => {
       INSERT INTO shotlist_scene_media (scene_id, kind, label, filename, thumb_filename, sort_order)
       VALUES (?, 'scout', ?, ?, ?, ?)
     `).run(scene.id, cleanText(body.label, 120), filename, thumb, nextOrder);
+    registerInLibrary(req.params.id, filename, thumb);
     touch(req.params.id);
     res.json({ id: r.lastInsertRowid });
   } catch (err) {
@@ -1014,6 +1183,7 @@ router.post('/:id/characters/:characterId/media', (req, res) => {
       INSERT INTO shotlist_character_media (character_id, kind, label, filename, thumb_filename, sort_order)
       VALUES (?, 'costume', ?, ?, ?, ?)
     `).run(character.id, cleanText(body.label, 120), filename, thumb, nextOrder);
+    registerInLibrary(req.params.id, filename, thumb);
     touch(req.params.id);
     res.json({ id: r.lastInsertRowid });
   } catch (err) {
@@ -1613,6 +1783,7 @@ router.post('/:id/shots/:shotId/media', (req, res) => {
     const r = db.prepare(
       'INSERT INTO shot_media (shot_id, kind, filename, thumb_filename, sort_order) VALUES (?, ?, ?, ?, ?)'
     ).run(shot.id, kind, filename, thumb, nextOrder);
+    registerInLibrary(req.params.id, filename, thumb);
     touch(req.params.id);
     res.json({ id: r.lastInsertRowid });
   } catch (err) {

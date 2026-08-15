@@ -137,12 +137,186 @@ function LockField({ label, value, onChange, hint }) {
   );
 }
 
-// ── Shot media picker (reference / angle) ────────────────────────────────────
+// ── The shot list's media library ────────────────────────────────────────────
+// Upload once, use anywhere. Every attach point can either upload a new file or
+// pick from what is already here, so the same location photo does not get
+// uploaded three times to be a scout photo, an angle and a reference.
 
-function MediaPicker({ shotlistId, shot, kind, onChanged }) {
+function LibraryModal({ shotlistId, library, onClose, onPick }) {
+  const [chosen, setChosen] = useState([]);
+  const [busy, setBusy] = useState(false);
+
+  function toggle(m) {
+    setChosen(prev => (prev.some(x => x.id === m.id)
+      ? prev.filter(x => x.id !== m.id)
+      : [...prev, m]));
+  }
+
+  async function use() {
+    if (!chosen.length) return;
+    setBusy(true);
+    try {
+      await onPick(chosen);
+      onClose();
+    } catch (err) {
+      alert(err.message || 'Could not use those');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title="Choose from the library" onClose={onClose}>
+      {library.length === 0 ? (
+        <p className="shotlist-hint" style={{ marginTop: 0 }}>
+          Nothing uploaded to this shot list yet. Upload from here or from the Library panel and it
+          becomes available everywhere.
+        </p>
+      ) : (
+        <>
+          <p className="shotlist-hint" style={{ marginTop: 0 }}>
+            Tap to select. The same photo can be used in as many places as you like.
+          </p>
+          <div className="shotlist-library-grid">
+            {library.map(m => {
+              const on = chosen.some(x => x.id === m.id);
+              return (
+                <button
+                  key={m.id} type="button"
+                  className={`shotlist-library-item${on ? ' on' : ''}`}
+                  onClick={() => toggle(m)}
+                  title={m.label || ''}
+                >
+                  <img src={`/shotlist-media/${m.thumb_filename || m.filename}`} alt="" />
+                  {isAnimated(m) && <span className="shotlist-library-gif">GIF</span>}
+                  {on && <span className="shotlist-library-tick"><Check size={12} /></span>}
+                  {m.label && <span className="shotlist-library-label">{m.label}</span>}
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+      <div className="modal-footer">
+        <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" onClick={use} disabled={busy || !chosen.length}>
+          {busy ? 'Adding…' : `Use ${chosen.length || ''}`.trim()}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+// The panel: everything uploaded to this shot list, with where it is used.
+function LibraryPanel({ shotlistId, library, onChanged }) {
   const inputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
+
+  async function handleFiles(e) {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (!files.length) return;
+    setUploading(true);
+    try {
+      for (const file of files) {
+        const fd = new FormData();
+        fd.append('image', file);
+        const res = await api.postForm('/shotlists/upload', fd);
+        await api.post(`/shotlists/${shotlistId}/library`, {
+          filename: res.filename, thumb_filename: res.thumb,
+        });
+      }
+      await onChanged();
+    } catch (err) {
+      alert(err.message || 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function rename(m, label) {
+    try {
+      await api.put(`/shotlists/${shotlistId}/library/${m.id}`, { label });
+      await onChanged();
+    } catch (err) { alert(err.message || 'Could not rename it'); }
+  }
+
+  async function remove(m) {
+    try {
+      await api.del(`/shotlists/${shotlistId}/library/${m.id}`);
+      await onChanged();
+    } catch (err) {
+      // Used somewhere: say where, and offer to take it out everywhere.
+      if (/used in/.test(err.message || '')
+        && confirm(`${err.message}\n\nDelete it everywhere it is used?`)) {
+        try {
+          await api.del(`/shotlists/${shotlistId}/library/${m.id}?detach=1`);
+          await onChanged();
+        } catch (e2) { alert(e2.message || 'Could not remove it'); }
+      } else if (!/used in/.test(err.message || '')) {
+        alert(err.message || 'Could not remove it');
+      }
+    }
+  }
+
+  return (
+    <div className="card" style={{ padding: '12px 14px' }}>
+      <div className="shotlist-panel-head">
+        <ImageIcon size={14} color="var(--accent)" />
+        <span>Library</span>
+        <button className="btn btn-secondary btn-sm" onClick={() => inputRef.current?.click()} disabled={uploading}>
+          {uploading ? <Loader2 size={13} className="pitch-spin" /> : <Plus size={13} />} Upload
+        </button>
+      </div>
+
+      {library.length === 0 && (
+        <p className="shotlist-hint" style={{ marginTop: 0 }}>
+          Everything you upload for this shot list lands here. Upload once, then pick it as a scout
+          photo, an angle or a reference wherever you need it.
+        </p>
+      )}
+
+      <div className="shotlist-library-grid">
+        {library.map(m => (
+          <div key={m.id} className="shotlist-library-row">
+            <div style={{ position: 'relative' }}>
+              <img src={`/shotlist-media/${m.thumb_filename || m.filename}`} alt="" />
+              {isAnimated(m) && <span className="shotlist-library-gif">GIF</span>}
+              <button type="button" className="shotlist-library-x" title="Remove from the library"
+                onClick={() => remove(m)}>
+                <X size={10} />
+              </button>
+            </div>
+            <input className="input" defaultValue={m.label || ''} placeholder="Name it"
+              onBlur={e => { if ((e.target.value || '') !== (m.label || '')) rename(m, e.target.value); }} />
+            <span className="shotlist-library-used">
+              {m.used_count ? `used ${m.used_count}×` : 'unused'}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple
+        style={{ display: 'none' }} onChange={handleFiles} />
+    </div>
+  );
+}
+
+// ── Shot media picker (reference / angle) ────────────────────────────────────
+
+function MediaPicker({ shotlistId, shot, kind, library, onChanged }) {
+  const inputRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
+  const [picking, setPicking] = useState(false);
   const items = (shot.media || []).filter(m => m.kind === kind);
+
+  async function attach(list) {
+    for (const m of list) {
+      await api.post(`/shotlists/${shotlistId}/shots/${shot.id}/media`, {
+        kind, filename: m.filename, thumb_filename: m.thumb_filename,
+      });
+    }
+    await onChanged();
+  }
 
   async function handleFiles(e) {
     const files = Array.from(e.target.files || []);
@@ -214,9 +388,25 @@ function MediaPicker({ shotlistId, shot, kind, onChanged }) {
         >
           {uploading ? <Loader2 size={15} className="pitch-spin" /> : <Plus size={15} />}
         </button>
+        <button
+          type="button"
+          onClick={() => setPicking(true)}
+          title="Choose from the shot list library"
+          style={{
+            width: 56, height: 56, borderRadius: 6, border: '1px dashed var(--border-default)',
+            background: 'none', color: 'var(--text-muted)', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <ImageIcon size={15} />
+        </button>
         <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple
           style={{ display: 'none' }} onChange={handleFiles} />
       </div>
+      {picking && (
+        <LibraryModal shotlistId={shotlistId} library={library || []}
+          onClose={() => setPicking(false)} onPick={attach} />
+      )}
     </Field>
   );
 }
@@ -284,10 +474,20 @@ function CharacterPicker({ characters, selected, onChange, onAddExtra }) {
 // the power is. That is true of every shot taken there, so it lives on the
 // scene. Each photo can be named, which is what makes it useful on the day.
 
-function ScoutPicker({ shotlistId, scene, onChanged }) {
+function ScoutPicker({ shotlistId, scene, library, onChanged }) {
   const inputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
+  const [picking, setPicking] = useState(false);
   const items = scene.scout_photos || [];
+
+  async function attach(list) {
+    for (const m of list) {
+      await api.post(`/shotlists/${shotlistId}/scenes/${scene.id}/media`, {
+        filename: m.filename, thumb_filename: m.thumb_filename, label: m.label || null,
+      });
+    }
+    await onChanged();
+  }
 
   async function handleFiles(e) {
     const files = Array.from(e.target.files || []);
@@ -350,12 +550,20 @@ function ScoutPicker({ shotlistId, scene, onChanged }) {
           </div>
         ))}
         <button type="button" className="shotlist-wardrobe-add shotlist-scout-add"
-          onClick={() => inputRef.current?.click()} disabled={uploading}>
+          onClick={() => inputRef.current?.click()} disabled={uploading} title="Upload">
           {uploading ? <Loader2 size={15} className="pitch-spin" /> : <Plus size={15} />}
+        </button>
+        <button type="button" className="shotlist-wardrobe-add shotlist-scout-add"
+          onClick={() => setPicking(true)} title="Choose from the shot list library">
+          <ImageIcon size={15} />
         </button>
         <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple
           style={{ display: 'none' }} onChange={handleFiles} />
       </div>
+      {picking && (
+        <LibraryModal shotlistId={shotlistId} library={library || []}
+          onClose={() => setPicking(false)} onPick={attach} />
+      )}
       <p className="shotlist-hint">
         The location as the recce found it. Name them — “the approach”, “power here” — and the crew
         sees them on the scene, above its shots.
@@ -368,7 +576,7 @@ function ScoutPicker({ shotlistId, scene, onChanged }) {
 
 function SortableShot({
   shotlistId, shot, index, expanded, onToggle, onChange, onDelete, onDuplicate,
-  scenes, characters, aiEnabled, onMediaChanged, onCharactersChange, onAddExtra,
+  scenes, characters, library, aiEnabled, onMediaChanged, onCharactersChange, onAddExtra,
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: `shot-${shot.id}` });
 
@@ -497,8 +705,8 @@ function SortableShot({
             />
           )}
 
-          <MediaPicker shotlistId={shotlistId} shot={shot} kind="reference" onChanged={onMediaChanged} />
-          <MediaPicker shotlistId={shotlistId} shot={shot} kind="angle" onChanged={onMediaChanged} />
+          <MediaPicker shotlistId={shotlistId} shot={shot} kind="reference" library={library} onChanged={onMediaChanged} />
+          <MediaPicker shotlistId={shotlistId} shot={shot} kind="angle" library={library} onChanged={onMediaChanged} />
         </div>
       )}
     </div>
@@ -509,7 +717,7 @@ function SortableShot({
 
 function SortableScene({
   shotlistId, scene, index, expanded, onToggle, onChange, onDelete, onDuplicate,
-  locations, windows, scenes, days, characters, shotlist, aiEnabled, onReload,
+  locations, windows, scenes, days, characters, library, shotlist, aiEnabled, onReload,
   expandedShotId, onToggleShot, onShotChange, onShotDelete, onShotDuplicate, onAddShot, onShotsReorder,
   onShotCharactersChange, onAddExtra,
 }) {
@@ -696,7 +904,7 @@ function SortableScene({
 
           <TextField label="Scene notes" value={scene.notes} onChange={v => onChange(scene.id, { notes: v })} textarea rows={2} />
 
-          <ScoutPicker shotlistId={shotlistId} scene={scene} onChanged={onReload} />
+          <ScoutPicker shotlistId={shotlistId} scene={scene} library={library} onChanged={onReload} />
 
           {/* Coverage */}
           <div className="shotlist-shots-header">
@@ -727,6 +935,7 @@ function SortableScene({
                       onDuplicate={onShotDuplicate}
                       scenes={scenes}
                       characters={characters}
+                      library={library}
                       aiEnabled={aiEnabled}
                       onMediaChanged={onReload}
                       onCharactersChange={onShotCharactersChange}
@@ -1248,10 +1457,20 @@ function BreaksPanel({ shotlistId, dayId, breaks, scenes, timeline, onChanged })
 // nameable for continuity. It only appears once the character exists, because
 // the photos hang off the character id.
 
-function WardrobePicker({ shotlistId, character, onChanged }) {
+function WardrobePicker({ shotlistId, character, library, onChanged }) {
   const inputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
+  const [picking, setPicking] = useState(false);
   const items = character.wardrobe || [];
+
+  async function attach(list) {
+    for (const m of list) {
+      await api.post(`/shotlists/${shotlistId}/characters/${character.id}/media`, {
+        filename: m.filename, thumb_filename: m.thumb_filename, label: m.label || null,
+      });
+    }
+    await onChanged();
+  }
 
   async function handleFiles(e) {
     const files = Array.from(e.target.files || []);
@@ -1312,13 +1531,21 @@ function WardrobePicker({ shotlistId, character, onChanged }) {
         ))}
         <button
           type="button" className="shotlist-wardrobe-add"
-          onClick={() => inputRef.current?.click()} disabled={uploading}
+          onClick={() => inputRef.current?.click()} disabled={uploading} title="Upload"
         >
           {uploading ? <Loader2 size={15} className="pitch-spin" /> : <Plus size={15} />}
         </button>
-        <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" multiple
+        <button type="button" className="shotlist-wardrobe-add"
+          onClick={() => setPicking(true)} title="Choose from the shot list library">
+          <ImageIcon size={15} />
+        </button>
+        <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple
           style={{ display: 'none' }} onChange={handleFiles} />
       </div>
+      {picking && (
+        <LibraryModal shotlistId={shotlistId} library={library || []}
+          onClose={() => setPicking(false)} onPick={attach} />
+      )}
       <p className="shotlist-hint">
         Fittings and continuity stills. They travel with the part into every scene it appears in.
       </p>
@@ -1468,7 +1695,7 @@ function SortableCharacter({ character: c, onEdit, onDuplicate, onDelete }) {
   );
 }
 
-function CharactersPanel({ shotlistId, shotlist, base, characters, onChanged, onAddExtra, onReload }) {
+function CharactersPanel({ shotlistId, shotlist, base, characters, library, onChanged, onAddExtra, onReload }) {
   const [editing, setEditing] = useState(null);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef(null);
@@ -1690,7 +1917,7 @@ function CharactersPanel({ shotlistId, shotlist, base, characters, onChanged, on
           {/* Wardrobe photos hang off the character id, so a brand new part is
               saved first and then dressed. */}
           {editing.id ? (
-            <WardrobePicker shotlistId={shotlistId} character={editing} onChanged={onChanged} />
+            <WardrobePicker shotlistId={shotlistId} character={editing} library={library} onChanged={onChanged} />
           ) : (
             <div className="form-row">
               <label className="form-label">Wardrobe</label>
@@ -1983,6 +2210,7 @@ export default function ShotlistEditor() {
   const [scenes, setScenes] = useState([]);
   const [characters, setCharacters] = useState([]);
   const [breaks, setBreaks] = useState([]);
+  const [library, setLibrary] = useState([]);
   const [timelines, setTimelines] = useState([]);
   const [totals, setTotals] = useState(null);
   const [shotCount, setShotCount] = useState(0);
@@ -2020,6 +2248,7 @@ export default function ShotlistEditor() {
     setScenes(data.scenes || []);
     setCharacters(data.characters || []);
     setBreaks(data.breaks || []);
+    setLibrary(data.library || []);
     setTimelines(data.timelines || []);
     setTotals(data.totals || null);
     setShotCount(data.shot_count || 0);
@@ -2444,6 +2673,7 @@ export default function ShotlistEditor() {
                   scenes={scenes}
                   days={days}
                   characters={characters}
+                  library={library}
                   shotlist={shotlist}
                   aiEnabled={aiEnabled}
                   onReload={load}
@@ -2470,11 +2700,13 @@ export default function ShotlistEditor() {
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', minWidth: 0 }}>
           <LocationsPanel shotlistId={id} locations={locations} onChanged={load} />
+          <LibraryPanel shotlistId={id} library={library} onChanged={load} />
           <CharactersPanel
             shotlistId={id}
             shotlist={shotlist}
             base={base}
             characters={characters}
+            library={library}
             onChanged={load}
             onAddExtra={addExtra}
             onReload={load}
