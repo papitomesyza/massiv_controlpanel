@@ -767,6 +767,22 @@ function initDb() {
       FOREIGN KEY (shot_id) REFERENCES shots(id) ON DELETE CASCADE
     );
 
+    -- Scout photos belong to the SCENE, not to a shot: what the recce brings
+    -- back is the place — the room, the approach, the power, the light at that
+    -- hour — and that is true of every shot taken there. The per-shot photos
+    -- are the framings, which is a different thing and lives on shot_media.
+    CREATE TABLE IF NOT EXISTS shotlist_scene_media (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      scene_id INTEGER NOT NULL,
+      kind TEXT DEFAULT 'scout',
+      label TEXT,
+      filename TEXT NOT NULL,
+      thumb_filename TEXT,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (scene_id) REFERENCES shotlist_scenes(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS shot_activity (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       shotlist_id INTEGER NOT NULL,
@@ -1006,6 +1022,22 @@ function initDb() {
     `);
   } catch (_) {}
 
+  // Scout photos moved up to the scene, so what is left on a shot is the
+  // framing photographed on the recce — an angle. The rows are renamed rather
+  // than moved: a photo attached to one shot describes that shot's angle, and
+  // guessing which of them was really a picture of the room would lose more
+  // than it gained. The settings guard makes this run exactly once.
+  try {
+    const done = db.prepare("SELECT value FROM settings WHERE key = 'shot_media_angle_renamed'").get();
+    if (!done) {
+      const r = db.prepare("UPDATE shot_media SET kind = 'angle' WHERE kind = 'scout'").run();
+      db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('shot_media_angle_renamed', '1')").run();
+      if (r.changes) console.log(`INFO: Renamed ${r.changes} per-shot scout photo(s) to angle photos.`);
+    }
+  } catch (err) {
+    console.error('Angle photo rename failed:', err.message);
+  }
+
   // Every break that existed before sides did belongs on the after_move side:
   // that is where a meal is really eaten, and it is the behaviour that was
   // wanted all along. SQLite fills the new column with its default for rows
@@ -1081,6 +1113,7 @@ function initDb() {
     CREATE INDEX IF NOT EXISTS idx_shot_characters_character ON shot_characters(character_id);
     CREATE INDEX IF NOT EXISTS idx_shotlist_breaks_day ON shotlist_breaks(day_id);
     CREATE INDEX IF NOT EXISTS idx_shot_media_shot ON shot_media(shot_id);
+    CREATE INDEX IF NOT EXISTS idx_scene_media_scene ON shotlist_scene_media(scene_id);
     CREATE INDEX IF NOT EXISTS idx_shotlist_locations_shotlist ON shotlist_locations(shotlist_id);
     CREATE INDEX IF NOT EXISTS idx_shot_activity_shotlist ON shot_activity(shotlist_id);
   `);

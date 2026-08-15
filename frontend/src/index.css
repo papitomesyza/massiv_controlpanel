@@ -3438,3 +3438,8 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
   font-size: 11px;
   color: var(--text-muted);
 }
+
+/* scout photos are of a place, so they read better landscape than portrait */
+.shotlist-scout-item { width: 104px; }
+.shotlist-scout-item img { width: 104px; height: 74px; }
+.shotlist-scout-add { width: 104px; height: 74px; }

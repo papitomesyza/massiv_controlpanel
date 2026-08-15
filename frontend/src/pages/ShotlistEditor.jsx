@@ -137,7 +137,7 @@ function LockField({ label, value, onChange, hint }) {
   );
 }
 
-// ── Shot media picker (reference / scout) ────────────────────────────────────
+// ── Shot media picker (reference / angle) ────────────────────────────────────
 
 function MediaPicker({ shotlistId, shot, kind, onChanged }) {
   const inputRef = useRef(null);
@@ -174,7 +174,9 @@ function MediaPicker({ shotlistId, shot, kind, onChanged }) {
   }
 
   return (
-    <Field label={`${kind === 'scout' ? 'Scout' : 'Reference'} photos (${items.length})`}>
+    <Field label={kind === 'angle'
+      ? `Angle photos from the recce (${items.length})`
+      : `Reference photos (${items.length})`}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
         {items.map(m => (
           <div key={m.id} style={{ position: 'relative' }}>
@@ -273,6 +275,91 @@ function CharacterPicker({ characters, selected, onChange, onAddExtra }) {
           {adding ? <Loader2 size={10} className="pitch-spin" /> : <UserPlus size={10} />} Extra
         </button>
       </div>
+    </Field>
+  );
+}
+
+// ── Scout photos, on the scene ───────────────────────────────────────────────
+// The recce brings back the place, not a framing: the room, the approach, where
+// the power is. That is true of every shot taken there, so it lives on the
+// scene. Each photo can be named, which is what makes it useful on the day.
+
+function ScoutPicker({ shotlistId, scene, onChanged }) {
+  const inputRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
+  const items = scene.scout_photos || [];
+
+  async function handleFiles(e) {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (!files.length) return;
+    setUploading(true);
+    try {
+      for (const file of files) {
+        const fd = new FormData();
+        fd.append('image', file);
+        const res = await api.postForm('/shotlists/upload', fd);
+        await api.post(`/shotlists/${shotlistId}/scenes/${scene.id}/media`, {
+          filename: res.filename, thumb_filename: res.thumb,
+        });
+      }
+      await onChanged();
+    } catch (err) {
+      alert(err.message || 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function rename(m, label) {
+    try {
+      await api.put(`/shotlists/${shotlistId}/scene-media/${m.id}`, { label });
+      await onChanged();
+    } catch (err) { alert(err.message || 'Could not rename the photo'); }
+  }
+
+  async function remove(m) {
+    try {
+      await api.del(`/shotlists/${shotlistId}/scene-media/${m.id}`);
+      await onChanged();
+    } catch (err) { alert(err.message || 'Could not remove the photo'); }
+  }
+
+  return (
+    <Field label={`Scout photos from the recce (${items.length})`}>
+      <div className="shotlist-wardrobe">
+        {items.map(m => (
+          <div key={m.id} className="shotlist-wardrobe-item shotlist-scout-item">
+            <div style={{ position: 'relative' }}>
+              <img src={`/shotlist-media/${m.thumb_filename || m.filename}`} alt="" />
+              {isAnimated(m) && (
+                <span title="Animated" style={{
+                  position: 'absolute', bottom: 2, left: 2, fontSize: '8px', fontWeight: 800,
+                  padding: '1px 3px', borderRadius: 3, background: 'rgba(0,0,0,0.72)', color: '#fff',
+                }}>GIF</span>
+              )}
+              <button type="button" title="Remove this photo" onClick={() => remove(m)}
+                className="shotlist-wardrobe-x">
+                <X size={10} />
+              </button>
+            </div>
+            <input
+              className="input" defaultValue={m.label || ''} placeholder="Name it"
+              onBlur={e => { if ((e.target.value || '') !== (m.label || '')) rename(m, e.target.value); }}
+            />
+          </div>
+        ))}
+        <button type="button" className="shotlist-wardrobe-add shotlist-scout-add"
+          onClick={() => inputRef.current?.click()} disabled={uploading}>
+          {uploading ? <Loader2 size={15} className="pitch-spin" /> : <Plus size={15} />}
+        </button>
+        <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple
+          style={{ display: 'none' }} onChange={handleFiles} />
+      </div>
+      <p className="shotlist-hint">
+        The location as the recce found it. Name them — “the approach”, “power here” — and the crew
+        sees them on the scene, above its shots.
+      </p>
     </Field>
   );
 }
@@ -411,7 +498,7 @@ function SortableShot({
           )}
 
           <MediaPicker shotlistId={shotlistId} shot={shot} kind="reference" onChanged={onMediaChanged} />
-          <MediaPicker shotlistId={shotlistId} shot={shot} kind="scout" onChanged={onMediaChanged} />
+          <MediaPicker shotlistId={shotlistId} shot={shot} kind="angle" onChanged={onMediaChanged} />
         </div>
       )}
     </div>
@@ -482,6 +569,11 @@ function SortableScene({
           </span>
         )}
         <span className="shotlist-chip">{shots.length} shot{shots.length === 1 ? '' : 's'}</span>
+        {(scene.scout_photos || []).length > 0 && (
+          <span className="shotlist-chip" title="Scout photos from the recce">
+            <ImageIcon size={9} /> {scene.scout_photos.length}
+          </span>
+        )}
         <span className="shotlist-chip" title="Capture time on the day">{fmtDuration(scene.duration_minutes)}</span>
         {scene.clip_seconds ? (
           <span className="shotlist-chip" title="Clip length in the edit">
@@ -603,6 +695,8 @@ function SortableScene({
           </div>
 
           <TextField label="Scene notes" value={scene.notes} onChange={v => onChange(scene.id, { notes: v })} textarea rows={2} />
+
+          <ScoutPicker shotlistId={shotlistId} scene={scene} onChanged={onReload} />
 
           {/* Coverage */}
           <div className="shotlist-shots-header">

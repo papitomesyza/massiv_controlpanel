@@ -13,7 +13,7 @@ const {
 const { hashPasscode } = require('../lib/shotlistAuth');
 const {
   getShotlistById, getLocations, getCharacters, getDays, getBreaks, getScenes,
-  getShotsForScene, getMediaByShot, getCharactersByShot, charactersForScene,
+  getShotsForScene, getMediaByShot, getSceneMedia, getCharactersByShot, charactersForScene,
   getActivity, logActivity, touch, loadBundle, orderLabelFor,
 } = require('../lib/shotlistStore');
 const {
@@ -301,6 +301,7 @@ router.get('/:id', (req, res) => {
     const shotsByScene = new Map(scenes.map(s => [s.id, getShotsForScene(s.id)]));
     const allShots = scenes.flatMap(s => shotsByScene.get(s.id) || []);
     const media = getMediaByShot(allShots.map(s => s.id));
+    const sceneMedia = getSceneMedia(scenes.map(s => s.id));
     const charactersByShot = getCharactersByShot(allShots.map(s => s.id));
 
     const locById = new Map(locations.map(l => [l.id, l]));
@@ -322,6 +323,7 @@ router.get('/:id', (req, res) => {
       return {
         ...scene,
         shots,
+        scout_photos: sceneMedia.get(scene.id) || [],
         duration_minutes: sceneDuration(shots),
         clip_seconds: clipSeconds(shots),
         characters: charactersForScene(shots, charactersByShot),
@@ -916,6 +918,77 @@ router.post('/:id/characters/:characterId/duplicate', (req, res) => {
   }
 });
 
+// ── Scout photos on a scene ───────────────────────────────────────────────────
+// What the recce brings back is the PLACE — the room, the approach, the light
+// at that hour — and that is true of every shot taken there, so it hangs off
+// the scene. The framings live on the shots as angle photos.
+
+router.post('/:id/scenes/:sceneId/media', (req, res) => {
+  try {
+    const scene = getScene(req.params.id, req.params.sceneId);
+    if (!scene) return res.status(404).json({ error: 'Scene not found' });
+
+    const body = req.body || {};
+    const filename = cleanFilename(body.filename);
+    if (!filename) return res.status(400).json({ error: 'Invalid filename' });
+    const thumb = cleanFilename(body.thumb_filename);
+
+    const nextOrder = db.prepare(
+      'SELECT COALESCE(MAX(sort_order), -1) AS m FROM shotlist_scene_media WHERE scene_id = ?'
+    ).get(scene.id).m + 1;
+
+    const r = db.prepare(`
+      INSERT INTO shotlist_scene_media (scene_id, kind, label, filename, thumb_filename, sort_order)
+      VALUES (?, 'scout', ?, ?, ?, ?)
+    `).run(scene.id, cleanText(body.label, 120), filename, thumb, nextOrder);
+    touch(req.params.id);
+    res.json({ id: r.lastInsertRowid });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not attach the scout photo' });
+  }
+});
+
+// Naming a scout photo is what makes it useful on the day — "the approach",
+// "power here" — so the label is editable without re-uploading.
+router.put('/:id/scene-media/:mediaId', (req, res) => {
+  try {
+    const row = db.prepare(`
+      SELECT m.id FROM shotlist_scene_media m
+      JOIN shotlist_scenes s ON s.id = m.scene_id
+      WHERE m.id = ? AND s.shotlist_id = ?
+    `).get(req.params.mediaId, req.params.id);
+    if (!row) return res.status(404).json({ error: 'Scout photo not found' });
+
+    const body = req.body || {};
+    if (body.label !== undefined) {
+      db.prepare('UPDATE shotlist_scene_media SET label = ? WHERE id = ?')
+        .run(cleanText(body.label, 120), row.id);
+    }
+    touch(req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not rename the scout photo' });
+  }
+});
+
+router.delete('/:id/scene-media/:mediaId', (req, res) => {
+  try {
+    // Scoped through the scene so one shot list can never delete another's.
+    const r = db.prepare(`
+      DELETE FROM shotlist_scene_media WHERE id IN (
+        SELECT m.id FROM shotlist_scene_media m
+        JOIN shotlist_scenes s ON s.id = m.scene_id
+        WHERE m.id = ? AND s.shotlist_id = ?
+      )
+    `).run(req.params.mediaId, req.params.id);
+    if (r.changes === 0) return res.status(404).json({ error: 'Scout photo not found' });
+    touch(req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not remove the scout photo' });
+  }
+});
+
 // ── Wardrobe ──────────────────────────────────────────────────────────────────
 // Costume photos hang off the character, not off a shot: the same look travels
 // with the part across every scene it appears in.
@@ -1246,7 +1319,16 @@ router.post('/:id/scenes/:sceneId/duplicate', (req, res) => {
       const insertMedia = db.prepare(
         'INSERT INTO shot_media (shot_id, kind, filename, thumb_filename, sort_order) VALUES (?, ?, ?, ?, ?)'
       );
-      const sceneMedia = db.prepare('SELECT * FROM shot_media WHERE shot_id = ? ORDER BY sort_order ASC, id ASC');
+      const shotMedia = db.prepare('SELECT * FROM shot_media WHERE shot_id = ? ORDER BY sort_order ASC, id ASC');
+
+      // The scout photos are of the place, so a copy of the scene keeps them.
+      const insertSceneMedia = db.prepare(`
+        INSERT INTO shotlist_scene_media (scene_id, kind, label, filename, thumb_filename, sort_order)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
+      db.prepare('SELECT * FROM shotlist_scene_media WHERE scene_id = ? ORDER BY sort_order ASC, id ASC')
+        .all(scene.id)
+        .forEach((m, i) => insertSceneMedia.run(newSceneId, m.kind, m.label, m.filename, m.thumb_filename, i));
 
       getShotsForScene(scene.id).forEach((shot, i) => {
         const newShotId = insertShot.run(
@@ -1254,7 +1336,7 @@ router.post('/:id/scenes/:sceneId/duplicate', (req, res) => {
           shot.shot_type, shot.duration_minutes, shot.talent, shot.costume, shot.props, shot.camera_notes
         ).lastInsertRowid;
         // Media rows reference the same files; nothing is re-encoded.
-        sceneMedia.all(shot.id).forEach(m =>
+        shotMedia.all(shot.id).forEach(m =>
           insertMedia.run(newShotId, m.kind, m.filename, m.thumb_filename, m.sort_order));
       });
 
@@ -1524,7 +1606,7 @@ router.post('/:id/shots/:shotId/media', (req, res) => {
     if (thumb && (/[/\\]/.test(thumb) || thumb.includes('..'))) {
       return res.status(400).json({ error: 'Invalid filename' });
     }
-    const kind = body.kind === 'scout' ? 'scout' : 'reference';
+    const kind = body.kind === 'angle' ? 'angle' : 'reference';
     const nextOrder = db.prepare('SELECT COALESCE(MAX(sort_order), -1) AS m FROM shot_media WHERE shot_id = ?')
       .get(shot.id).m + 1;
 
