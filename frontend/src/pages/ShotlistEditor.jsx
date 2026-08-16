@@ -2596,7 +2596,7 @@ export default function ShotlistEditor() {
           <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{base.host}</span>
           {!shotlist.has_passcode && (
             <span style={{ fontSize: '11px', color: 'var(--warning)' }}>
-              No passcode: the crew can read the list but cannot tick shots off.
+              No passcode: the crew can read the list but cannot tick shots off or write set design.
             </span>
           )}
         </div>
@@ -2874,8 +2874,10 @@ function PasscodeModal({ shotlistId, hasPasscode, onClose, onSaved }) {
   return (
     <Modal title={hasPasscode ? 'Change crew passcode' : 'Set crew passcode'} onClose={onClose}>
       <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '12px' }}>
-        Anyone with the link can read the shot list. Only someone with this passcode can tick shots off.
-        With no passcode set, the completion controls are hidden entirely.
+        Anyone with the link can read the shot list. Only someone with this passcode can tick shots off
+        and write set design — on the scene, or as a note on one shot. Nothing else on the page can be
+        changed from the link. With no passcode set, those controls are hidden entirely, and changing the
+        passcode signs every device out.
       </p>
       <div className="form-row">
         <label className="form-label">Passcode</label>

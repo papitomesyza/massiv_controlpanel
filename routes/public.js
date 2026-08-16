@@ -3,13 +3,14 @@ const router = express.Router();
 const { db } = require('../db/database');
 
 const { verifyCrewToken, issueCrewToken, checkPasscode } = require('../lib/shotlistAuth');
-const { getPublishedBySlug, logActivity } = require('../lib/shotlistStore');
+const { getPublishedBySlug, logActivity, touch } = require('../lib/shotlistStore');
 
 // In-memory rate limiters
 const ipSubmissions = new Map();   // ip -> { count, windowStart }
 const tokenSubmissions = new Map(); // token -> { count, dayStart }
 const unlockIpAttempts = new Map();  // ip -> { count, windowStart }
 const unlockSlugAttempts = new Map(); // slug -> { count, windowStart }
+const editTokenAttempts = new Map(); // crew token -> { count, windowStart }
 
 function checkIpLimit(ip) {
   const now = Date.now();
@@ -260,6 +261,82 @@ router.post('/shotlist/:slug/shots/:shotId/complete', (req, res) => {
     res.json({ completed, completed_by: completed ? (auth.name || 'Crew') : null });
   } catch (err) {
     console.error('Shot completion failed:', err && err.name ? err.name : 'error');
+    res.status(500).json({ error: 'update_failed' });
+  }
+});
+
+// ── Set design, written from the link ────────────────────────────────────────
+// The first field the crew can actually edit rather than tick. A set designer
+// changes the dressing on the day; making them ask someone with a panel login
+// to type it in is how the document goes stale by mid-morning.
+//
+// Set design ONLY. The column is chosen server-side from this table, never from
+// the request, so a crew token can never be aimed at costume, at a title, or at
+// anything structural. Everything else on the page stays panel-only.
+const SET_DESIGN_TARGETS = {
+  // Lengths match what the panel accepts for the same column, so a note written
+  // on the day cannot be longer than one written at the desk.
+  scene: { table: 'shotlist_scenes', max: 4000 },
+  shot: { table: 'shots', max: 2000 },
+};
+
+const EDIT_TOKEN_PER_MIN = 30;
+
+// Same shape as cleanText in routes/shotlists.js: blank means "clear it".
+function cleanNote(v, max) {
+  if (v === null || v === undefined) return null;
+  const s = String(v).trim();
+  if (!s) return null;
+  return s.slice(0, max);
+}
+
+// POST /api/public/shotlist/:slug/set-design
+// body: { token, target: 'scene' | 'shot', id, value }
+router.post('/shotlist/:slug/set-design', (req, res) => {
+  try {
+    const shotlist = getPublishedBySlug(String(req.params.slug || ''));
+    if (!shotlist || !shotlist.passcode_hash) return unlockDenied(res);
+
+    const token = (req.body && req.body.token) || '';
+    const auth = verifyCrewToken(token, shotlist);
+    if (!auth.valid) return unlockDenied(res);
+
+    // A valid token is not an open tap: cap how fast one device can write.
+    const rec = checkWindowLimit(editTokenAttempts, token, 60000);
+    if (rec.count >= EDIT_TOKEN_PER_MIN) {
+      return res.status(429).json({ error: 'too_many_edits' });
+    }
+    rec.count++; editTokenAttempts.set(token, rec);
+
+    const target = SET_DESIGN_TARGETS[String((req.body && req.body.target) || '')];
+    if (!target) return res.status(400).json({ error: 'bad_target' });
+
+    const id = Number(req.body && req.body.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'bad_target' });
+
+    // The row has to belong to THIS shot list. Without this check a token for
+    // one production could write set design onto another's scenes.
+    const row = db.prepare(
+      `SELECT id FROM ${target.table} WHERE id = ? AND shotlist_id = ?`
+    ).get(id, shotlist.id);
+    if (!row) return res.status(404).json({ error: 'not_found' });
+
+    const value = cleanNote(req.body && req.body.value, target.max);
+    db.prepare(`UPDATE ${target.table} SET set_design = ? WHERE id = ?`).run(value, row.id);
+    touch(shotlist.id);
+
+    logActivity(
+      shotlist.id,
+      target === SET_DESIGN_TARGETS.shot ? row.id : null,
+      value ? 'edited_set_design' : 'cleared_set_design',
+      auth.name || 'Crew'
+    );
+
+    // Echo back what was stored, not what was sent: the client renders the
+    // trimmed, truncated value so the page never disagrees with the database.
+    res.json({ value: value || '' });
+  } catch (err) {
+    console.error('Set design edit failed:', err && err.name ? err.name : 'error');
     res.status(500).json({ error: 'update_failed' });
   }
 });
