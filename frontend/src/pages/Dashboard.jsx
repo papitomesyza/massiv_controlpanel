@@ -7,7 +7,9 @@ import {
   Clock, Plus, Check, StickyNote,
   Video, Camera, Scissors, Palette, Film, Tag,
 } from 'lucide-react';
-import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import {
+  ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+} from 'recharts';
 import { api, fmt, fmtDate } from '../api';
 import StatCard from '../components/StatCard';
 import ProjectTimeline from '../components/ProjectTimeline';
@@ -317,21 +319,45 @@ export default function Dashboard() {
   );
 }
 
-/* ─── Custom recharts tooltip ─── */
-function ChartTooltip({ active, payload, label, labelFmt }) {
+/* ─── Compact currency for axis ticks ─── */
+function compactCurrency(v) {
+  const n = Number(v) || 0;
+  const abs = Math.abs(n);
+  if (abs >= 1000) return `€${(n / 1000).toFixed(abs >= 10000 ? 0 : 1)}k`;
+  return `€${Math.round(n)}`;
+}
+
+/* ─── Custom recharts tooltip: three series, privacy aware ─── */
+function ChartTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
+  const NAMES = { revenue: 'Revenue', expenses: 'Expenses', profit: 'Profit' };
   return (
     <div style={{
       background: 'var(--color-surface-alt)', border: '1px solid var(--color-hairline)',
       borderRadius: '10px', padding: '10px 14px', fontSize: '12px',
     }}>
-      <div style={{ color: 'var(--color-mid-gray)', marginBottom: '4px' }}>{label}</div>
+      <div style={{ color: 'var(--color-mid-gray)', marginBottom: '6px' }}>{label}</div>
       {payload.map(p => (
-        <div key={p.dataKey} style={{ color: 'var(--color-ink)', fontWeight: 600 }}>
-          {labelFmt ? labelFmt(p.value) : p.value}
+        <div key={p.dataKey} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: p.color || p.stroke, display: 'inline-block' }} />
+          <span style={{ color: 'var(--color-mid-gray)', minWidth: 60 }}>{NAMES[p.dataKey] || p.name}</span>
+          <span style={{ color: 'var(--color-ink)', fontWeight: 600 }}><Private>{fmt(p.value)}</Private></span>
         </div>
       ))}
     </div>
+  );
+}
+
+/* ─── Privacy aware Y axis tick ─── */
+function PrivacyYTick({ x, y, payload }) {
+  const { hidden } = usePrivacy();
+  return (
+    <text
+      x={x} y={y} dy={3} textAnchor="end" fontSize={10} fill="var(--color-mid-gray)"
+      style={{ filter: hidden ? 'blur(6px)' : 'none', transition: 'filter 0.25s ease' }}
+    >
+      {compactCurrency(payload.value)}
+    </text>
   );
 }
 
@@ -455,39 +481,33 @@ function WidgetContent({ id, stats, projects, expenses, chartData, leads, setLea
 
     case 'charts':
       return (
-        <div className="two-col">
-          <div className="card card-pad">
-            <div className="section-title" style={{ marginBottom: '14px' }}>Revenue Trend — 6 months</div>
-            <ResponsiveContainer width="100%" height={120}>
-              <AreaChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
-                <defs>
-                  <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor="var(--color-ink)" stopOpacity={0.25} />
-                    <stop offset="95%" stopColor="var(--color-ink)" stopOpacity={0.01} />
-                  </linearGradient>
-                </defs>
-                <XAxis dataKey="month" tick={{ fontSize: 10, fill: 'var(--color-mid-gray)' }} axisLine={false} tickLine={false} />
-                <Tooltip content={<ChartTooltip labelFmt={v => fmt(v)} />} />
-                <Area type="monotone" dataKey="revenue" stroke="var(--color-ink)" strokeWidth={2} fill="url(#revGrad)" dot={false} />
-              </AreaChart>
-            </ResponsiveContainer>
+        <div className="card card-pad">
+          <div className="trend-legend">
+            <span className="trend-legend-item"><span className="trend-dot" style={{ background: 'var(--color-ink)' }} /> Revenue</span>
+            <span className="trend-legend-item"><span className="trend-dot" style={{ background: 'var(--color-mid-gray)' }} /> Expenses</span>
+            <span className="trend-legend-item"><span className="trend-dot" style={{ background: 'var(--color-ink-soft)', outline: '2px solid var(--color-ink-soft)', outlineOffset: '-1px' }} /> Profit</span>
           </div>
-          <div className="card card-pad">
-            <div className="section-title" style={{ marginBottom: '14px' }}>Expenses Trend — 6 months</div>
-            <ResponsiveContainer width="100%" height={120}>
-              <AreaChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
-                <defs>
-                  <linearGradient id="expGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor="var(--color-ink-soft)" stopOpacity={0.25} />
-                    <stop offset="95%" stopColor="var(--color-ink-soft)" stopOpacity={0.01} />
-                  </linearGradient>
-                </defs>
-                <XAxis dataKey="month" tick={{ fontSize: 10, fill: 'var(--color-mid-gray)' }} axisLine={false} tickLine={false} />
-                <Tooltip content={<ChartTooltip labelFmt={v => fmt(v)} />} />
-                <Area type="monotone" dataKey="expenses" stroke="var(--color-ink-soft)" strokeWidth={2} fill="url(#expGrad)" dot={false} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
+          <ResponsiveContainer width="100%" height={220}>
+            <ComposedChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+              <defs>
+                <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%"  stopColor="var(--color-ink)" stopOpacity={0.22} />
+                  <stop offset="95%" stopColor="var(--color-ink)" stopOpacity={0.01} />
+                </linearGradient>
+                <linearGradient id="expGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%"  stopColor="var(--color-mid-gray)" stopOpacity={0.18} />
+                  <stop offset="95%" stopColor="var(--color-mid-gray)" stopOpacity={0.01} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid vertical={false} stroke="var(--color-hairline)" strokeDasharray="2 4" />
+              <XAxis dataKey="month" tick={{ fontSize: 10, fill: 'var(--color-mid-gray)' }} axisLine={false} tickLine={false} />
+              <YAxis width={44} tick={<PrivacyYTick />} axisLine={false} tickLine={false} />
+              <Tooltip content={<ChartTooltip />} />
+              <Area type="monotone" dataKey="revenue" stroke="var(--color-ink)" strokeWidth={2} fill="url(#revGrad)" dot={false} />
+              <Area type="monotone" dataKey="expenses" stroke="var(--color-mid-gray)" strokeWidth={1.5} fill="url(#expGrad)" dot={false} />
+              <Line type="monotone" dataKey="profit" stroke="var(--color-ink-soft)" strokeWidth={1.5} strokeDasharray="4 3" dot={false} />
+            </ComposedChart>
+          </ResponsiveContainer>
         </div>
       );
 

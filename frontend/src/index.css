@@ -3731,3 +3731,14 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 .lead-drawer-note.empty { color: var(--color-mid-gray); text-align: center; }
 .lead-drawer-note p { margin: 0; white-space: pre-wrap; }
 
+
+/* ============================================================
+   TREND CHART LEGEND
+   ============================================================ */
+.trend-legend { display: flex; gap: 16px; margin-bottom: 10px; }
+.trend-legend-item {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 11px; color: var(--color-mid-gray);
+}
+.trend-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+
