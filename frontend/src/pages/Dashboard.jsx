@@ -511,7 +511,7 @@ function DashLeadCard({ lead }) {
 
 /* ─── Project card inside active projects section ─── */
 function ProjectDashCard({ p }) {
-  const phaseProgress = Math.round((p.completed_phases / 4) * 100);
+  const phaseProgress = p.total_phases > 0 ? Math.round((p.completed_phases / p.total_phases) * 100) : 0;
   const receivedPct   = p.agreed_budget > 0 ? Math.min(100, Math.round((p.total_received / p.agreed_budget) * 100)) : 0;
 
   return (
@@ -533,7 +533,7 @@ function ProjectDashCard({ p }) {
         {/* Phase progress */}
         <div className="flex-between" style={{ fontSize: '11px', color: 'var(--color-mid-gray)', marginBottom: '4px' }}>
           <span>{p.current_phase || 'No active phase'}</span>
-          <span>{p.completed_phases}/4 phases</span>
+          <span>{p.completed_phases}/{p.total_phases} phases</span>
         </div>
         <div className="progress-bar" style={{ marginBottom: '10px' }}>
           <div className="progress-fill" style={{ width: `${phaseProgress}%` }} />
