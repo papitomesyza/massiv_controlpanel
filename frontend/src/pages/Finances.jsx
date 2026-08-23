@@ -8,6 +8,7 @@ import {
   CheckCircle, Download, FileText, Clock, Receipt,
 } from 'lucide-react';
 import { api, fmt, fmtDate } from '../api';
+import { Private } from '../context/PrivacyContext';
 import StatCard from '../components/StatCard';
 import { seriesColors, seriesColor, CHART_GRID, CHART_AXIS, CHART_SURFACE } from '../lib/chartColors';
 
@@ -37,7 +38,7 @@ const CustomTooltip = ({ active, payload, label }) => {
     <div style={{ background: 'var(--surface-card)', border: '1px solid var(--color-hairline)', borderRadius: '10px', padding: '10px 14px', fontSize: '12px', boxShadow: 'var(--shadow-raised)' }}>
       <div style={{ marginBottom: '4px', color: 'var(--color-mid-gray)' }}>{label}</div>
       {payload.map(p => (
-        <div key={p.name} style={{ color: p.color }}>{p.name}: {fmt(p.value)}</div>
+        <div key={p.name} style={{ color: p.color }}>{p.name}: {<Private>{fmt(p.value)}</Private>}</div>
       ))}
     </div>
   );
@@ -110,11 +111,11 @@ function OverviewTab({ month, setMonth, filterCat, setFilterCat, filterClient, s
         <div style={{ marginBottom: '24px' }}>
           <div className="section-title" style={{ marginBottom: '12px' }}>All-Time Performance</div>
           <div className="stats-grid">
-            <StatCard label="Total Revenue Ever" value={fmt(kpis.totalRevenue)} icon={<TrendingUp size={18} />} />
+            <StatCard label="Total Revenue Ever" value={<Private>{fmt(kpis.totalRevenue)}</Private>} icon={<TrendingUp size={18} />} />
             <StatCard label="Projects Completed" value={kpis.totalCompleted} icon={<FolderCheck size={18} />} />
-            <StatCard label="Avg Completed Project" value={fmt(kpis.avgProjectValue)} icon={<BarChart2 size={18} />} />
-            <StatCard label="Best Month" value={kpis.bestMonth?.month || '—'} sub={kpis.bestMonth ? fmt(kpis.bestMonth.amount) : undefined} icon={<Star size={18} />} />
-            <StatCard label="Best Client" value={kpis.bestClient?.name || '—'} sub={kpis.bestClient ? fmt(kpis.bestClient.amount) : undefined} icon={<Users size={18} />} />
+            <StatCard label="Avg Completed Project" value={<Private>{fmt(kpis.avgProjectValue)}</Private>} icon={<BarChart2 size={18} />} />
+            <StatCard label="Best Month" value={kpis.bestMonth?.month || '—'} sub={kpis.bestMonth ? <Private>{fmt(kpis.bestMonth.amount)}</Private> : undefined} icon={<Star size={18} />} />
+            <StatCard label="Best Client" value={kpis.bestClient?.name || '—'} sub={kpis.bestClient ? <Private>{fmt(kpis.bestClient.amount)}</Private> : undefined} icon={<Users size={18} />} />
           </div>
         </div>
       )}
@@ -127,10 +128,10 @@ function OverviewTab({ month, setMonth, filterCat, setFilterCat, filterClient, s
               {`${month.slice(5)}/${month.slice(0, 4)}`}
             </div>
             <div className="stats-grid">
-              <StatCard label="Realized Revenue" value={fmt(stats?.revenue)} icon={<TrendingUp size={18} />} gradient />
-              <StatCard label="Expenses" value={fmt(stats?.expenses)} icon={<Receipt size={18} />} danger={stats?.expenses > 0} />
-              <StatCard label="Crew Costs" value={fmt(stats?.crewCosts)} icon={<Users size={18} />} />
-              <StatCard label="Net Profit" value={fmt(stats?.netProfit)} icon={<BarChart2 size={18} />} danger={stats?.netProfit < 0} />
+              <StatCard label="Realized Revenue" value={<Private>{fmt(stats?.revenue)}</Private>} icon={<TrendingUp size={18} />} gradient />
+              <StatCard label="Expenses" value={<Private>{fmt(stats?.expenses)}</Private>} icon={<Receipt size={18} />} danger={stats?.expenses > 0} />
+              <StatCard label="Crew Costs" value={<Private>{fmt(stats?.crewCosts)}</Private>} icon={<Users size={18} />} />
+              <StatCard label="Net Profit" value={<Private>{fmt(stats?.netProfit)}</Private>} icon={<BarChart2 size={18} />} danger={stats?.netProfit < 0} />
             </div>
           </div>
 
@@ -165,7 +166,7 @@ function OverviewTab({ month, setMonth, filterCat, setFilterCat, filterClient, s
                         <Cell key={i} fill={seriesColor(i, catData.length)} stroke={CHART_SURFACE} strokeWidth={2} />
                       ))}
                     </Pie>
-                    <Tooltip formatter={v => fmt(v)} contentStyle={{ background: 'var(--surface-card)', border: '1px solid var(--color-hairline)', borderRadius: '10px', fontSize: '12px' }} />
+                    <Tooltip formatter={v => <Private>{fmt(v)}</Private>} contentStyle={{ background: 'var(--surface-card)', border: '1px solid var(--color-hairline)', borderRadius: '10px', fontSize: '12px' }} />
                   </PieChart>
                 </ResponsiveContainer>
               )}
@@ -188,7 +189,7 @@ function OverviewTab({ month, setMonth, filterCat, setFilterCat, filterClient, s
                           <tr key={i}>
                             <td data-label="Client"><div className="text-bold text-sm">{c.name}</div><div className="text-xs text-2">{c.company || ''}</div></td>
                             <td data-label="Projects">{c.total_projects}</td>
-                            <td data-label="Revenue">{fmt(c.total_revenue)}</td>
+                            <td data-label="Revenue">{<Private>{fmt(c.total_revenue)}</Private>}</td>
                             <td data-label="Margin"><span className={c.margin < 0 ? 'text-danger' : ''}>{c.margin}%</span></td>
                           </tr>
                         ))}
@@ -212,7 +213,7 @@ function OverviewTab({ month, setMonth, filterCat, setFilterCat, filterClient, s
                           <tr key={i}>
                             <td data-label="Category"><div className="text-sm">{c.name}</div><div className="text-xs text-2">{c.group_name}</div></td>
                             <td data-label="Projects">{c.total_projects}</td>
-                            <td data-label="Revenue">{fmt(c.total_revenue)}</td>
+                            <td data-label="Revenue">{<Private>{fmt(c.total_revenue)}</Private>}</td>
                             <td data-label="Margin"><span className={c.margin < 0 ? 'text-danger' : ''}>{c.margin}%</span></td>
                           </tr>
                         ))}
@@ -318,7 +319,7 @@ function PLTab() {
                 {/* Revenue */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
                   <span style={{ fontWeight: 600, fontSize: '15px' }}>Revenue</span>
-                  <span style={{ fontWeight: 700, fontSize: '15px' }}>{fmt(statement.revenue)}</span>
+                  <span style={{ fontWeight: 700, fontSize: '15px' }}>{<Private>{fmt(statement.revenue)}</Private>}</span>
                 </div>
 
                 {/* Cost of Services */}
@@ -326,22 +327,22 @@ function PLTab() {
                   <div style={{ fontSize: '10px', color: 'var(--color-mid-gray)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '10px' }}>Cost of Services</div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 16px', fontSize: '13px' }}>
                     <span style={{ color: 'var(--color-mid-gray)' }}>Crew Costs</span>
-                    <span>{fmt(statement.crewCosts)}</span>
+                    <span>{<Private>{fmt(statement.crewCosts)}</Private>}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 16px', fontSize: '13px' }}>
                     <span style={{ color: 'var(--color-mid-gray)' }}>Expenses</span>
-                    <span>{fmt(statement.expenses)}</span>
+                    <span>{<Private>{fmt(statement.expenses)}</Private>}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 0', marginTop: '6px', borderTop: '1px solid var(--border)', fontWeight: 600, fontSize: '13px' }}>
                     <span>Total Cost of Services</span>
-                    <span>{fmt(statement.crewCosts + statement.expenses)}</span>
+                    <span>{<Private>{fmt(statement.crewCosts + statement.expenses)}</Private>}</span>
                   </div>
                 </div>
 
                 {/* Gross Profit */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '2px solid var(--border)' }}>
                   <span style={{ fontWeight: 700, fontSize: '14px' }}>Gross Profit</span>
-                  <span style={{ fontWeight: 700, fontSize: '14px', color: grossProfit < 0 ? 'var(--color-ember)' : 'var(--color-ink)' }}>{fmt(grossProfit)}</span>
+                  <span style={{ fontWeight: 700, fontSize: '14px', color: grossProfit < 0 ? 'var(--color-ember)' : 'var(--color-ink)' }}>{<Private>{fmt(grossProfit)}</Private>}</span>
                 </div>
 
                 {/* Net Profit */}
@@ -353,7 +354,7 @@ function PLTab() {
                   borderRadius: '0 0 24px 24px',
                 }}>
                   <span style={{ fontWeight: 700, fontSize: '16px', letterSpacing: '0.02em' }}>NET PROFIT</span>
-                  <span style={{ fontWeight: 800, fontSize: '18px', color: statement.netProfit < 0 ? 'var(--color-ember)' : 'var(--color-ink)' }}>{fmt(statement.netProfit)}</span>
+                  <span style={{ fontWeight: 800, fontSize: '18px', color: statement.netProfit < 0 ? 'var(--color-ember)' : 'var(--color-ink)' }}>{<Private>{fmt(statement.netProfit)}</Private>}</span>
                 </div>
               </div>
             )}
@@ -384,21 +385,21 @@ function PLTab() {
                         return (
                           <tr key={m.month} style={isSelected ? { background: 'var(--overlay-04)' } : {}}>
                             <td data-label="Month" style={{ color: isEmpty ? 'var(--color-faint)' : 'var(--color-ink)', fontWeight: isSelected ? 700 : 400 }}>{m.label}</td>
-                            <td data-label="Revenue" style={{ textAlign: 'right', color: isEmpty ? 'var(--color-faint)' : 'var(--color-ink)' }}>{isEmpty ? '—' : fmt(m.revenue)}</td>
-                            <td data-label="Crew" style={{ textAlign: 'right', color: isEmpty ? 'var(--color-faint)' : 'var(--color-mid-gray)' }}>{isEmpty ? '—' : fmt(m.crewCosts)}</td>
-                            <td data-label="Expenses" style={{ textAlign: 'right', color: isEmpty ? 'var(--color-faint)' : 'var(--color-mid-gray)' }}>{isEmpty ? '—' : fmt(m.expenses)}</td>
+                            <td data-label="Revenue" style={{ textAlign: 'right', color: isEmpty ? 'var(--color-faint)' : 'var(--color-ink)' }}>{isEmpty ? '—' : <Private>{fmt(m.revenue)}</Private>}</td>
+                            <td data-label="Crew" style={{ textAlign: 'right', color: isEmpty ? 'var(--color-faint)' : 'var(--color-mid-gray)' }}>{isEmpty ? '—' : <Private>{fmt(m.crewCosts)}</Private>}</td>
+                            <td data-label="Expenses" style={{ textAlign: 'right', color: isEmpty ? 'var(--color-faint)' : 'var(--color-mid-gray)' }}>{isEmpty ? '—' : <Private>{fmt(m.expenses)}</Private>}</td>
                             <td data-label="Net" style={{ textAlign: 'right', fontWeight: 600, color: isEmpty ? 'var(--color-faint)' : m.netProfit < 0 ? 'var(--color-ember)' : 'var(--color-ink)' }}>
-                              {isEmpty ? '—' : fmt(m.netProfit)}
+                              {isEmpty ? '—' : <Private>{fmt(m.netProfit)}</Private>}
                             </td>
                           </tr>
                         );
                       })}
                       <tr style={{ borderTop: '2px solid var(--border)', fontWeight: 700 }}>
                         <td data-label="Month">TOTAL</td>
-                        <td data-label="Revenue" style={{ textAlign: 'right' }}>{fmt(plData.totals.revenue)}</td>
-                        <td data-label="Crew" style={{ textAlign: 'right', color: 'var(--color-mid-gray)' }}>{fmt(plData.totals.crewCosts)}</td>
-                        <td data-label="Expenses" style={{ textAlign: 'right', color: 'var(--color-mid-gray)' }}>{fmt(plData.totals.expenses)}</td>
-                        <td data-label="Net" style={{ textAlign: 'right', fontWeight: 700, color: plData.totals.netProfit < 0 ? 'var(--color-ember)' : 'var(--color-ink)' }}>{fmt(plData.totals.netProfit)}</td>
+                        <td data-label="Revenue" style={{ textAlign: 'right' }}>{<Private>{fmt(plData.totals.revenue)}</Private>}</td>
+                        <td data-label="Crew" style={{ textAlign: 'right', color: 'var(--color-mid-gray)' }}>{<Private>{fmt(plData.totals.crewCosts)}</Private>}</td>
+                        <td data-label="Expenses" style={{ textAlign: 'right', color: 'var(--color-mid-gray)' }}>{<Private>{fmt(plData.totals.expenses)}</Private>}</td>
+                        <td data-label="Net" style={{ textAlign: 'right', fontWeight: 700, color: plData.totals.netProfit < 0 ? 'var(--color-ember)' : 'var(--color-ink)' }}>{<Private>{fmt(plData.totals.netProfit)}</Private>}</td>
                       </tr>
                     </tbody>
                   </table>
@@ -482,7 +483,7 @@ function ReceivablesTab() {
           {Object.entries(BUCKET_META).map(([key, meta]) => (
             <div key={key} className="card card-pad" style={{ borderTop: `3px solid ${meta.color}`, textAlign: 'center' }}>
               <div style={{ fontSize: '11px', color: 'var(--color-mid-gray)', marginBottom: '6px' }}>{meta.label}</div>
-              <div style={{ fontSize: '20px', fontWeight: 700, color: meta.color }}>{fmt(arData?.buckets[key] || 0)}</div>
+              <div style={{ fontSize: '20px', fontWeight: 700, color: meta.color }}>{<Private>{fmt(arData?.buckets[key] || 0)}</Private>}</div>
             </div>
           ))}
         </div>
@@ -491,7 +492,7 @@ function ReceivablesTab() {
         {arData?.total > 0 && (
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--overlay-03)', border: '1px solid var(--color-hairline)', borderRadius: '10px', padding: '12px 20px', marginBottom: '16px' }}>
             <span style={{ color: 'var(--color-mid-gray)', fontSize: '13px' }}>Total Outstanding</span>
-            <span style={{ fontWeight: 700, fontSize: '18px', color: 'var(--warning)' }}>{fmt(arData.total)}</span>
+            <span style={{ fontWeight: 700, fontSize: '18px', color: 'var(--warning)' }}>{<Private>{fmt(arData.total)}</Private>}</span>
           </div>
         )}
 
@@ -522,7 +523,7 @@ function ReceivablesTab() {
                       <tr key={i}>
                         <td data-label="Client" className="text-bold text-sm">{row.client_name || '—'}</td>
                         <td data-label="Project" className="text-sm text-2">{row.project_title}</td>
-                        <td data-label="Amount" style={{ textAlign: 'right', fontWeight: 700, color: 'var(--warning)' }}>{fmt(row.amount)}</td>
+                        <td data-label="Amount" style={{ textAlign: 'right', fontWeight: 700, color: 'var(--warning)' }}>{<Private>{fmt(row.amount)}</Private>}</td>
                         <td data-label="Days" style={{ textAlign: 'right', fontWeight: 600, color: meta.color, fontSize: '13px' }}>{row.days_aged}d</td>
                         <td data-label="Bucket">
                           <span style={{ fontSize: '11px', fontWeight: 600, color: meta.color, background: meta.bg, borderRadius: '6px', padding: '2px 8px' }}>
@@ -586,11 +587,11 @@ function ReceivablesTab() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
               <div className="card card-pad" style={{ borderLeft: '3px solid var(--ember-line-strong)' }}>
                 <div style={{ fontSize: '11px', color: 'var(--color-mid-gray)', marginBottom: '4px' }}>{taxLabel} Owed (Unpaid)</div>
-                <div style={{ fontSize: '22px', fontWeight: 700, color: 'var(--color-ember)' }}>{fmt(taxOwed)}</div>
+                <div style={{ fontSize: '22px', fontWeight: 700, color: 'var(--color-ember)' }}>{<Private>{fmt(taxOwed)}</Private>}</div>
               </div>
               <div className="card card-pad" style={{ borderLeft: '3px solid var(--color-ink)' }}>
                 <div style={{ fontSize: '11px', color: 'var(--color-mid-gray)', marginBottom: '4px' }}>{taxLabel} Paid</div>
-                <div style={{ fontSize: '22px', fontWeight: 700, color: 'var(--color-ink)' }}>{fmt(taxPaid)}</div>
+                <div style={{ fontSize: '22px', fontWeight: 700, color: 'var(--color-ink)' }}>{<Private>{fmt(taxPaid)}</Private>}</div>
               </div>
             </div>
 
@@ -613,9 +614,9 @@ function ReceivablesTab() {
                     {taxRecords.map(r => (
                       <tr key={r.id}>
                         <td data-label="Invoice" className="text-sm">{r.invoice_number || `#${r.id}`}</td>
-                        <td data-label="Total" style={{ textAlign: 'right' }}>{fmt(r.invoice_total)}</td>
+                        <td data-label="Total" style={{ textAlign: 'right' }}>{<Private>{fmt(r.invoice_total)}</Private>}</td>
                         <td data-label="Rate" style={{ textAlign: 'right', color: 'var(--color-mid-gray)' }}>{r.tax_rate_applied}%</td>
-                        <td data-label={taxLabel} style={{ textAlign: 'right', fontWeight: 600, color: r.tax_status === 'paid' ? 'var(--color-ink)' : 'var(--warning)' }}>{fmt(r.tax_amount)}</td>
+                        <td data-label={taxLabel} style={{ textAlign: 'right', fontWeight: 600, color: r.tax_status === 'paid' ? 'var(--color-ink)' : 'var(--warning)' }}>{<Private>{fmt(r.tax_amount)}</Private>}</td>
                         <td data-label="Status">
                           <span className={`badge badge-${r.tax_status === 'paid' ? 'paid' : 'unpaid'}`}>{r.tax_status}</span>
                         </td>

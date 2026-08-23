@@ -494,6 +494,9 @@ function initDb() {
     'ALTER TABLE mind_accounts ADD COLUMN password_iv TEXT',
     "ALTER TABLE mind_accounts ADD COLUMN auth_method TEXT DEFAULT 'password'",
     'ALTER TABLE client_payments ADD COLUMN invoice_id INTEGER',
+    // Optional pipeline value on a lead. Nullable, never required: a lead can
+    // sit in the rail with no figure attached. Used to size the lead chips.
+    'ALTER TABLE leads ADD COLUMN value REAL',
   ].forEach(sql => { try { db.exec(sql); } catch (_) {} });
 
   // collection_share_links table

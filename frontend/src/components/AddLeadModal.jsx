@@ -15,6 +15,7 @@ export default function AddLeadModal({ onClose, onSaved, lead: existingLead }) {
     category_id: isEdit ? (existingLead.category_id ? String(existingLead.category_id) : '') : '',
     category_name_manual: isEdit ? (existingLead.category_name_manual || '') : '',
     note: isEdit ? (existingLead.note || '') : '',
+    value: isEdit ? (existingLead.value != null ? String(existingLead.value) : '') : '',
     contacted_at: isEdit ? (existingLead.contacted_at || new Date().toISOString().split('T')[0]) : new Date().toISOString().split('T')[0],
   });
   const [saving, setSaving] = useState(false);
@@ -41,6 +42,7 @@ export default function AddLeadModal({ onClose, onSaved, lead: existingLead }) {
         category_id: form.category_id || null,
         category_name_manual: form.category_name_manual || null,
         note: form.note || null,
+        value: form.value === '' ? null : Number(form.value),
         contacted_at: form.contacted_at,
       };
       const lead = isEdit
@@ -108,6 +110,20 @@ export default function AddLeadModal({ onClose, onSaved, lead: existingLead }) {
               </optgroup>
             ))}
           </select>
+        </div>
+
+        {/* Estimated value, optional, blank allowed */}
+        <div className="form-row">
+          <label className="form-label">Estimated value <span style={{ color: 'var(--color-mid-gray)', fontWeight: 400 }}>(optional)</span></label>
+          <input
+            type="number"
+            className="input"
+            value={form.value}
+            onChange={e => f('value', e.target.value)}
+            placeholder="Leave blank if unknown"
+            min="0"
+            step="any"
+          />
         </div>
 
         {/* Note */}

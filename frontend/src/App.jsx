@@ -29,6 +29,7 @@ import Production from './pages/Production';
 import Shotlists from './pages/Shotlists';
 import ShotlistEditor from './pages/ShotlistEditor';
 import { AgencyProvider } from './context/AgencyContext';
+import { PrivacyProvider } from './context/PrivacyContext';
 
 function applyFavicon() {
   const favicon = localStorage.getItem('massiv_favicon');
@@ -72,6 +73,7 @@ export default function App() {
 
   return (
     <AgencyProvider>
+      <PrivacyProvider>
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/expense/:token" element={<PublicExpense />} />
@@ -111,6 +113,7 @@ export default function App() {
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
+      </PrivacyProvider>
     </AgencyProvider>
   );
 }
