@@ -9,6 +9,7 @@ import {
 import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { api, fmt, fmtDate } from '../api';
 import StatCard from '../components/StatCard';
+import ProjectTimeline from '../components/ProjectTimeline';
 import { Private, usePrivacy } from '../context/PrivacyContext';
 
 function getCurrentMonth() {
@@ -90,10 +91,42 @@ export default function Dashboard() {
     }).catch(() => setLoading(false));
   }, []);
 
+  const reloadProjects = useCallback(() => {
+    return api.get('/projects').then(p => setProjects(p.filter(x => x.status !== 'completed')));
+  }, []);
+
   const reload = useCallback(() => {
-    api.get('/projects').then(p => setProjects(p.filter(x => x.status !== 'completed')));
+    reloadProjects();
     api.get(`/finances/stats?month=${currentMonth}`).then(s => setStats(s));
-  }, [currentMonth]);
+  }, [currentMonth, reloadProjects]);
+
+  // Optimistic deadline drag: update in place, PATCH through the existing
+  // project update endpoint (which re-syncs the calendar), roll back on failure.
+  const onPatchDeadline = useCallback(async (p, iso) => {
+    setProjects(list => list.map(x => x.id === p.id ? { ...x, deadline: iso } : x));
+    try {
+      await api.put(`/projects/${p.id}`, {
+        client_id: p.client_id ?? null,
+        title: p.title,
+        category_id: p.category_id ?? null,
+        status: p.status,
+        client_budget: p.client_budget ?? 0,
+        agreed_budget: p.agreed_budget ?? 0,
+        notes: p.notes ?? null,
+        shoot_date: p.shoot_date ?? null,
+        shoot_days: p.shoot_days ?? 1,
+        shoot_location: p.shoot_location ?? null,
+        location_name: p.location_name ?? null,
+        location_lat: p.location_lat ?? null,
+        location_lng: p.location_lng ?? null,
+        shoot_start_time: p.shoot_start_time ?? null,
+        shoot_end_time: p.shoot_end_time ?? null,
+        deadline: iso,
+      });
+    } catch (_) {
+      setProjects(list => list.map(x => x.id === p.id ? { ...x, deadline: p.deadline } : x));
+    }
+  }, []);
 
   function enterEditMode() { setEditMode(true); }
   function cancelEdit() { setLayout(savedLayout); setEditMode(false); }
@@ -212,6 +245,7 @@ export default function Dashboard() {
             expenses={expenses}
             chartData={chartData}
             leads={leads}
+            onPatchDeadline={onPatchDeadline}
             setActiveModal={setActiveModal}
             currentMonth={currentMonth}
           />
@@ -293,7 +327,7 @@ function ChartTooltip({ active, payload, label, labelFmt }) {
 }
 
 /* ─── Widget content ─── */
-function WidgetContent({ id, stats, projects, expenses, chartData, leads, setActiveModal }) {
+function WidgetContent({ id, stats, projects, expenses, chartData, leads, onPatchDeadline, setActiveModal }) {
   switch (id) {
 
     case 'stat_cards':
@@ -381,13 +415,9 @@ function WidgetContent({ id, stats, projects, expenses, chartData, leads, setAct
             <span className="section-title">Active Projects</span>
             <Link to="/projects" className="btn btn-ghost btn-sm">View All</Link>
           </div>
-          {projects.length === 0 ? (
-            <div className="card card-pad empty">No active projects</div>
-          ) : (
-            <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-              {projects.map(p => <ProjectDashCard key={p.id} p={p} />)}
-            </div>
-          )}
+          <div className="card card-pad">
+            <ProjectTimeline projects={projects} onPatchDeadline={onPatchDeadline} />
+          </div>
         </div>
       );
 
@@ -516,53 +546,6 @@ function DashLeadCard({ lead }) {
   );
 }
 
-/* ─── Project card inside active projects section ─── */
-function ProjectDashCard({ p }) {
-  const phaseProgress = p.total_phases > 0 ? Math.round((p.completed_phases / p.total_phases) * 100) : 0;
-  const receivedPct   = p.agreed_budget > 0 ? Math.min(100, Math.round((p.total_received / p.agreed_budget) * 100)) : 0;
-
-  return (
-    <Link to={`/projects/${p.id}`} style={{ textDecoration: 'none', display: 'block' }}>
-      <div className="card project-dash-card">
-        <div className="flex-between mb-2">
-          <span style={{ fontWeight: 700, fontSize: '14px', flex: 1, minWidth: 0, marginRight: '8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {p.title}
-          </span>
-          <StatusBadge status={p.status} />
-        </div>
-
-        <div style={{ fontSize: '12px', color: 'var(--color-mid-gray)', marginBottom: '10px' }}>
-          {p.client_name || 'No client'}
-          {p.category_name && <span style={{ color: 'var(--color-mid-gray)', margin: '0 5px' }}>·</span>}
-          {p.category_name && <span>{p.category_name}</span>}
-        </div>
-
-        {/* Phase progress */}
-        <div className="flex-between" style={{ fontSize: '11px', color: 'var(--color-mid-gray)', marginBottom: '4px' }}>
-          <span>{p.current_phase || 'No active phase'}</span>
-          <span>{p.completed_phases}/{p.total_phases} phases</span>
-        </div>
-        <div className="progress-bar" style={{ marginBottom: '10px' }}>
-          <div className="progress-fill" style={{ width: `${phaseProgress}%` }} />
-        </div>
-
-        {/* Budget vs received */}
-        {p.agreed_budget > 0 && (
-          <>
-            <div className="flex-between" style={{ fontSize: '11px', color: 'var(--color-mid-gray)', marginBottom: '4px' }}>
-              <span>Received</span>
-              <span>{fmt(p.total_received)} <span style={{ color: 'var(--color-mid-gray)' }}>/ {fmt(p.agreed_budget)}</span></span>
-            </div>
-            <div className="mini-bar-track">
-              <div className="mini-bar-fill mini-bar-received" style={{ width: `${receivedPct}%` }} />
-            </div>
-          </>
-        )}
-      </div>
-    </Link>
-  );
-}
-
 /* ─── Expense bars ─── */
 function ExpenseBars({ expenses }) {
   const maxTotal = Math.max(...expenses.map(e => e.total), 1);
@@ -583,17 +566,6 @@ function ExpenseBars({ expenses }) {
   );
 }
 
-/* ─── Status badge ─── */
-function StatusBadge({ status }) {
-  const map = {
-    'development':     'badge-development',
-    'pre-production':  'badge-pre-production',
-    'production':      'badge-production',
-    'post-production': 'badge-post-production',
-    'completed':       'badge-completed',
-  };
-  return <span className={`badge ${map[status] || 'badge-pending'}`}>{status?.replace(/-/g, ' ')}</span>;
-}
 
 /* ─── Dashboard detail modals ─── */
 function DashboardModal({ type, month, projects, onClose, onReload }) {
