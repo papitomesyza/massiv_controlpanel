@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Plus, FileText, Trash2, Download, Pencil, Receipt } from 'lucide-react';
 import { api, fmt, fmtDate } from '../api';
+import { Private } from '../context/PrivacyContext';
 import { useNavigate } from 'react-router-dom';
 import BudgetWizard from '../components/BudgetWizard';
 
@@ -134,7 +135,7 @@ export default function Budgets() {
                     <td data-label="Project" className="text-2">{b.project_title || <span style={{ color: 'var(--color-mid-gray)' }}>—</span>}</td>
                     <td data-label="Category" className="text-2" style={{ fontSize: '12px' }}>{b.category}</td>
                     <td data-label="Client" className="text-2">{b.client_name || <span style={{ color: 'var(--color-mid-gray)' }}>—</span>}</td>
-                    <td data-label="Total" style={{ fontWeight: 600 }}>{fmt(b.total)}</td>
+                    <td data-label="Total" style={{ fontWeight: 600 }}>{<Private>{fmt(b.total)}</Private>}</td>
                     <td data-label="Status">{statusBadge(b.status)}</td>
                     <td data-label="Date" className="text-2" style={{ fontSize: '12px' }}>{fmtDate(b.created_at?.split('T')[0] || b.created_at?.split(' ')[0])}</td>
                     <td className="mobile-actions">

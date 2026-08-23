@@ -5,6 +5,7 @@ import {
   AlertCircle, FileText,
 } from 'lucide-react';
 import { api, fmt, fmtDate } from '../api';
+import { Private } from '../context/PrivacyContext';
 import InvoiceBuilder from '../components/InvoiceBuilder';
 
 const TABS = [
@@ -164,7 +165,7 @@ function InvoicesListTab({ onEdit, refresh }) {
                         {fmtDate(inv.due_date) || '—'}
                       </td>
                       <td data-label="Amount" style={{ textAlign: 'right', fontWeight: 700, color: 'var(--accent)' }}>
-                        {fmt(inv.amount_due)}
+                        {<Private>{fmt(inv.amount_due)}</Private>}
                       </td>
                       <td data-label="Status">
                         <StatusBadge status={inv.status} dueDate={inv.due_date} />
@@ -584,7 +585,7 @@ function InvoiceSetupTab() {
                     <td className="text-sm" style={{ color: 'var(--accent)' }}>{s.code || '—'}</td>
                     <td className="text-sm text-bold">{s.name}</td>
                     <td className="text-sm text-2">{s.unit}</td>
-                    <td style={{ textAlign: 'right', color: 'var(--accent)', fontWeight: 600 }}>{fmt(s.default_price)}</td>
+                    <td style={{ textAlign: 'right', color: 'var(--accent)', fontWeight: 600 }}>{<Private>{fmt(s.default_price)}</Private>}</td>
                     <td>
                       <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
                         <button className="btn btn-ghost btn-sm" onClick={() => startEditSvc(s)}><Pencil size={12} /></button>

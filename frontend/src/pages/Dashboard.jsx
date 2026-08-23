@@ -9,6 +9,7 @@ import {
 import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { api, fmt, fmtDate } from '../api';
 import StatCard from '../components/StatCard';
+import { Private, usePrivacy } from '../context/PrivacyContext';
 
 function getCurrentMonth() {
   const d = new Date();
@@ -52,6 +53,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [activeModal, setActiveModal] = useState(null);
   const currentMonth = getCurrentMonth();
+  const { hidden, toggle } = usePrivacy();
 
   const [layout, setLayout] = useState(DEFAULT_LAYOUT);
   const [savedLayout, setSavedLayout] = useState(DEFAULT_LAYOUT);
@@ -155,7 +157,7 @@ export default function Dashboard() {
           }}>
             <GripHorizontal size={16} style={{ color: 'var(--color-mid-gray)' }} />
             <span style={{ color: 'var(--color-mid-gray)', fontSize: '13px', flex: 1 }}>
-              {WIDGET_DEFS.find(d => d.id === w.id)?.label} — Hidden
+              {WIDGET_DEFS.find(d => d.id === w.id)?.label}, hidden
             </span>
             <button className="btn btn-ghost btn-sm" onClick={() => toggleVisibility(w.id)} style={{ fontSize: '12px' }}>
               <EyeOff size={13} /> Show
@@ -225,6 +227,16 @@ export default function Dashboard() {
             })()}</div>
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={toggle}
+            aria-label={hidden ? 'Reveal figures' : 'Hide figures'}
+            aria-pressed={hidden}
+            title={hidden ? 'Reveal figures (Shift+H)' : 'Hide figures (Shift+H)'}
+            style={{ padding: '6px 8px' }}
+          >
+            {hidden ? <EyeOff size={15} /> : <Eye size={15} />}
+          </button>
           {editMode ? (
             <>
               <button className="btn btn-ghost btn-sm" onClick={cancelEdit}>Cancel</button>
@@ -282,7 +294,7 @@ function WidgetContent({ id, stats, projects, expenses, chartData, leads, setAct
         <div className="stats-grid">
           <StatCard
             label="Active Projects"
-            value={projects.length}
+            value={<Private>{projects.length}</Private>}
             icon={<Activity size={16} />}
             iconTint="purple"
             sub={`${projects.length === 1 ? '1 project' : `${projects.length} projects`} in progress`}
@@ -290,7 +302,7 @@ function WidgetContent({ id, stats, projects, expenses, chartData, leads, setAct
           />
           <StatCard
             label="Revenue This Month"
-            value={fmt(stats?.revenue)}
+            value={<Private>{fmt(stats?.revenue)}</Private>}
             icon={<TrendingUp size={16} />}
             onClick={() => setActiveModal('revenue')}
             gradient
@@ -299,7 +311,7 @@ function WidgetContent({ id, stats, projects, expenses, chartData, leads, setAct
           />
           <StatCard
             label="Profit This Month"
-            value={fmt(stats?.netProfit)}
+            value={<Private>{fmt(stats?.netProfit)}</Private>}
             danger={stats?.netProfit < 0}
             icon={<DollarSign size={16} />}
             iconTint={stats?.netProfit < 0 ? 'danger' : 'purple'}
@@ -309,7 +321,7 @@ function WidgetContent({ id, stats, projects, expenses, chartData, leads, setAct
           />
           <StatCard
             label="Pending Payments"
-            value={fmt(stats?.outstanding)}
+            value={<Private>{fmt(stats?.outstanding)}</Private>}
             danger={stats?.outstanding > 0}
             icon={<AlertCircle size={16} />}
             iconTint={stats?.outstanding > 0 ? 'danger' : 'success'}
@@ -318,7 +330,7 @@ function WidgetContent({ id, stats, projects, expenses, chartData, leads, setAct
           />
           <StatCard
             label="Upcoming"
-            value={fmt(stats?.upcoming)}
+            value={<Private>{fmt(stats?.upcoming)}</Private>}
             icon={<Clock size={16} />}
             iconTint="blue"
             sub={stats?.upcoming > 0 ? 'Future shoots booked' : 'No upcoming balance'}
@@ -326,7 +338,7 @@ function WidgetContent({ id, stats, projects, expenses, chartData, leads, setAct
           />
           <StatCard
             label="Unpaid Crew"
-            value={fmt(stats?.unpaidCrew)}
+            value={<Private>{fmt(stats?.unpaidCrew)}</Private>}
             danger={stats?.unpaidCrew > 0}
             icon={<UserX size={16} />}
             iconTint={stats?.unpaidCrew > 0 ? 'danger' : 'success'}
@@ -341,21 +353,21 @@ function WidgetContent({ id, stats, projects, expenses, chartData, leads, setAct
         <div className="stats-grid-3">
           <StatCard
             label="Completed This Month"
-            value={stats?.completedThisMonth ?? 0}
+            value={<Private>{stats?.completedThisMonth ?? 0}</Private>}
             icon={<FolderCheck size={16} />}
             iconTint="success"
             sub="projects wrapped"
           />
           <StatCard
             label="Avg Project Value"
-            value={fmt(stats?.avgProjectValue)}
+            value={<Private>{fmt(stats?.avgProjectValue)}</Private>}
             icon={<BarChart2 size={16} />}
             iconTint="purple"
             sub="completed projects"
           />
           <StatCard
             label="Crew Paid (Month)"
-            value={fmt(stats?.crewCosts)}
+            value={<Private>{fmt(stats?.crewCosts)}</Private>}
             icon={<UsersIcon size={16} />}
             iconTint="orange"
             sub="cash basis"
@@ -626,7 +638,7 @@ function DashboardModal({ type, month, projects, onClose, onReload }) {
     'revenue':         'Revenue This Month',
     'profit':          'Profit This Month',
     'outstanding':     'Pending Payments',
-    'upcoming':        'Upcoming — Future Shoots',
+    'upcoming':        'Upcoming, Future Shoots',
     'unpaid-crew':     'Unpaid Crew',
   };
 
@@ -648,9 +660,9 @@ function DashboardModal({ type, month, projects, onClose, onReload }) {
                     {data.map(p => (
                       <tr key={p.id}>
                         <td><Link to={`/projects/${p.id}`} className="link text-bold" onClick={onClose}>{p.title}</Link></td>
-                        <td className="text-2 text-sm">{p.client_name || '—'}</td>
-                        <td className="text-sm">{p.current_phase || '—'}</td>
-                        <td>{fmt(p.agreed_budget)}</td>
+                        <td className="text-2 text-sm">{p.client_name || '-'}</td>
+                        <td className="text-sm">{p.current_phase || '-'}</td>
+                        <td><Private>{fmt(p.agreed_budget)}</Private></td>
                       </tr>
                     ))}
                   </tbody>
@@ -667,8 +679,8 @@ function DashboardModal({ type, month, projects, onClose, onReload }) {
                     {data.map(row => (
                       <tr key={row.id}>
                         <td className="text-sm">{row.project_title}</td>
-                        <td className="text-2 text-sm">{row.client_name || '—'}</td>
-                        <td className="text-bold">{fmt(row.amount)}</td>
+                        <td className="text-2 text-sm">{row.client_name || '-'}</td>
+                        <td className="text-bold"><Private>{fmt(row.amount)}</Private></td>
                         <td className="text-2 text-sm">{fmtDate(row.date)}</td>
                       </tr>
                     ))}
@@ -677,7 +689,7 @@ function DashboardModal({ type, month, projects, onClose, onReload }) {
                 {data.length === 0 && <div className="empty">No received payments this month</div>}
                 {data.length > 0 && (
                   <div style={{ padding: '10px 12px', fontWeight: 700, borderTop: '1px solid var(--border)', textAlign: 'right' }}>
-                    Total: {fmt(data.reduce((s, r) => s + r.amount, 0))}
+                    Total: <Private>{fmt(data.reduce((s, r) => s + r.amount, 0))}</Private>
                   </div>
                 )}
               </div>
@@ -691,11 +703,11 @@ function DashboardModal({ type, month, projects, onClose, onReload }) {
                     {data.map(row => (
                       <tr key={row.id}>
                         <td className="text-sm">{row.title}</td>
-                        <td className="text-2 text-sm">{row.client_name || '—'}</td>
-                        <td>{fmt(row.revenue)}</td>
-                        <td className="text-2">{fmt(row.crew_cost)}</td>
-                        <td className="text-2">{fmt(row.expenses)}</td>
-                        <td className={row.net_profit < 0 ? 'text-danger text-bold' : 'text-bold'}>{fmt(row.net_profit ?? row.realized_profit)}</td>
+                        <td className="text-2 text-sm">{row.client_name || '-'}</td>
+                        <td><Private>{fmt(row.revenue)}</Private></td>
+                        <td className="text-2"><Private>{fmt(row.crew_cost)}</Private></td>
+                        <td className="text-2"><Private>{fmt(row.expenses)}</Private></td>
+                        <td className={row.net_profit < 0 ? 'text-danger text-bold' : 'text-bold'}><Private>{fmt(row.net_profit ?? row.realized_profit)}</Private></td>
                       </tr>
                     ))}
                   </tbody>
@@ -712,10 +724,10 @@ function DashboardModal({ type, month, projects, onClose, onReload }) {
                     {data.map(row => (
                       <tr key={row.id}>
                         <td><Link to={`/projects/${row.id}`} className="link text-bold" onClick={onClose}>{row.project_title}</Link></td>
-                        <td className="text-2 text-sm">{row.client_name || '—'}</td>
-                        <td className="text-sm">{fmt(row.agreed_budget)}</td>
-                        <td className="text-2 text-sm">{fmt(row.total_received)}</td>
-                        <td className="text-bold text-danger">{fmt(row.outstanding)}</td>
+                        <td className="text-2 text-sm">{row.client_name || '-'}</td>
+                        <td className="text-sm"><Private>{fmt(row.agreed_budget)}</Private></td>
+                        <td className="text-2 text-sm"><Private>{fmt(row.total_received)}</Private></td>
+                        <td className="text-bold text-danger"><Private>{fmt(row.outstanding)}</Private></td>
                       </tr>
                     ))}
                   </tbody>
@@ -723,7 +735,7 @@ function DashboardModal({ type, month, projects, onClose, onReload }) {
                 {data.length === 0 && <div className="empty">No pending payments</div>}
                 {data.length > 0 && (
                   <div style={{ padding: '10px 12px', fontWeight: 700, borderTop: '1px solid var(--border)', textAlign: 'right', color: 'var(--danger)' }}>
-                    Total Pending: {fmt(data.reduce((s, r) => s + r.outstanding, 0))}
+                    Total Pending: <Private>{fmt(data.reduce((s, r) => s + r.outstanding, 0))}</Private>
                   </div>
                 )}
               </div>
@@ -732,7 +744,7 @@ function DashboardModal({ type, month, projects, onClose, onReload }) {
             {type === 'upcoming' && (
               <div className="table-wrap">
                 <div style={{ padding: '8px 12px 4px', fontSize: '12px', color: 'var(--color-mid-gray)' }}>
-                  Future shoots with an unpaid balance — not yet due.
+                  Future shoots with an unpaid balance, not yet due.
                 </div>
                 <table>
                   <thead><tr><th>Project</th><th>Client</th><th>Budget</th><th>Received</th><th>Balance</th><th>Shoot Date</th></tr></thead>
@@ -740,10 +752,10 @@ function DashboardModal({ type, month, projects, onClose, onReload }) {
                     {data.map(row => (
                       <tr key={row.id}>
                         <td><Link to={`/projects/${row.id}`} className="link text-bold" onClick={onClose}>{row.project_title}</Link></td>
-                        <td className="text-2 text-sm">{row.client_name || '—'}</td>
-                        <td className="text-sm">{fmt(row.agreed_budget)}</td>
-                        <td className="text-2 text-sm">{fmt(row.total_received)}</td>
-                        <td className="text-bold" style={{ color: 'var(--color-mid-gray)' }}>{fmt(row.outstanding)}</td>
+                        <td className="text-2 text-sm">{row.client_name || '-'}</td>
+                        <td className="text-sm"><Private>{fmt(row.agreed_budget)}</Private></td>
+                        <td className="text-2 text-sm"><Private>{fmt(row.total_received)}</Private></td>
+                        <td className="text-bold" style={{ color: 'var(--color-mid-gray)' }}><Private>{fmt(row.outstanding)}</Private></td>
                         <td className="text-sm">{fmtDate(row.shoot_date)}</td>
                       </tr>
                     ))}
@@ -752,7 +764,7 @@ function DashboardModal({ type, month, projects, onClose, onReload }) {
                 {data.length === 0 && <div className="empty">No upcoming shoots with a balance</div>}
                 {data.length > 0 && (
                   <div style={{ padding: '10px 12px', fontWeight: 700, borderTop: '1px solid var(--border)', textAlign: 'right', color: 'var(--color-mid-gray)' }}>
-                    Total Expected: {fmt(data.reduce((s, r) => s + r.outstanding, 0))}
+                    Total Expected: <Private>{fmt(data.reduce((s, r) => s + r.outstanding, 0))}</Private>
                   </div>
                 )}
               </div>
@@ -767,10 +779,10 @@ function DashboardModal({ type, month, projects, onClose, onReload }) {
                       <tr key={row.id}>
                         <td className="text-sm text-bold">{row.crew_name}</td>
                         <td className="text-2 text-sm">{row.project_title}</td>
-                        <td className="text-2 text-sm">{row.role_on_project || '—'}</td>
-                        <td>{fmt(row.total_cost)}</td>
-                        <td className="text-2">{fmt(row.payment_amount)}</td>
-                        <td className="text-danger">{fmt(row.remaining)}</td>
+                        <td className="text-2 text-sm">{row.role_on_project || '-'}</td>
+                        <td><Private>{fmt(row.total_cost)}</Private></td>
+                        <td className="text-2"><Private>{fmt(row.payment_amount)}</Private></td>
+                        <td className="text-danger"><Private>{fmt(row.remaining)}</Private></td>
                         <td>
                           <button className="btn btn-ghost btn-sm" style={{ fontSize: '11px' }} onClick={() => markPaid(row)}>
                             <CheckCircle size={12} /> Mark Paid

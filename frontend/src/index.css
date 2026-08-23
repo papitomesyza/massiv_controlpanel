@@ -3479,3 +3479,19 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 }
 .shotlist-library-row .input { font-size: 11px; padding: 3px 6px; }
 .shotlist-library-used { font-size: 10px; color: var(--text-muted); }
+
+/* ============================================================
+   PRIVACY MODE
+   Blur sensitive values without swapping the text, so the real
+   string stays underneath and nothing shifts on toggle.
+   ============================================================ */
+.private-value {
+  transition: filter 0.28s ease, opacity 0.28s ease;
+}
+.private-value.is-hidden {
+  filter: blur(8px);
+  opacity: 0.72;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
