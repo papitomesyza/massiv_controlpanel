@@ -3742,3 +3742,28 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 }
 .trend-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
 
+
+/* ============================================================
+   EXPENSE DONUT
+   ============================================================ */
+.donut-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.donut-chart { position: relative; width: 100%; max-width: 320px; }
+.donut-center {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  pointer-events: none;
+}
+.donut-center-label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px;
+  color: var(--color-mid-gray);
+}
+.donut-center-value { font-size: 20px; font-weight: 700; color: var(--color-ink); }
+.donut-legend {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 12px;
+  margin-top: 4px;
+}
+.donut-legend-item {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; color: var(--color-mid-gray);
+}
+.donut-dot { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }

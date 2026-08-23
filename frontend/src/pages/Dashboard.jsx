@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import {
   ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell,
 } from 'recharts';
 import { api, fmt, fmtDate } from '../api';
 import StatCard from '../components/StatCard';
@@ -473,7 +474,7 @@ function WidgetContent({ id, stats, projects, expenses, chartData, leads, setLea
             <div className="card card-pad empty">No expenses recorded</div>
           ) : (
             <div className="card card-pad">
-              <ExpenseBars expenses={expenses} />
+              <ExpenseDonut expenses={expenses} />
             </div>
           )}
         </div>
@@ -674,23 +675,60 @@ function LeadDrawer({ lead, onClose }) {
   );
 }
 
-/* ─── Expense bars ─── */
-function ExpenseBars({ expenses }) {
-  const maxTotal = Math.max(...expenses.map(e => e.total), 1);
+/* ─── Expense donut ─── */
+function ExpenseDonut({ expenses }) {
+  const total = expenses.reduce((s, e) => s + (Number(e.total) || 0), 0);
+  const n = expenses.length;
+  const shade = i => `color-mix(in srgb, var(--color-ink) ${Math.round(88 - (i * (66 / Math.max(1, n - 1))))}%, transparent)`;
+
   return (
-    <>
-      {expenses.map((e, i) => (
-        <div key={i} className="expense-bar-row">
-          <div className="expense-bar-header">
-            <span className="expense-bar-name">{e.name}</span>
-            <span className="expense-bar-amt">{fmt(e.total)}</span>
-          </div>
-          <div className="expense-bar-track">
-            <div className="expense-bar-fill" style={{ width: `${(e.total / maxTotal) * 100}%` }} />
-          </div>
+    <div className="donut-wrap">
+      <div className="donut-chart">
+        <ResponsiveContainer width="100%" height={220}>
+          <PieChart>
+            <Pie
+              data={expenses}
+              dataKey="total"
+              nameKey="name"
+              innerRadius={62}
+              outerRadius={92}
+              paddingAngle={1.5}
+              stroke="var(--surface-card)"
+              strokeWidth={2}
+            >
+              {expenses.map((e, i) => <Cell key={i} fill={shade(i)} />)}
+            </Pie>
+            <Tooltip content={<DonutTooltip />} />
+          </PieChart>
+        </ResponsiveContainer>
+        <div className="donut-center">
+          <span className="donut-center-label">Total</span>
+          <span className="donut-center-value"><Private>{fmt(total)}</Private></span>
         </div>
-      ))}
-    </>
+      </div>
+      <div className="donut-legend">
+        {expenses.map((e, i) => (
+          <span key={i} className="donut-legend-item">
+            <span className="donut-dot" style={{ background: shade(i) }} />
+            {e.name}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DonutTooltip({ active, payload }) {
+  if (!active || !payload?.length) return null;
+  const row = payload[0];
+  return (
+    <div style={{
+      background: 'var(--color-surface-alt)', border: '1px solid var(--color-hairline)',
+      borderRadius: '10px', padding: '8px 12px', fontSize: '12px',
+    }}>
+      <div style={{ color: 'var(--color-mid-gray)', marginBottom: '3px' }}>{row.name}</div>
+      <div style={{ color: 'var(--color-ink)', fontWeight: 600 }}><Private>{fmt(row.value)}</Private></div>
+    </div>
   );
 }
 
