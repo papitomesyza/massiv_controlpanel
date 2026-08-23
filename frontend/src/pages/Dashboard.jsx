@@ -297,7 +297,6 @@ function WidgetContent({ id, stats, projects, expenses, chartData, leads, setAct
             value={<Private>{projects.length}</Private>}
             icon={<Activity size={16} />}
             iconTint="purple"
-            sub={`${projects.length === 1 ? '1 project' : `${projects.length} projects`} in progress`}
             onClick={() => setActiveModal('active-projects')}
           />
           <StatCard
@@ -306,8 +305,6 @@ function WidgetContent({ id, stats, projects, expenses, chartData, leads, setAct
             icon={<TrendingUp size={16} />}
             onClick={() => setActiveModal('revenue')}
             gradient
-            sparkline={chartData}
-            sparklineKey="revenue"
           />
           <StatCard
             label="Profit This Month"
@@ -316,8 +313,6 @@ function WidgetContent({ id, stats, projects, expenses, chartData, leads, setAct
             icon={<DollarSign size={16} />}
             iconTint={stats?.netProfit < 0 ? 'danger' : 'purple'}
             onClick={() => setActiveModal('profit')}
-            sparkline={chartData}
-            sparklineKey="profit"
           />
           <StatCard
             label="Pending Payments"
@@ -325,7 +320,6 @@ function WidgetContent({ id, stats, projects, expenses, chartData, leads, setAct
             danger={stats?.outstanding > 0}
             icon={<AlertCircle size={16} />}
             iconTint={stats?.outstanding > 0 ? 'danger' : 'success'}
-            sub={stats?.outstanding > 0 ? 'Awaiting collection' : 'All collected'}
             onClick={() => setActiveModal('outstanding')}
           />
           <StatCard
@@ -333,7 +327,6 @@ function WidgetContent({ id, stats, projects, expenses, chartData, leads, setAct
             value={<Private>{fmt(stats?.upcoming)}</Private>}
             icon={<Clock size={16} />}
             iconTint="blue"
-            sub={stats?.upcoming > 0 ? 'Future shoots booked' : 'No upcoming balance'}
             onClick={() => setActiveModal('upcoming')}
           />
           <StatCard
@@ -342,7 +335,6 @@ function WidgetContent({ id, stats, projects, expenses, chartData, leads, setAct
             danger={stats?.unpaidCrew > 0}
             icon={<UserX size={16} />}
             iconTint={stats?.unpaidCrew > 0 ? 'danger' : 'success'}
-            sub={stats?.unpaidCrew > 0 ? 'Pending payroll' : 'Crew paid up'}
             onClick={() => setActiveModal('unpaid-crew')}
           />
         </div>
@@ -356,21 +348,18 @@ function WidgetContent({ id, stats, projects, expenses, chartData, leads, setAct
             value={<Private>{stats?.completedThisMonth ?? 0}</Private>}
             icon={<FolderCheck size={16} />}
             iconTint="success"
-            sub="projects wrapped"
           />
           <StatCard
             label="Avg Project Value"
             value={<Private>{fmt(stats?.avgProjectValue)}</Private>}
             icon={<BarChart2 size={16} />}
             iconTint="purple"
-            sub="completed projects"
           />
           <StatCard
             label="Crew Paid (Month)"
             value={<Private>{fmt(stats?.crewCosts)}</Private>}
             icon={<UsersIcon size={16} />}
             iconTint="orange"
-            sub="cash basis"
           />
         </div>
       );
