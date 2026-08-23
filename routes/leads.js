@@ -19,17 +19,18 @@ router.get('/', (req, res) => {
 
 // POST /api/leads — create a new lead
 router.post('/', (req, res) => {
-  const { client_id, client_name_manual, category_id, category_name_manual, note, contacted_at } = req.body;
+  const { client_id, client_name_manual, category_id, category_name_manual, note, contacted_at, value } = req.body;
   const result = db.prepare(`
-    INSERT INTO leads (client_id, client_name_manual, category_id, category_name_manual, note, contacted_at)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO leads (client_id, client_name_manual, category_id, category_name_manual, note, contacted_at, value)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(
     client_id || null,
     client_name_manual || null,
     category_id || null,
     category_name_manual || null,
     note || null,
-    contacted_at || new Date().toISOString().split('T')[0]
+    contacted_at || new Date().toISOString().split('T')[0],
+    value === undefined || value === null || value === '' ? null : Number(value)
   );
   const lead = db.prepare(`
     SELECT l.*,
@@ -45,11 +46,11 @@ router.post('/', (req, res) => {
 
 // PUT /api/leads/:id — update editable fields
 router.put('/:id', (req, res) => {
-  const { client_id, client_name_manual, category_id, category_name_manual, note, contacted_at } = req.body;
+  const { client_id, client_name_manual, category_id, category_name_manual, note, contacted_at, value } = req.body;
   const existing = db.prepare('SELECT id FROM leads WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Lead not found' });
   db.prepare(`
-    UPDATE leads SET client_id=?, client_name_manual=?, category_id=?, category_name_manual=?, note=?, contacted_at=? WHERE id=?
+    UPDATE leads SET client_id=?, client_name_manual=?, category_id=?, category_name_manual=?, note=?, contacted_at=?, value=? WHERE id=?
   `).run(
     client_id || null,
     client_name_manual || null,
@@ -57,6 +58,7 @@ router.put('/:id', (req, res) => {
     category_name_manual || null,
     note || null,
     contacted_at || new Date().toISOString().split('T')[0],
+    value === undefined || value === null || value === '' ? null : Number(value),
     req.params.id
   );
   const lead = db.prepare(`
