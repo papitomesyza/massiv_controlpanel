@@ -17,26 +17,33 @@ function getCurrentMonth() {
 }
 
 const WIDGET_DEFS = [
-  { id: 'stat_cards',    label: 'Revenue & KPI Stats',      cols: 12 },
-  { id: 'metric_cards',  label: 'Performance Metrics',      cols: 12 },
-  { id: 'pending_leads', label: 'Pending Leads',            cols: 12 },
-  { id: 'active_expenses', label: 'Projects & Expenses',    cols: 12 },
-  { id: 'charts',        label: 'Revenue & Expense Trends', cols: 12 },
+  { id: 'stat_cards',      label: 'Revenue & KPI Stats',      cols: 12 },
+  { id: 'active_projects', label: 'Active Projects',          cols: 12 },
+  { id: 'pending_leads',   label: 'Pending Leads',            cols: 12 },
+  { id: 'metric_cards',    label: 'Performance Metrics',      cols: 12 },
+  { id: 'charts',          label: 'Revenue & Expense Trends', cols: 12 },
+  { id: 'top_expenses',    label: 'Top Expense Categories',   cols: 12 },
 ];
+const VALID_IDS = new Set(WIDGET_DEFS.map(w => w.id));
 
-const DEFAULT_LAYOUT = WIDGET_DEFS.map((w, i) => ({ id: w.id, visible: true, position: i }));
+const DEFAULT_ORDER = ['stat_cards', 'active_projects', 'pending_leads', 'metric_cards', 'charts', 'top_expenses'];
+const DEFAULT_LAYOUT = DEFAULT_ORDER.map((id, i) => ({ id, visible: true, position: i }));
 
 function parseLayout(raw) {
   try {
     if (!raw) return DEFAULT_LAYOUT;
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return DEFAULT_LAYOUT;
-    // Ensure all widget IDs from WIDGET_DEFS are present (add new ones at end)
-    const existing = new Set(parsed.map(w => w.id));
-    const maxPos = parsed.reduce((m, w) => Math.max(m, w.position), -1);
-    const merged = [...parsed];
-    WIDGET_DEFS.forEach((def, i) => {
-      if (!existing.has(def.id)) merged.push({ id: def.id, visible: true, position: maxPos + 1 + i });
+    // Drop any widget id that no longer exists (e.g. the old active_expenses) so
+    // a layout saved before this change never renders nothing or throws.
+    const cleaned = parsed.filter(w => w && VALID_IDS.has(w.id));
+    const existing = new Set(cleaned.map(w => w.id));
+    const maxPos = cleaned.reduce((m, w) => Math.max(m, w.position), -1);
+    const merged = [...cleaned];
+    // Append any newly introduced widget ids that a saved layout is missing.
+    let n = 0;
+    WIDGET_DEFS.forEach(def => {
+      if (!existing.has(def.id)) merged.push({ id: def.id, visible: true, position: maxPos + 1 + n++ });
     });
     return merged;
   } catch (_) {
@@ -367,37 +374,36 @@ function WidgetContent({ id, stats, projects, expenses, chartData, leads, setAct
     case 'pending_leads':
       return <LeadsBand leads={leads} />;
 
-    case 'active_expenses':
+    case 'active_projects':
       return (
-        <div className="two-col">
-          {/* Active projects */}
-          <div>
-            <div className="section-header">
-              <span className="section-title">Active Projects</span>
-              <Link to="/projects" className="btn btn-ghost btn-sm">View All</Link>
-            </div>
-            {projects.length === 0 ? (
-              <div className="card card-pad empty">No active projects</div>
-            ) : (
-              <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 0, maxHeight: '540px', overflowY: 'auto' }}>
-                {projects.map(p => <ProjectDashCard key={p.id} p={p} />)}
-              </div>
-            )}
+        <div>
+          <div className="section-header">
+            <span className="section-title">Active Projects</span>
+            <Link to="/projects" className="btn btn-ghost btn-sm">View All</Link>
           </div>
+          {projects.length === 0 ? (
+            <div className="card card-pad empty">No active projects</div>
+          ) : (
+            <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+              {projects.map(p => <ProjectDashCard key={p.id} p={p} />)}
+            </div>
+          )}
+        </div>
+      );
 
-          {/* Top expense categories */}
-          <div>
-            <div className="section-header">
-              <span className="section-title">Top Expense Categories</span>
-            </div>
-            {expenses.length === 0 ? (
-              <div className="card card-pad empty">No expenses recorded</div>
-            ) : (
-              <div className="card card-pad">
-                <ExpenseBars expenses={expenses} />
-              </div>
-            )}
+    case 'top_expenses':
+      return (
+        <div>
+          <div className="section-header">
+            <span className="section-title">Top Expense Categories</span>
           </div>
+          {expenses.length === 0 ? (
+            <div className="card card-pad empty">No expenses recorded</div>
+          ) : (
+            <div className="card card-pad">
+              <ExpenseBars expenses={expenses} />
+            </div>
+          )}
         </div>
       );
 
