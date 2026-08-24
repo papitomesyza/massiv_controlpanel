@@ -1,8 +1,11 @@
-FROM node:20-alpine
+FROM node:20-slim
 
-RUN apk add --no-cache python3 make g++
+RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+
+RUN npm config set fetch-retries 5 && npm config set fetch-retry-maxtimeout 120000
 
 COPY package*.json ./
 RUN npm install
