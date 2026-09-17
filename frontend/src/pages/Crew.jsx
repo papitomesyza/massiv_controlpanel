@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, ChevronDown, ChevronRight, Trash2, Edit2, Archive, Building2, User, MessageCircle, FileDown, X } from 'lucide-react';
 import { api, fmt } from '../api';
+import { Private } from '../context/PrivacyContext';
 import Modal from '../components/Modal';
 
 function waUrl(phone) {
@@ -179,7 +180,7 @@ export default function Crew() {
                         </td>
                         <td className="text-2">{member.is_company ? (member.service_type || 'Company') : (member.role || '—')}</td>
                         <td className="text-2 text-sm">{member.location || '—'}</td>
-                        <td>{fmt(member.day_rate)}</td>
+                        <td>{<Private>{fmt(member.day_rate)}</Private>}</td>
                         <td>
                           <div className="flex-center gap-1">
                             <span className="text-2 text-sm">{member.phone || '—'}</span>
@@ -414,7 +415,7 @@ function CrewDetailSheet({ member, debtAmount, onClose, onEdit, onTxn, onArchive
           {member.day_rate > 0 && (
             <div className="fin-row" style={{ padding: '10px 0' }}>
               <span className="text-2" style={{ fontSize: '12px' }}>Day Rate</span>
-              <span style={{ fontSize: '13px', fontWeight: 700 }}>{fmt(member.day_rate)}</span>
+              <span style={{ fontSize: '13px', fontWeight: 700 }}>{<Private>{fmt(member.day_rate)}</Private>}</span>
             </div>
           )}
           {member.phone && (
@@ -433,7 +434,7 @@ function CrewDetailSheet({ member, debtAmount, onClose, onEdit, onTxn, onArchive
           {debtAmount > 0 && (
             <div className="fin-row" style={{ padding: '10px 0' }}>
               <span className="text-2" style={{ fontSize: '12px' }}>Outstanding</span>
-              <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-ember)' }}>€{Number(debtAmount).toFixed(2)}</span>
+              <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-ember)' }}><Private>€{Number(debtAmount).toFixed(2)}</Private></span>
             </div>
           )}
         </div>

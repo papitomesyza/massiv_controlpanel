@@ -5,12 +5,20 @@ import { fmt, fmtDate } from '../api';
 import { Private } from '../context/PrivacyContext';
 
 const DAY = 86400000;
-const SPAN_DAYS = 70;          // ten weeks
 const LABEL_W = 150;
 
-// Status is encoded by bar tone, never by a word. The tones are a monochrome
-// ramp derived from the ink color (see index.css), consistent with the app's
-// badge system. The legend at the foot is the one place the words appear.
+// Axis window bounds. The span adapts to the data (see the memo below) but is
+// clamped so a single near deadline does not zoom the axis absurdly and one far
+// future project does not crush everything else.
+const MIN_DAYS = 28;
+const MAX_DAYS = 180;
+const PAD_DAYS = 7;   // roughly one week of breathing room past the last deadline
+
+// Status is encoded by bar tone, never by a word. The bar tones are a
+// monochrome brightness ramp (see index.css): brightness reads as pipeline
+// progress and stays legible at bar size. The legend at the foot is the one
+// place the words appear, and there the dots carry real hue so four small dots
+// are actually distinguishable.
 const STATUSES = [
   { key: 'development',     label: 'Development' },
   { key: 'pre-production',  label: 'Pre' },
@@ -22,6 +30,12 @@ const TONE = {
   'pre-production':  'var(--tl-pre-production)',
   'production':      'var(--tl-production)',
   'post-production': 'var(--tl-post-production)',
+};
+const LEGEND_HUE = {
+  'development':     'var(--tl-hue-development)',
+  'pre-production':  'var(--tl-hue-pre-production)',
+  'production':      'var(--tl-hue-production)',
+  'post-production': 'var(--tl-hue-post-production)',
 };
 
 function parseDate(v) {
@@ -43,28 +57,42 @@ export default function ProjectTimeline({ projects, onPatchDeadline }) {
   const tracksRef = useRef(null);
   const [drag, setDrag] = useState(null); // { id, deadline }
 
-  const { axisStart, todayPct, weeks } = useMemo(() => {
+  const { axisStart, totalMs, todayPct, weeks } = useMemo(() => {
     const now = new Date();
     now.setHours(0, 0, 0, 0);
     const dow = (now.getDay() + 6) % 7; // Monday = 0
     const start = new Date(now);
     start.setDate(now.getDate() - dow);
-    const totalMs = SPAN_DAYS * DAY;
-    const pct = ((now - start) / totalMs) * 100;
+
+    // End at the latest deadline plus padding. Projects with no deadline do not
+    // contribute to the range. Clamp the span so it never zooms too far in or out.
+    let latest = null;
+    (projects || []).forEach(p => {
+      const d = parseDate(p.deadline);
+      if (d && (!latest || d > latest)) latest = d;
+    });
+    let spanDays = MIN_DAYS;
+    if (latest) {
+      const raw = Math.ceil((latest - start) / DAY) + PAD_DAYS;
+      spanDays = Math.min(MAX_DAYS, Math.max(MIN_DAYS, raw));
+    }
+    const span = spanDays * DAY;
+    const pct = ((now - start) / span) * 100;
+
+    // Tick interval scales with the span so the header never crowds.
+    const interval = spanDays <= 56 ? 7 : spanDays <= 120 ? 14 : 28;
     const marks = [];
-    for (let w = 0; w < 10; w++) {
-      const d = new Date(start);
-      d.setDate(start.getDate() + w * 7);
+    for (let t = 0; t < spanDays; t += interval) {
+      const d = new Date(start.getTime() + t * DAY);
       marks.push({
-        left: (w / 10) * 100,
+        left: (t / spanDays) * 100,
         label: `${d.getDate()} ${d.toLocaleDateString('en-GB', { month: 'short' })}`,
       });
     }
-    return { axisStart: start, todayPct: pct, weeks: marks };
-  }, []);
+    return { axisStart: start, totalMs: span, todayPct: pct, weeks: marks };
+  }, [projects]);
 
   const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
-  const totalMs = SPAN_DAYS * DAY;
   const pctOf = d => ((d - axisStart) / totalMs) * 100;
   const clamp = (n, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, n));
 
@@ -212,7 +240,7 @@ export default function ProjectTimeline({ projects, onPatchDeadline }) {
       <div className="ptl-legend">
         {STATUSES.map(s => (
           <span key={s.key} className="ptl-legend-item">
-            <span className="ptl-dot" style={{ background: TONE[s.key], borderColor: TONE[s.key] }} />
+            <span className="ptl-dot" style={{ background: LEGEND_HUE[s.key], borderColor: LEGEND_HUE[s.key] }} />
             {s.label}
           </span>
         ))}

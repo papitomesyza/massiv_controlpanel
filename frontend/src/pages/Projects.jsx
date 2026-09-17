@@ -5,6 +5,7 @@ import {
   ArrowRight, X, CalendarDays, Edit2,
 } from 'lucide-react';
 import { api, fmt, fmtDate } from '../api';
+import { Private } from '../context/PrivacyContext';
 import ProjectWizard from '../components/ProjectWizard';
 import AddLeadModal from '../components/AddLeadModal';
 import TasksView from '../components/TasksView';
@@ -330,7 +331,7 @@ function ProjectRowCard({ p }) {
             <div>
               <div className="project-bar-label">
                 <span>Received</span>
-                <span>{fmt(p.total_received)} / {fmt(p.agreed_budget)}</span>
+                <span>{<Private>{fmt(p.total_received)}</Private>} / {<Private>{fmt(p.agreed_budget)}</Private>}</span>
               </div>
               <div className="mini-bar-track">
                 <div className="mini-bar-fill mini-bar-received" style={{ width: `${receivedPct}%` }} />

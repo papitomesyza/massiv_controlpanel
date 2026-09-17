@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, MessageCircle, User, Building2, X, ChevronRight } from 'lucide-react';
 import { api, fmt } from '../api';
+import { Private } from '../context/PrivacyContext';
 import Modal from '../components/Modal';
 
 function waUrl(phone) {
@@ -119,7 +120,7 @@ export default function Clients() {
                         </td>
                         <td className="text-2 text-sm">{c.email || '—'}</td>
                         <td>{c.total_projects}</td>
-                        <td>{fmt(c.total_revenue)}</td>
+                        <td>{<Private>{fmt(c.total_revenue)}</Private>}</td>
                       </tr>
                     );
                   })}
@@ -240,7 +241,7 @@ function ClientDetailSheet({ client, onClose }) {
           </div>
           <div className="fin-row" style={{ padding: '10px 0', borderBottom: 'none' }}>
             <span className="text-2" style={{ fontSize: '12px' }}>Revenue</span>
-            <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-ink)' }}>{fmt(client.total_revenue)}</span>
+            <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-ink)' }}>{<Private>{fmt(client.total_revenue)}</Private>}</span>
           </div>
         </div>
 
