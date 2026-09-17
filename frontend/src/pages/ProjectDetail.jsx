@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Plus, Check, Trash2, Edit2, ChevronDown, ChevronRight, FileDown, ArrowLeft, Lock, X, Copy, ArrowRight, Clock, GripVertical, Link2, Link2Off, ExternalLink, Image, Download, FileText, Library } from 'lucide-react';
 import { api, fmt, fmtDate } from '../api';
+import { Private } from '../context/PrivacyContext';
 import Modal from '../components/Modal';
 import { PhaseTaskStep, InlineCrewModal, LocationPicker } from '../components/ProjectWizard';
 import { getTasksForCategory } from '../data/projectTasks';
@@ -346,7 +347,7 @@ export default function ProjectDetail() {
         <div>
           <div className="card card-pad" style={{ marginBottom: '16px' }}>
             <div className="section-title" style={{ marginBottom: '12px' }}>Agreed Budget</div>
-            <div style={{ fontSize: '28px', fontWeight: 800 }}>{fmt(project.agreed_budget)}</div>
+            <div style={{ fontSize: '28px', fontWeight: 800 }}>{<Private>{fmt(project.agreed_budget)}</Private>}</div>
             {PRODUCTION_GROUPS.includes(project.category_group) ? (
               project.shoot_date && (
                 <div className="text-2 text-sm mt-1">
@@ -375,7 +376,7 @@ export default function ProjectDetail() {
             {clientPayments.map(p => (
               <div key={p.id} className="fin-row">
                 <div>
-                  <span className={p.status === 'received' ? 'text-bold' : 'text-2'}>{fmt(p.amount)}</span>
+                  <span className={p.status === 'received' ? 'text-bold' : 'text-2'}>{<Private>{fmt(p.amount)}</Private>}</span>
                   <span className="text-xs text-2" style={{ marginLeft: '8px' }}>{fmtDate(p.date)}</span>
                   {p.notes && <div className="text-xs text-2">{p.notes}</div>}
                 </div>
@@ -387,7 +388,7 @@ export default function ProjectDetail() {
               </div>
             ))}
             <div className="fin-row total" style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid var(--border)' }}>
-              <span>Total Received</span><span>{fmt(pnl.totalReceived)}</span>
+              <span>Total Received</span><span>{<Private>{fmt(pnl.totalReceived)}</Private>}</span>
             </div>
           </div>
 
@@ -401,7 +402,7 @@ export default function ProjectDetail() {
                 <div>
                   <span className="text-bold text-sm">{c.crew_name}</span>
                   <span className="text-xs text-2" style={{ marginLeft: '6px' }}>{c.role_on_project || c.crew_role}</span>
-                  <div className="text-xs text-2">{c.days}d × {fmt(c.rate_per_day)} = {fmt(c.days * c.rate_per_day)}</div>
+                  <div className="text-xs text-2">{c.days}d × {<Private>{fmt(c.rate_per_day)}</Private>} = {<Private>{fmt(c.days * c.rate_per_day)}</Private>}</div>
                 </div>
                 <div className="flex-center gap-2">
                   <span className={`badge ${c.paid_status === 'paid' ? 'badge-paid' : c.paid_status === 'partial' ? 'badge-partial' : 'badge-unpaid'}`}>{c.paid_status}</span>
@@ -411,7 +412,7 @@ export default function ProjectDetail() {
               </div>
             ))}
             <div className="fin-row total" style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid var(--border)' }}>
-              <span>Total Crew Cost</span><span>{fmt(pnl.totalCrewCost)}</span>
+              <span>Total Crew Cost</span><span>{<Private>{fmt(pnl.totalCrewCost)}</Private>}</span>
             </div>
           </div>
 
@@ -482,7 +483,7 @@ export default function ProjectDetail() {
                       {pe.submitted_by && <div className="text-xs text-2">by {pe.submitted_by}</div>}
                     </div>
                     <div className="flex-center gap-2" style={{ flexShrink: 0 }}>
-                      <span className="text-bold text-sm">{fmt(pe.amount)}</span>
+                      <span className="text-bold text-sm">{<Private>{fmt(pe.amount)}</Private>}</span>
                       <button className="btn btn-ghost btn-sm" style={{ color: 'var(--color-ink)', fontSize: '11px' }}
                         onClick={async () => { await api.post(`/projects/${id}/expenses/${pe.id}/approve`, {}); load(); }}>
                         Approve
@@ -544,14 +545,14 @@ export default function ProjectDetail() {
                   </div>
                 </div>
                 <div className="flex-center gap-2" style={{ flexShrink: 0, marginTop: '2px' }}>
-                  <span className="text-bold text-sm">{fmt(e.amount)}</span>
+                  <span className="text-bold text-sm">{<Private>{fmt(e.amount)}</Private>}</span>
                   <button className="btn btn-ghost btn-sm" onClick={() => setExpenseModal(e)}><Edit2 size={12} /></button>
                   <button className="btn btn-danger btn-sm" onClick={async () => { await api.del(`/projects/${id}/expenses/${e.id}`); load(); }}><Trash2 size={12} /></button>
                 </div>
               </div>
             ))}
             <div className="fin-row total" style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid var(--border)' }}>
-              <span>Total Expenses</span><span>{fmt(pnl.totalExpenses)}</span>
+              <span>Total Expenses</span><span>{<Private>{fmt(pnl.totalExpenses)}</Private>}</span>
             </div>
           </div>
 
@@ -596,10 +597,10 @@ export default function ProjectDetail() {
           <div className="card card-pad">
             <div className="section-title" style={{ marginBottom: '12px' }}>P&L Summary</div>
             {[
-              { label: 'Agreed Budget', val: fmt(pnl.agreedBudget) },
-              { label: 'Total Received', val: fmt(pnl.totalReceived) },
-              { label: 'Total Crew Cost', val: fmt(pnl.totalCrewCost) },
-              { label: 'Total Expenses', val: fmt(pnl.totalExpenses) },
+              { label: 'Agreed Budget', val: <Private>{fmt(pnl.agreedBudget)}</Private> },
+              { label: 'Total Received', val: <Private>{fmt(pnl.totalReceived)}</Private> },
+              { label: 'Total Crew Cost', val: <Private>{fmt(pnl.totalCrewCost)}</Private> },
+              { label: 'Total Expenses', val: <Private>{fmt(pnl.totalExpenses)}</Private> },
             ].map(({ label, val }) => (
               <div key={label} className="fin-row"><span className="text-2">{label}</span><span>{val}</span></div>
             ))}
@@ -607,13 +608,13 @@ export default function ProjectDetail() {
               <div className="fin-row">
                 <span className="text-2">Negotiation Delta</span>
                 <span style={{ color: (pnl.agreedBudget - pnl.clientBudget) >= 0 ? 'var(--color-ink)' : 'var(--color-ember)', fontWeight: 600 }}>
-                  {(pnl.agreedBudget - pnl.clientBudget) >= 0 ? '+' : ''}{fmt(pnl.agreedBudget - pnl.clientBudget)}
+                  {(pnl.agreedBudget - pnl.clientBudget) >= 0 ? '+' : ''}{<Private>{fmt(pnl.agreedBudget - pnl.clientBudget)}</Private>}
                 </span>
               </div>
             )}
             <div style={{ borderTop: '1px solid var(--border)', marginTop: '8px', paddingTop: '8px' }}>
-              <div className="fin-row"><span>Expected Profit</span><span className={pnl.expectedProfit < 0 ? 'text-danger text-bold' : 'text-bold'}>{fmt(pnl.expectedProfit)}</span></div>
-              <div className="fin-row"><span>Realized Profit</span><span className={pnl.realizedProfit < 0 ? 'text-danger text-bold' : 'text-bold'}>{fmt(pnl.realizedProfit)}</span></div>
+              <div className="fin-row"><span>Expected Profit</span><span className={pnl.expectedProfit < 0 ? 'text-danger text-bold' : 'text-bold'}>{<Private>{fmt(pnl.expectedProfit)}</Private>}</span></div>
+              <div className="fin-row"><span>Realized Profit</span><span className={pnl.realizedProfit < 0 ? 'text-danger text-bold' : 'text-bold'}>{<Private>{fmt(pnl.realizedProfit)}</Private>}</span></div>
               <div className="fin-row">
                 <span>Profit Margin</span>
                 <span className={pnl.profitMargin !== null && pnl.profitMargin < 0 ? 'text-danger text-bold' : 'text-bold'}>
@@ -1082,7 +1083,7 @@ function CrewAssignModal({ assign, projectId, crewList, onClose, onSaved, onAddC
           <input type="number" className="input" value={form.rate_per_day} onChange={e => f('rate_per_day', e.target.value)} placeholder="0.00" />
         </div>
       </div>
-      <div className="text-sm text-2" style={{ marginBottom: '12px' }}>Total: <strong>{fmt(total)}</strong></div>
+      <div className="text-sm text-2" style={{ marginBottom: '12px' }}>Total: <strong>{<Private>{fmt(total)}</Private>}</strong></div>
       <div className="form-row">
         <label className="form-label">Payment Status</label>
         <select className="select" value={form.paid_status} onChange={e => f('paid_status', e.target.value)}>

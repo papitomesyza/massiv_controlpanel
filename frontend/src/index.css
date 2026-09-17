@@ -701,6 +701,8 @@ textarea.input { min-height: 80px; border-radius: var(--radius-nested); }
   color: var(--color-ink);
 }
 .stat-value.danger { color: var(--color-ember); }
+/* Emphasis by numeral weight, not by an inverted background. */
+.stat-value-emph { font-weight: 800; }
 .card-gradient .stat-value { color: var(--accent-contrast); }
 .stat-sub { font-size: var(--text-caption); color: var(--color-mid-gray); margin-top: 6px; }
 .card-gradient .stat-sub { color: var(--on-ink-faint); }
@@ -1687,12 +1689,12 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 .dash-leads-band {
   background: var(--overlay-02);
   border: 1px solid var(--color-hairline);
-  border-radius: 24px;
-  padding: 20px 24px;
+  border-radius: 20px;
+  padding: 12px 16px;
 }
 .dash-leads-header {
   display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 16px;
+  margin-bottom: 8px;
 }
 .dash-leads-title {
   display: flex; align-items: center; gap: 8px;
@@ -3500,14 +3502,23 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
    DASHBOARD REFINEMENT TOKENS
    ============================================================ */
 :root {
-  /* Status tone ramp for the production timeline. Derived from the ink
-     color so it flips with the theme and stays consistent with the
-     monochrome badge system. */
-  --tl-development:     color-mix(in srgb, var(--color-ink) 30%, transparent);
-  --tl-pre-production:  color-mix(in srgb, var(--color-ink) 52%, transparent);
-  --tl-production:      color-mix(in srgb, var(--color-ink) 74%, transparent);
+  /* Bar tone ramp for the production timeline. Monochrome, derived from the
+     ink color so it flips with the theme and stays consistent with the badge
+     system. Widened from 30/52/74/100 so the four brightness steps stay clearly
+     separable on both themes, with the lightest floor raised well off the
+     background. */
+  --tl-development:     color-mix(in srgb, var(--color-ink) 40%, transparent);
+  --tl-pre-production:  color-mix(in srgb, var(--color-ink) 60%, transparent);
+  --tl-production:      color-mix(in srgb, var(--color-ink) 80%, transparent);
   --tl-post-production: color-mix(in srgb, var(--color-ink) 100%, transparent);
   --tl-overdue:         var(--color-ember);
+
+  /* Legend dot hues. Four small monochrome dots are indistinguishable, so the
+     legend, and only the legend, carries real hue. The bars stay monochrome. */
+  --tl-hue-development:     #3b7dd8;
+  --tl-hue-pre-production:  #109a8a;
+  --tl-hue-production:      #d08a0f;
+  --tl-hue-post-production: #7c5cd6;
 
   /* Lead age traffic light. */
   --age-fresh: #1a9d54;
@@ -3515,6 +3526,11 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
   --age-cold:  var(--color-ember);
 }
 :root[data-theme="dark"] {
+  --tl-hue-development:     #5b9bf0;
+  --tl-hue-pre-production:  #2bc0ab;
+  --tl-hue-production:      #e0a53a;
+  --tl-hue-post-production: #a68bf0;
+
   --age-fresh: #2ec76f;
   --age-warm:  #e0a53a;
   --age-cold:  var(--color-ember);
@@ -3559,7 +3575,7 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 .ptl-bar {
   position: absolute; top: 6px; height: 28px;
   border: 1px solid var(--tone);
-  background: color-mix(in srgb, var(--tone) 14%, transparent);
+  background: color-mix(in srgb, var(--tone) 26%, transparent);
   border-radius: 7px; overflow: visible; cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
   z-index: 2;
@@ -3630,8 +3646,8 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 .leads-rail {
   display: flex; align-items: center; gap: 10px;
   overflow-x: auto; overflow-y: hidden;
-  padding: 4px 2px 6px;
-  min-height: 64px;
+  padding: 2px 2px;
+  min-height: 56px;
   scrollbar-width: none;
 }
 .leads-rail::-webkit-scrollbar { display: none; }
@@ -3746,8 +3762,15 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 /* ============================================================
    EXPENSE DONUT
    ============================================================ */
-.donut-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
-.donut-chart { position: relative; width: 100%; max-width: 320px; }
+/* Two columns: the donut on the left at a comfortable size, the legend as a
+   vertical list on the right. Stacks on narrow viewports. */
+.donut-2col {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) 1fr;
+  align-items: center;
+  gap: 24px;
+}
+.donut-chart { position: relative; width: 100%; }
 .donut-center {
   position: absolute; inset: 0;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -3757,13 +3780,22 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
   font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px;
   color: var(--color-mid-gray);
 }
-.donut-center-value { font-size: 20px; font-weight: 700; color: var(--color-ink); }
+.donut-center-value { font-size: 22px; font-weight: 700; color: var(--color-ink); }
 .donut-legend {
-  display: flex; flex-wrap: wrap; justify-content: center; gap: 12px;
-  margin-top: 4px;
+  display: flex; flex-direction: column; gap: 2px;
+  margin: 0; padding: 0; list-style: none;
 }
 .donut-legend-item {
-  display: flex; align-items: center; gap: 6px;
-  font-size: 11px; color: var(--color-mid-gray);
+  display: flex; align-items: center; gap: 9px;
+  font-size: 12px; color: var(--color-mid-gray);
+  padding: 6px 8px; border-radius: 8px;
+  cursor: default; transition: background 0.15s ease, color 0.15s ease;
 }
-.donut-dot { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+.donut-legend-item.active { background: var(--overlay-03); color: var(--color-ink); }
+.donut-legend-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.donut-legend-amt { font-weight: 600; color: var(--color-ink); }
+.donut-dot { flex: 0 0 auto; width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+@media (max-width: 640px) {
+  .donut-2col { grid-template-columns: 1fr; gap: 12px; }
+}

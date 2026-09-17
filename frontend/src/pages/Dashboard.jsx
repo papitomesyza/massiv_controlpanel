@@ -371,7 +371,7 @@ function WidgetContent({ id, stats, projects, expenses, chartData, leads, setLea
         <div className="stats-grid">
           <StatCard
             label="Active Projects"
-            value={<Private>{projects.length}</Private>}
+            value={projects.length}
             icon={<Activity size={16} />}
             iconTint="purple"
             onClick={() => setActiveModal('active-projects')}
@@ -381,7 +381,7 @@ function WidgetContent({ id, stats, projects, expenses, chartData, leads, setLea
             value={<Private>{fmt(stats?.revenue)}</Private>}
             icon={<TrendingUp size={16} />}
             onClick={() => setActiveModal('revenue')}
-            gradient
+            emphasis
           />
           <StatCard
             label="Profit This Month"
@@ -422,7 +422,7 @@ function WidgetContent({ id, stats, projects, expenses, chartData, leads, setLea
         <div className="stats-grid-3">
           <StatCard
             label="Completed This Month"
-            value={<Private>{stats?.completedThisMonth ?? 0}</Private>}
+            value={stats?.completedThisMonth ?? 0}
             icon={<FolderCheck size={16} />}
             iconTint="success"
           />
@@ -491,22 +491,29 @@ function WidgetContent({ id, stats, projects, expenses, chartData, leads, setLea
           <ResponsiveContainer width="100%" height={220}>
             <ComposedChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
               <defs>
+                {/* Revenue: the loudest series, a solid heavy stroke over a
+                    denser fill. */}
                 <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%"  stopColor="var(--color-ink)" stopOpacity={0.22} />
-                  <stop offset="95%" stopColor="var(--color-ink)" stopOpacity={0.01} />
+                  <stop offset="5%"  stopColor="var(--color-ink)" stopOpacity={0.26} />
+                  <stop offset="95%" stopColor="var(--color-ink)" stopOpacity={0.02} />
                 </linearGradient>
+                {/* Expenses: quieter, a thin stroke over a barely there fill, so
+                    it reads as a different weight even where it overlaps. */}
                 <linearGradient id="expGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%"  stopColor="var(--color-mid-gray)" stopOpacity={0.18} />
+                  <stop offset="5%"  stopColor="var(--color-mid-gray)" stopOpacity={0.10} />
                   <stop offset="95%" stopColor="var(--color-mid-gray)" stopOpacity={0.01} />
                 </linearGradient>
               </defs>
-              <CartesianGrid vertical={false} stroke="var(--color-hairline)" strokeDasharray="2 4" />
+              {/* Soft solid gridlines instead of the old heavy dotted ones. */}
+              <CartesianGrid vertical={false} stroke="var(--color-hairline)" strokeOpacity={0.45} />
               <XAxis dataKey="month" tick={{ fontSize: 10, fill: 'var(--color-mid-gray)' }} axisLine={false} tickLine={false} />
               <YAxis width={44} tick={<PrivacyYTick />} axisLine={false} tickLine={false} />
               <Tooltip content={<ChartTooltip />} />
-              <Area type="monotone" dataKey="revenue" stroke="var(--color-ink)" strokeWidth={2} fill="url(#revGrad)" dot={false} />
-              <Area type="monotone" dataKey="expenses" stroke="var(--color-mid-gray)" strokeWidth={1.5} fill="url(#expGrad)" dot={false} />
-              <Line type="monotone" dataKey="profit" stroke="var(--color-ink-soft)" strokeWidth={1.5} strokeDasharray="4 3" dot={false} />
+              <Area type="monotone" dataKey="revenue" stroke="var(--color-ink)" strokeWidth={2.5} fill="url(#revGrad)" dot={false} />
+              <Area type="monotone" dataKey="expenses" stroke="var(--color-mid-gray)" strokeWidth={1.25} fill="url(#expGrad)" dot={false} />
+              {/* Profit: no fill at all, a dashed line, so it is told apart by
+                  shape rather than color where the three cross near zero. */}
+              <Line type="monotone" dataKey="profit" stroke="var(--color-ink-soft)" strokeWidth={2} strokeDasharray="5 3" fill="none" dot={false} />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
@@ -619,7 +626,7 @@ function LeadChip({ lead, width, onOpen, onConvert }) {
         <span className="lead-avatar">{initial}</span>
         <span className="lead-chip-body">
           <span className="lead-chip-name">{lead.client_name || 'No client'}</span>
-          {lead.value != null && (
+          {Number(lead.value) > 0 && (
             <span className="lead-chip-value"><Private>{fmt(lead.value)}</Private></span>
           )}
         </span>
@@ -660,7 +667,7 @@ function LeadDrawer({ lead, onClose }) {
         <div className="lead-drawer-meta">
           <span className="lead-drawer-chip">{lead.category_name || 'Uncategorized'}</span>
           {lead.contacted_at && <span className="lead-drawer-chip">{fmtDate(lead.contacted_at)}</span>}
-          {lead.value != null && <span className="lead-drawer-chip"><Private>{fmt(lead.value)}</Private></span>}
+          {Number(lead.value) > 0 && <span className="lead-drawer-chip"><Private>{fmt(lead.value)}</Private></span>}
         </div>
         {lead.note ? (
           <div className="lead-drawer-note">
@@ -677,26 +684,36 @@ function LeadDrawer({ lead, onClose }) {
 
 /* ─── Expense donut ─── */
 function ExpenseDonut({ expenses }) {
+  const [active, setActive] = useState(null); // hovered arc / legend row index
   const total = expenses.reduce((s, e) => s + (Number(e.total) || 0), 0);
   const n = expenses.length;
   const shade = i => `color-mix(in srgb, var(--color-ink) ${Math.round(88 - (i * (66 / Math.max(1, n - 1))))}%, transparent)`;
 
   return (
-    <div className="donut-wrap">
+    <div className="donut-2col">
       <div className="donut-chart">
-        <ResponsiveContainer width="100%" height={220}>
+        <ResponsiveContainer width="100%" height={240}>
           <PieChart>
             <Pie
               data={expenses}
               dataKey="total"
               nameKey="name"
-              innerRadius={62}
-              outerRadius={92}
+              innerRadius={68}
+              outerRadius={100}
               paddingAngle={1.5}
               stroke="var(--surface-card)"
               strokeWidth={2}
+              onMouseEnter={(_, i) => setActive(i)}
+              onMouseLeave={() => setActive(null)}
             >
-              {expenses.map((e, i) => <Cell key={i} fill={shade(i)} />)}
+              {expenses.map((e, i) => (
+                <Cell
+                  key={i}
+                  fill={shade(i)}
+                  fillOpacity={active === null || active === i ? 1 : 0.3}
+                  style={{ transition: 'fill-opacity 0.15s ease' }}
+                />
+              ))}
             </Pie>
             <Tooltip content={<DonutTooltip />} />
           </PieChart>
@@ -706,14 +723,22 @@ function ExpenseDonut({ expenses }) {
           <span className="donut-center-value"><Private>{fmt(total)}</Private></span>
         </div>
       </div>
-      <div className="donut-legend">
+      <ul className="donut-legend">
         {expenses.map((e, i) => (
-          <span key={i} className="donut-legend-item">
+          <li
+            key={i}
+            className={`donut-legend-item${active === i ? ' active' : ''}`}
+            onMouseEnter={() => setActive(i)}
+            onMouseLeave={() => setActive(null)}
+          >
             <span className="donut-dot" style={{ background: shade(i) }} />
-            {e.name}
-          </span>
+            <span className="donut-legend-name">{e.name}</span>
+            {active === i && (
+              <span className="donut-legend-amt"><Private>{fmt(e.total)}</Private></span>
+            )}
+          </li>
         ))}
-      </div>
+      </ul>
     </div>
   );
 }

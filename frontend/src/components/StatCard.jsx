@@ -55,7 +55,7 @@ export default function StatCard({
   label, value, sub, danger, warn, icon, onClick, gradient,
   sparkline, sparklineKey,
   ring, ringColor,
-  iconTint,
+  iconTint, emphasis,
 }) {
   const uid = useId().replace(/[^a-z0-9]/gi, '');
   const valueStyle = warn && !danger ? { color: 'var(--warning)' } : undefined;
@@ -85,7 +85,7 @@ export default function StatCard({
         </div>
       )}
       <div className="stat-label">{label}</div>
-      <div className={`stat-value${danger ? ' danger' : ''}`} style={valueStyle}>{value}</div>
+      <div className={`stat-value${danger ? ' danger' : ''}${emphasis ? ' stat-value-emph' : ''}`} style={valueStyle}>{value}</div>
       {sub && <div className="stat-sub">{sub}</div>}
       {sparkline && sparklineKey && (
         <SparkLine data={sparkline} dataKey={sparklineKey} color={sparkColor} uid={uid} />

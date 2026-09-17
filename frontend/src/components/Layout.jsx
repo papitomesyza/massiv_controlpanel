@@ -295,7 +295,6 @@ export default function Layout() {
         <div className="page-inner">
           <Outlet />
         </div>
-        <footer className="page-footer">built by year28</footer>
       </div>
 
       {/* Sticky FAB — menu button on top, + FAB below */}
