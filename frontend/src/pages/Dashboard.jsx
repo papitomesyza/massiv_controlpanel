@@ -484,24 +484,24 @@ function WidgetContent({ id, stats, projects, expenses, chartData, leads, setLea
       return (
         <div className="card card-pad">
           <div className="trend-legend">
-            <span className="trend-legend-item"><span className="trend-dot" style={{ background: 'var(--color-ink)' }} /> Revenue</span>
-            <span className="trend-legend-item"><span className="trend-dot" style={{ background: 'var(--color-mid-gray)' }} /> Expenses</span>
-            <span className="trend-legend-item"><span className="trend-dot" style={{ background: 'var(--color-ink-soft)', outline: '2px solid var(--color-ink-soft)', outlineOffset: '-1px' }} /> Profit</span>
+            <span className="trend-legend-item"><span className="trend-dot" style={{ background: 'var(--chart-revenue)' }} /> Revenue</span>
+            <span className="trend-legend-item"><span className="trend-dot" style={{ background: 'var(--chart-expenses)' }} /> Expenses</span>
+            <span className="trend-legend-item"><span className="trend-dot" style={{ background: 'var(--chart-profit)' }} /> Profit</span>
           </div>
           <ResponsiveContainer width="100%" height={220}>
             <ComposedChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
               <defs>
                 {/* Revenue: the loudest series, a solid heavy stroke over a
-                    denser fill. */}
+                    subtle fill so the line stays dominant. */}
                 <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%"  stopColor="var(--color-ink)" stopOpacity={0.26} />
-                  <stop offset="95%" stopColor="var(--color-ink)" stopOpacity={0.02} />
+                  <stop offset="5%"  stopColor="var(--chart-revenue)" stopOpacity={0.20} />
+                  <stop offset="95%" stopColor="var(--chart-revenue)" stopOpacity={0.02} />
                 </linearGradient>
                 {/* Expenses: quieter, a thin stroke over a barely there fill, so
                     it reads as a different weight even where it overlaps. */}
                 <linearGradient id="expGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%"  stopColor="var(--color-mid-gray)" stopOpacity={0.10} />
-                  <stop offset="95%" stopColor="var(--color-mid-gray)" stopOpacity={0.01} />
+                  <stop offset="5%"  stopColor="var(--chart-expenses)" stopOpacity={0.12} />
+                  <stop offset="95%" stopColor="var(--chart-expenses)" stopOpacity={0.01} />
                 </linearGradient>
               </defs>
               {/* Soft solid gridlines instead of the old heavy dotted ones. */}
@@ -509,11 +509,12 @@ function WidgetContent({ id, stats, projects, expenses, chartData, leads, setLea
               <XAxis dataKey="month" tick={{ fontSize: 10, fill: 'var(--color-mid-gray)' }} axisLine={false} tickLine={false} />
               <YAxis width={44} tick={<PrivacyYTick />} axisLine={false} tickLine={false} />
               <Tooltip content={<ChartTooltip />} />
-              <Area type="monotone" dataKey="revenue" stroke="var(--color-ink)" strokeWidth={2.5} fill="url(#revGrad)" dot={false} />
-              <Area type="monotone" dataKey="expenses" stroke="var(--color-mid-gray)" strokeWidth={1.25} fill="url(#expGrad)" dot={false} />
-              {/* Profit: no fill at all, a dashed line, so it is told apart by
-                  shape rather than color where the three cross near zero. */}
-              <Line type="monotone" dataKey="profit" stroke="var(--color-ink-soft)" strokeWidth={2} strokeDasharray="5 3" fill="none" dot={false} />
+              {/* Colour is the primary cue; the weight and fill differences and
+                  the dashed profit line are secondary cues so the chart still
+                  reads for anyone who cannot separate the hues. */}
+              <Area type="monotone" dataKey="revenue" stroke="var(--chart-revenue)" strokeWidth={2.5} fill="url(#revGrad)" dot={false} />
+              <Area type="monotone" dataKey="expenses" stroke="var(--chart-expenses)" strokeWidth={1.25} fill="url(#expGrad)" dot={false} />
+              <Line type="monotone" dataKey="profit" stroke="var(--chart-profit)" strokeWidth={2} strokeDasharray="5 3" fill="none" dot={false} />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
@@ -683,11 +684,15 @@ function LeadDrawer({ lead, onClose }) {
 }
 
 /* ─── Expense donut ─── */
+// The shared eight hue categorical palette (see index.css). Categories have no
+// order, so a slice and its legend dot just take the next hue, cycling if there
+// are ever more categories than hues.
+const CATEGORICAL = Array.from({ length: 8 }, (_, i) => `var(--cat-${i + 1})`);
+const catColor = i => CATEGORICAL[i % CATEGORICAL.length];
+
 function ExpenseDonut({ expenses }) {
   const [active, setActive] = useState(null); // hovered arc / legend row index
   const total = expenses.reduce((s, e) => s + (Number(e.total) || 0), 0);
-  const n = expenses.length;
-  const shade = i => `color-mix(in srgb, var(--color-ink) ${Math.round(88 - (i * (66 / Math.max(1, n - 1))))}%, transparent)`;
 
   return (
     <div className="donut-2col">
@@ -709,7 +714,7 @@ function ExpenseDonut({ expenses }) {
               {expenses.map((e, i) => (
                 <Cell
                   key={i}
-                  fill={shade(i)}
+                  fill={catColor(i)}
                   fillOpacity={active === null || active === i ? 1 : 0.3}
                   style={{ transition: 'fill-opacity 0.15s ease' }}
                 />
@@ -731,7 +736,7 @@ function ExpenseDonut({ expenses }) {
             onMouseEnter={() => setActive(i)}
             onMouseLeave={() => setActive(null)}
           >
-            <span className="donut-dot" style={{ background: shade(i) }} />
+            <span className="donut-dot" style={{ background: catColor(i) }} />
             <span className="donut-legend-name">{e.name}</span>
             {active === i && (
               <span className="donut-legend-amt"><Private>{fmt(e.total)}</Private></span>

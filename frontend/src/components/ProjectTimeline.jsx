@@ -14,24 +14,16 @@ const MIN_DAYS = 28;
 const MAX_DAYS = 180;
 const PAD_DAYS = 7;   // roughly one week of breathing room past the last deadline
 
-// Status is encoded by bar tone, never by a word. The bar tones are a
-// monochrome brightness ramp (see index.css): brightness reads as pipeline
-// progress and stays legible at bar size. The legend at the foot is the one
-// place the words appear, and there the dots carry real hue so four small dots
-// are actually distinguishable.
+// Status is encoded by colour, never by a word. Each status has one hue from the
+// shared palette (see index.css), and the bar and its legend dot draw from the
+// exact same token so they match by eye. Overdue overrides with ember red.
 const STATUSES = [
   { key: 'development',     label: 'Development' },
   { key: 'pre-production',  label: 'Pre' },
   { key: 'production',      label: 'Production' },
   { key: 'post-production', label: 'Post' },
 ];
-const TONE = {
-  'development':     'var(--tl-development)',
-  'pre-production':  'var(--tl-pre-production)',
-  'production':      'var(--tl-production)',
-  'post-production': 'var(--tl-post-production)',
-};
-const LEGEND_HUE = {
+const STATUS_HUE = {
   'development':     'var(--tl-hue-development)',
   'pre-production':  'var(--tl-hue-pre-production)',
   'production':      'var(--tl-hue-production)',
@@ -178,7 +170,7 @@ export default function ProjectTimeline({ projects, onPatchDeadline }) {
             const receivedPct = budget > 0 ? clamp((received / budget) * 100) : 0;
 
             const overdue = deadline && deadline < today && received < budget;
-            const tone = overdue ? 'var(--tl-overdue)' : (TONE[p.status] || 'var(--tl-development)');
+            const tone = overdue ? 'var(--tl-overdue)' : (STATUS_HUE[p.status] || 'var(--tl-hue-development)');
 
             let bar;
             if (!deadline) {
@@ -223,7 +215,7 @@ export default function ProjectTimeline({ projects, onPatchDeadline }) {
               const shootEnd = new Date(shoot.getTime() + days * DAY);
               const sL = clamp(pctOf(shoot));
               const sW = Math.max(0.8, clamp(pctOf(shootEnd)) - sL);
-              shootBlock = <div className="ptl-shoot" style={{ left: `${sL}%`, width: `${sW}%` }} />;
+              shootBlock = <div className="ptl-shoot" style={{ left: `${sL}%`, width: `${sW}%`, ['--tone']: tone }} />;
             }
 
             return (
@@ -236,11 +228,12 @@ export default function ProjectTimeline({ projects, onPatchDeadline }) {
         </div>
       </div>
 
-      {/* Legend: the one place the status words are allowed. */}
+      {/* Legend: the one place the status words are allowed. Each dot uses the
+          same token as the bars it decodes. */}
       <div className="ptl-legend">
         {STATUSES.map(s => (
           <span key={s.key} className="ptl-legend-item">
-            <span className="ptl-dot" style={{ background: LEGEND_HUE[s.key], borderColor: LEGEND_HUE[s.key] }} />
+            <span className="ptl-dot" style={{ background: STATUS_HUE[s.key], borderColor: STATUS_HUE[s.key] }} />
             {s.label}
           </span>
         ))}
