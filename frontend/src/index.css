@@ -3502,23 +3502,34 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
    DASHBOARD REFINEMENT TOKENS
    ============================================================ */
 :root {
-  /* Bar tone ramp for the production timeline. Monochrome, derived from the
-     ink color so it flips with the theme and stays consistent with the badge
-     system. Widened from 30/52/74/100 so the four brightness steps stay clearly
-     separable on both themes, with the lightest floor raised well off the
-     background. */
-  --tl-development:     color-mix(in srgb, var(--color-ink) 40%, transparent);
-  --tl-pre-production:  color-mix(in srgb, var(--color-ink) 60%, transparent);
-  --tl-production:      color-mix(in srgb, var(--color-ink) 80%, transparent);
-  --tl-post-production: color-mix(in srgb, var(--color-ink) 100%, transparent);
-  --tl-overdue:         var(--color-ember);
+  /* One categorical palette for the whole dashboard. The timeline bars, the
+     expense donut and the trend chart all draw from these eight hues, so the
+     page reads as a single colour system rather than three schemes. The
+     categories have no natural order, so this is categorical, not a ramp. These
+     are the light theme values; the dark set is redefined below and every alias
+     resolves through it automatically. */
+  --cat-1: #3b7dd8;  /* blue   */
+  --cat-2: #d08a0f;  /* amber  */
+  --cat-3: #109a8a;  /* teal   */
+  --cat-4: #7c5cd6;  /* violet */
+  --cat-5: #d24d84;  /* rose   */
+  --cat-6: #4a9d3f;  /* green  */
+  --cat-7: #d1591f;  /* orange */
+  --cat-8: #7a9c1f;  /* lime   */
 
-  /* Legend dot hues. Four small monochrome dots are indistinguishable, so the
-     legend, and only the legend, carries real hue. The bars stay monochrome. */
-  --tl-hue-development:     #3b7dd8;
-  --tl-hue-pre-production:  #109a8a;
-  --tl-hue-production:      #d08a0f;
-  --tl-hue-post-production: #7c5cd6;
+  /* Timeline status hues alias the shared palette, so a bar and its legend dot
+     are literally the same token. Overdue keeps the existing ember red. */
+  --tl-hue-development:     var(--cat-1);
+  --tl-hue-pre-production:  var(--cat-3);
+  --tl-hue-production:      var(--cat-2);
+  --tl-hue-post-production: var(--cat-4);
+  --tl-overdue:            var(--color-ember);
+
+  /* Trend chart series, also from the shared palette: revenue blue, expenses
+     orange, profit green. */
+  --chart-revenue:  var(--cat-1);
+  --chart-expenses: var(--cat-7);
+  --chart-profit:   var(--cat-6);
 
   /* Lead age traffic light. */
   --age-fresh: #1a9d54;
@@ -3526,10 +3537,16 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
   --age-cold:  var(--color-ember);
 }
 :root[data-theme="dark"] {
-  --tl-hue-development:     #5b9bf0;
-  --tl-hue-pre-production:  #2bc0ab;
-  --tl-hue-production:      #e0a53a;
-  --tl-hue-post-production: #a68bf0;
+  /* Same eight hues, brightened for the dark background. The aliases above
+     resolve through these without needing to be restated. */
+  --cat-1: #5b9bf0;
+  --cat-2: #e0a53a;
+  --cat-3: #2bc0ab;
+  --cat-4: #a68bf0;
+  --cat-5: #f07aae;
+  --cat-6: #6bc75f;
+  --cat-7: #f0864a;
+  --cat-8: #a6c43f;
 
   --age-fresh: #2ec76f;
   --age-warm:  #e0a53a;
@@ -3572,10 +3589,13 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
   background: var(--accent); opacity: 0.28; z-index: 1;
 }
 .ptl-rowtrack { position: relative; height: 40px; margin-bottom: 10px; }
+/* The bar is the status hue. The whole bar is the unpaid remainder: the hue at
+   low opacity with a hairline outline of the full hue. The paid portion sits on
+   top at full saturation (see .ptl-fill). */
 .ptl-bar {
   position: absolute; top: 6px; height: 28px;
   border: 1px solid var(--tone);
-  background: color-mix(in srgb, var(--tone) 26%, transparent);
+  background: color-mix(in srgb, var(--tone) 16%, transparent);
   border-radius: 7px; overflow: visible; cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
   z-index: 2;
@@ -3588,20 +3608,21 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 .ptl-bar-open {
   border-style: solid;
   border-right: 2px dashed var(--tone);
-  background: color-mix(in srgb, var(--color-ink) 8%, transparent);
+  background: color-mix(in srgb, var(--tone) 12%, transparent);
 }
-.ptl-bar-overdue { border-color: var(--tl-overdue); }
+/* Paid portion: the bar at full saturation, filling from the left. */
 .ptl-fill {
   position: absolute; left: 0; top: 0; bottom: 0;
-  background: var(--accent); opacity: 0.85;
+  background: var(--tone);
   border-radius: 6px 0 0 6px;
   transition: width 0.3s ease;
 }
-.ptl-bar-overdue .ptl-fill { background: var(--tl-overdue); }
+/* Shoot window: a higher contrast band of the same hue, so it reads as a sub
+   region of the bar rather than a separate object. */
 .ptl-shoot {
   position: absolute; top: 12px; height: 16px;
-  background: var(--color-ink-soft);
-  border-radius: 3px; z-index: 3; opacity: 0.9;
+  background: color-mix(in srgb, var(--tone) 60%, var(--color-ink));
+  border-radius: 3px; z-index: 3;
   pointer-events: none;
 }
 .ptl-handle {
