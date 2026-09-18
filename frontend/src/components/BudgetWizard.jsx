@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { X, Check, Plus, Trash2, ChevronLeft, Download, ChevronDown, ChevronRight } from 'lucide-react';
+import { X, Check, Plus, Trash2, Download, ChevronDown, ChevronRight, Search, Pencil } from 'lucide-react';
 import { api, fmt } from '../api';
 
 const STEP_LABELS = ['Project Info', 'Crew', 'Assets & Rentals', 'Logistical Costs', 'Review & Finalize'];
@@ -61,7 +61,9 @@ function discountLabel(amount, discount) {
 
 export default function BudgetWizard({ budget, onClose, onSaved }) {
   const isEditing = !!budget;
-  const [step, setStep] = useState(isEditing ? 4 : 0);
+  // Review is read only now, so an existing estimate opens at the first step:
+  // the steps are the editor, Review is only the summary.
+  const [step, setStep] = useState(0);
 
   const [projects, setProjects] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -180,7 +182,7 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
 
   function goPrev() {
     setErr('');
-    setStep(step === 4 && isEditing ? 0 : getPrevStep(step));
+    setStep(getPrevStep(step));
   }
 
   function handleProjectSelect(projectId) {
@@ -397,7 +399,7 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
     setExporting(true);
     try {
       const id = await saveToDB();
-      await api.download(`/budgets/${id}/pdf`, `Investment-Estimation-${info.title.replace(/[^a-z0-9]/gi, '-')}.pdf`);
+      await api.download(`/budgets/${id}/pdf`, `Estimate-${info.title.replace(/[^a-z0-9]/gi, '-')}.pdf`);
       onSaved(id);
     } catch (e) {
       setErr(e.message);
@@ -425,7 +427,7 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
       <div className="wizard-box" style={{ maxWidth: '760px' }}>
 
         <div className="wizard-header">
-          <span className="wizard-title">{isEditing ? 'Edit Investment Estimation' : 'New Investment Estimation'}</span>
+          <span className="wizard-title">{isEditing ? 'Edit Estimate' : 'New Estimate'}</span>
           <button className="modal-close" onClick={onClose}><X size={18} /></button>
         </div>
 
@@ -434,11 +436,20 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
             const isApplicable = i === 0 || i === 1 || i === 4
               || (i === 2 && hasEquipment)
               || (i === 3 && hasLogistics);
+            // A skipped step is dimmed and struck through, and says why on hover
+            // instead of vanishing silently or explaining itself inline.
+            const skipReason = !isApplicable && info.category
+              ? `Not needed for ${info.category}`
+              : (!isApplicable ? 'Not needed for this category' : undefined);
             return (
               <React.Fragment key={i}>
-                <div className={`wizard-step-item ${i === step ? 'current' : i < step ? 'done' : ''} ${!isApplicable ? 'budget-step-skip' : ''}`}>
+                <div
+                  className={`wizard-step-item ${i === step ? 'current' : i < step ? 'done' : ''} ${!isApplicable ? 'budget-step-skip' : ''}`}
+                  title={skipReason}
+                >
                   <div className="wizard-step-dot">
                     {i < step ? <Check size={10} /> : <span>{i + 1}</span>}
+                    {!isApplicable && <span className="wizard-step-slash" aria-hidden="true" />}
                   </div>
                   <span className="wizard-step-label">{label}</span>
                 </div>
@@ -498,11 +509,11 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
           {step === 4 && (
             <StepReview
               info={info} setInfo={setInfo}
-              crewLines={crewLines} setCrewLines={setCrewLines}
-              equipLines={equipLines} setEquipLines={setEquipLines}
-              logLines={logLines} setLogLines={setLogLines}
+              crewLines={crewLines}
+              equipLines={equipLines}
+              logLines={logLines}
               isFlatFee={isFlatFee} hasEquipment={hasEquipment} hasLogistics={hasLogistics}
-              expenseCats={expenseCats}
+              onJump={setStep}
               crewSubtotal={crewSubtotal}
               equipSubtotal={equipSubtotal}
               logSubtotal={logSubtotal}
@@ -519,7 +530,7 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
 
         <div className="wizard-footer">
           <button className="btn btn-ghost" onClick={isFirstStep ? onClose : goPrev}>
-            {isFirstStep ? 'Cancel' : isEditing && step === 4 ? <><ChevronLeft size={14} /> Back to Steps</> : '← Back'}
+            {isFirstStep ? 'Cancel' : '← Back'}
           </button>
           <div style={{ flex: 1 }} />
           {!isLastStep ? (
@@ -530,7 +541,7 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
                 <Download size={14} /> {exporting ? 'Exporting...' : 'Export PDF'}
               </button>
               <button className="btn btn-primary" onClick={handleSave} disabled={saving || exporting}>
-                {saving ? 'Saving...' : 'Save Investment Estimation'}
+                {saving ? 'Saving...' : 'Save Estimate'}
               </button>
             </div>
           )}
@@ -547,7 +558,7 @@ function StepInfo({ info, setInfo, projects, grouped, onProjectSelect }) {
   return (
     <div>
       <div className="form-row">
-        <label className="form-label">Investment Estimation Title *</label>
+        <label className="form-label">Estimate Title *</label>
         <input className="input" value={info.title} onChange={e => f('title', e.target.value)} placeholder="e.g. Nike Summer Campaign" autoFocus />
       </div>
       <div className="form-grid">
@@ -592,12 +603,27 @@ function StepInfo({ info, setInfo, projects, grouped, onProjectSelect }) {
 
 /* ─── Step 2: Crew ─── */
 function StepCrew({ crewMembers, lines, isFlatFee, shootDays, selected, onToggle, onUpdate, onRemove, onAddCustom, subtotal }) {
+  const [q, setQ] = useState('');
+  const query = q.trim().toLowerCase();
+  const visible = query
+    ? crewMembers.filter(m =>
+        (m.name || '').toLowerCase().includes(query) || (m.role || '').toLowerCase().includes(query))
+    : crewMembers;
   return (
     <div className="budget-split-layout">
       <div className="budget-panel-left">
         <div className="budget-panel-title">{isFlatFee ? 'Service Providers' : 'Crew Members'}</div>
+        <div className="budget-picker-search">
+          <Search size={14} />
+          <input
+            className="input"
+            placeholder={isFlatFee ? 'Search providers' : 'Search name or role'}
+            value={q}
+            onChange={e => setQ(e.target.value)}
+          />
+        </div>
         <div className="budget-card-grid">
-          {crewMembers.map(m => (
+          {visible.map(m => (
             <div
               key={m.id}
               className={`budget-person-card ${selected.has(String(m.id)) ? 'selected' : ''}`}
@@ -608,8 +634,10 @@ function StepCrew({ crewMembers, lines, isFlatFee, shootDays, selected, onToggle
               <div className="budget-person-rate">{isFlatFee ? `€${Number(m.day_rate || 0).toFixed(0)} flat` : `€${Number(m.day_rate || 0).toFixed(0)}/day`}</div>
             </div>
           ))}
-          {crewMembers.length === 0 && (
-            <div style={{ color: 'var(--color-mid-gray)', fontSize: '12px', gridColumn: '1/-1', padding: '12px 0' }}>No crew members found.</div>
+          {visible.length === 0 && (
+            <div style={{ color: 'var(--color-mid-gray)', fontSize: '12px', gridColumn: '1/-1', padding: '12px 0' }}>
+              {crewMembers.length === 0 ? 'No crew members found.' : 'No matches.'}
+            </div>
           )}
         </div>
       </div>
@@ -724,16 +752,47 @@ function StepCrew({ crewMembers, lines, isFlatFee, shootDays, selected, onToggle
 
 /* ─── Step 3: Assets & Rentals ─── */
 function StepEquipmentAssets({ assetProviders, assetAllItems, lines, selectedKeys, expandedProviders, onToggleExpand, onAddItem, onUpdate, onRemove, onAddCustom, subtotal }) {
+  const [q, setQ] = useState('');
+  const query = q.trim().toLowerCase();
+
   const itemsByProvider = {};
   assetAllItems.forEach(item => {
     if (!itemsByProvider[item.provider_id]) itemsByProvider[item.provider_id] = [];
     itemsByProvider[item.provider_id].push(item);
   });
 
+  // A search matches a provider by its own name, or by any of its items. When a
+  // provider matches by name every item shows; when it matches only by an item,
+  // just that item shows. A live search force-expands what it found.
+  const visibleProviders = assetProviders
+    .map(provider => {
+      const items = itemsByProvider[provider.id] || [];
+      if (!query) return { provider, items, forceOpen: false };
+      const provMatch = (provider.name || '').toLowerCase().includes(query);
+      const matchedItems = provMatch
+        ? items
+        : items.filter(it =>
+            (it.item_name || '').toLowerCase().includes(query) ||
+            (it.category || '').toLowerCase().includes(query));
+      if (!provMatch && matchedItems.length === 0) return null;
+      return { provider, items: matchedItems, forceOpen: true };
+    })
+    .filter(Boolean);
+
   return (
     <div className="budget-split-layout">
       <div className="budget-panel-left">
         <div className="budget-panel-title">Asset Providers</div>
+
+        <div className="budget-picker-search">
+          <Search size={14} />
+          <input
+            className="input"
+            placeholder="Search provider or item"
+            value={q}
+            onChange={e => setQ(e.target.value)}
+          />
+        </div>
 
         {assetProviders.length === 0 && (
           <div style={{ color: 'var(--color-mid-gray)', fontSize: '12px', padding: '12px 0' }}>
@@ -741,9 +800,12 @@ function StepEquipmentAssets({ assetProviders, assetAllItems, lines, selectedKey
           </div>
         )}
 
-        {assetProviders.map(provider => {
-          const items = itemsByProvider[provider.id] || [];
-          const isExpanded = expandedProviders.has(provider.id);
+        {assetProviders.length > 0 && visibleProviders.length === 0 && (
+          <div style={{ color: 'var(--color-mid-gray)', fontSize: '12px', padding: '12px 0' }}>No matches.</div>
+        )}
+
+        {visibleProviders.map(({ provider, items, forceOpen }) => {
+          const isExpanded = forceOpen || expandedProviders.has(provider.id);
           return (
             <div key={provider.id} style={{ marginBottom: '6px', border: '1px solid var(--border)', borderRadius: '10px', overflow: 'hidden' }}>
               <div
@@ -994,18 +1056,48 @@ function StepLogistics({ lines, expenseCats, onAdd, onUpdate, onRemove, subtotal
   );
 }
 
-/* ─── Step 5: Review & Finalize ─── */
+/* ─── Step 5: Review (read only) ─── */
+// Review is the summary and the finalisation surface, not a second editor. The
+// line fields are shown as static rows; clicking a section header jumps back to
+// the step that owns those lines, which is the one place they are edited. Only
+// the VAT, provider and notes decisions, which belong to finalisation rather
+// than to any single line, stay editable here.
 function StepReview({
   info, setInfo,
-  crewLines, setCrewLines,
-  equipLines, setEquipLines,
-  logLines, setLogLines,
+  crewLines,
+  equipLines,
+  logLines,
   isFlatFee, hasEquipment, hasLogistics,
-  expenseCats,
+  onJump,
   crewSubtotal, equipSubtotal, logSubtotal,
   grossSubtotal, totalDiscount, netSubtotal, vatAmount, grandTotal,
 }) {
   function f(k, v) { setInfo(p => ({ ...p, [k]: v })); }
+
+  function SectionHeader({ title, step }) {
+    return (
+      <button type="button" className="budget-review-jump" onClick={() => onJump(step)} title="Edit this section">
+        <span className="budget-review-section-title">{title}</span>
+        <Pencil size={12} />
+      </button>
+    );
+  }
+
+  function StaticLine({ label, detail, amount, discount }) {
+    const discLbl = discountLabel(amount, discount);
+    return (
+      <div className="budget-review-line">
+        <div className="brl-main">
+          <span className="brl-label">{label || <span style={{ color: 'var(--color-mid-gray)' }}>Untitled</span>}</span>
+          {detail && <span className="brl-detail">{detail}</span>}
+        </div>
+        <div className="brl-right">
+          <span className="brl-amount">{fmt(amount)}</span>
+          {discLbl && <span className="brl-disc">{discLbl}</span>}
+        </div>
+      </div>
+    );
+  }
 
   function ProviderToggle() {
     return (
@@ -1034,32 +1126,6 @@ function StepReview({
     );
   }
 
-  function updateCrew(id, field, value) {
-    setCrewLines(prev => prev.map(l => {
-      if (l._id !== id) return l;
-      const updated = { ...l, [field]: value };
-      if (!isFlatFee && (field === 'days' || field === 'rate')) {
-        updated.amount = (parseFloat(updated.days) || 0) * (parseFloat(updated.rate) || 0);
-      }
-      return updated;
-    }));
-  }
-
-  function updateEquip(id, field, value) {
-    setEquipLines(prev => prev.map(l => {
-      if (l._id !== id) return l;
-      const updated = { ...l, [field]: value };
-      if (field === 'days' || field === 'rate') {
-        updated.amount = (parseFloat(updated.days) || 0) * (parseFloat(updated.rate) || 0);
-      }
-      return updated;
-    }));
-  }
-
-  function updateLog(id, field, value) {
-    setLogLines(prev => prev.map(l => l._id !== id ? l : { ...l, [field]: value }));
-  }
-
   return (
     <div>
       <div className="card card-pad" style={{ marginBottom: '20px', background: 'var(--color-surface-alt)' }}>
@@ -1081,55 +1147,20 @@ function StepReview({
 
       {/* Section 01 — Crew */}
       <div className="budget-review-section">
-        <div className="budget-review-section-title">01 — CREW COST</div>
+        <SectionHeader title="01 · CREW COST" step={1} />
         {crewLines.length === 0 ? (
           <div style={{ color: 'var(--color-mid-gray)', fontSize: '12px', fontStyle: 'italic', padding: '8px 0' }}>No crew lines added.</div>
         ) : (
           <>
-            <div className="budget-line-headers">
-              <span style={{ flex: 2 }}>{isFlatFee ? 'Service' : 'Position'}</span>
-              {!isFlatFee && <span style={{ width: '60px' }}>Days</span>}
-              {!isFlatFee && <span style={{ width: '80px' }}>Rate/Day</span>}
-              <span style={{ width: '90px', textAlign: 'right' }}>Total</span>
-              <span style={{ width: '76px' }}>Disc. €</span>
-              <span style={{ width: '28px' }} />
-            </div>
-            {crewLines.map(line => {
-              const discLbl = discountLabel(line.amount, line.discount);
-              return (
-                <div key={line._id} className="budget-line-row" style={{ flexWrap: 'wrap' }}>
-                  <input className="input budget-line-input" style={{ flex: 2, minWidth: '100px' }} value={line.position_label}
-                    onChange={e => updateCrew(line._id, 'position_label', e.target.value)} />
-                  {!isFlatFee && (
-                    <input type="number" className="input budget-line-input" style={{ width: '60px' }}
-                      value={line.days} min="0.5" step="0.5"
-                      onChange={e => updateCrew(line._id, 'days', e.target.value)} />
-                  )}
-                  {!isFlatFee && (
-                    <input type="number" className="input budget-line-input" style={{ width: '80px' }}
-                      value={line.rate} min="0"
-                      onChange={e => updateCrew(line._id, 'rate', e.target.value)} />
-                  )}
-                  {isFlatFee ? (
-                    <input type="number" className="input budget-line-input" style={{ width: '90px' }}
-                      value={line.amount} min="0"
-                      onChange={e => updateCrew(line._id, 'amount', e.target.value)} />
-                  ) : (
-                    <div className="budget-line-total" style={{ width: '90px' }}>{fmt(line.amount)}</div>
-                  )}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <input type="number" className="input budget-line-input" style={{ width: '76px' }}
-                      value={line.discount || 0} min="0" placeholder="0"
-                      onChange={e => updateCrew(line._id, 'discount', e.target.value)} />
-                    {discLbl && <span style={{ fontSize: '11px', color: 'var(--color-ember)', whiteSpace: 'nowrap' }}>{discLbl}</span>}
-                  </div>
-                  <button className="btn-icon" style={{ width: '28px', height: '28px', borderRadius: '10px', flexShrink: 0 }}
-                    onClick={() => setCrewLines(prev => prev.filter(l => l._id !== line._id))}>
-                    <Trash2 size={12} />
-                  </button>
-                </div>
-              );
-            })}
+            {crewLines.map(line => (
+              <StaticLine
+                key={line._id}
+                label={line.position_label}
+                detail={isFlatFee ? null : `${line.days} × ${fmt(line.rate)}`}
+                amount={line.amount}
+                discount={line.discount}
+              />
+            ))}
             <div className="budget-subtotal-row"><span>Section subtotal</span><span>{fmt(crewSubtotal)}</span></div>
           </>
         )}
@@ -1138,51 +1169,23 @@ function StepReview({
       {/* Section 02 — Assets & Rentals */}
       {hasEquipment && (
         <div className="budget-review-section">
-          <div className="budget-review-section-title">02 — ASSETS & RENTALS</div>
+          <SectionHeader title="02 · ASSETS & RENTALS" step={2} />
           <ProviderToggle />
           {equipLines.length === 0 ? (
             <div style={{ color: 'var(--color-mid-gray)', fontSize: '12px', fontStyle: 'italic', padding: '8px 0' }}>No equipment lines added.</div>
           ) : (
             <>
-              <div className="budget-line-headers">
-                <span style={{ flex: 2 }}>Item</span>
-                <span style={{ width: '52px' }}>Days</span>
-                <span style={{ width: '76px' }}>Rate/Day</span>
-                <span style={{ width: '80px', textAlign: 'right' }}>Total</span>
-                <span style={{ width: '76px' }}>Disc. €</span>
-                <span style={{ width: '28px' }} />
-              </div>
               {equipLines.map(line => {
-                const discLbl = discountLabel((parseFloat(line.days) || 0) * (parseFloat(line.rate) || 0), line.discount);
+                const amt = (parseFloat(line.days) || 0) * (parseFloat(line.rate) || 0);
+                const detail = [line.provider_name, `${line.days} × ${fmt(line.rate)}`].filter(Boolean).join(' · ');
                 return (
-                  <div key={line._id} style={{ marginBottom: '4px' }}>
-                    <div className="budget-line-row" style={{ flexWrap: 'wrap' }}>
-                      <input className="input budget-line-input" style={{ flex: 2, minWidth: '100px' }} value={line.position_label}
-                        onChange={e => updateEquip(line._id, 'position_label', e.target.value)} />
-                      <input type="number" className="input budget-line-input" style={{ width: '52px' }}
-                        value={line.days} min="0.5" step="0.5"
-                        onChange={e => updateEquip(line._id, 'days', e.target.value)} />
-                      <input type="number" className="input budget-line-input" style={{ width: '76px' }}
-                        value={line.rate} min="0"
-                        onChange={e => updateEquip(line._id, 'rate', e.target.value)} />
-                      <div className="budget-line-total" style={{ width: '80px' }}>
-                        {fmt((parseFloat(line.days) || 0) * (parseFloat(line.rate) || 0))}
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <input type="number" className="input budget-line-input" style={{ width: '76px' }}
-                          value={line.discount || 0} min="0" placeholder="0"
-                          onChange={e => updateEquip(line._id, 'discount', e.target.value)} />
-                        {discLbl && <span style={{ fontSize: '11px', color: 'var(--color-ember)', whiteSpace: 'nowrap' }}>{discLbl}</span>}
-                      </div>
-                      <button className="btn-icon" style={{ width: '28px', height: '28px', borderRadius: '10px', flexShrink: 0 }}
-                        onClick={() => setEquipLines(prev => prev.filter(l => l._id !== line._id))}>
-                        <Trash2 size={12} />
-                      </button>
-                    </div>
-                    {line.provider_name && (
-                      <div style={{ fontSize: '11px', color: 'var(--color-mid-gray)', paddingLeft: '6px', marginTop: '-2px' }}>{line.provider_name}</div>
-                    )}
-                  </div>
+                  <StaticLine
+                    key={line._id}
+                    label={line.position_label}
+                    detail={detail}
+                    amount={amt}
+                    discount={line.discount}
+                  />
                 );
               })}
               <div className="budget-subtotal-row"><span>Section subtotal</span><span>{fmt(equipSubtotal)}</span></div>
@@ -1194,49 +1197,20 @@ function StepReview({
       {/* Section 03 — Logistical */}
       {hasLogistics && (
         <div className="budget-review-section">
-          <div className="budget-review-section-title">03 — LOGISTICAL COSTS</div>
+          <SectionHeader title="03 · LOGISTICAL COSTS" step={3} />
           {logLines.length === 0 ? (
             <div style={{ color: 'var(--color-mid-gray)', fontSize: '12px', fontStyle: 'italic', padding: '8px 0' }}>No logistical lines added.</div>
           ) : (
             <>
-              <div className="budget-line-headers">
-                <span style={{ flex: 1 }}>Category</span>
-                <span style={{ flex: 1 }}>Description</span>
-                <span style={{ width: '90px', textAlign: 'right' }}>Amount</span>
-                <span style={{ width: '76px' }}>Disc. €</span>
-                <span style={{ width: '28px' }} />
-              </div>
-              {logLines.map(line => {
-                const discLbl = discountLabel(line.amount, line.discount);
-                return (
-                  <div key={line._id} className="budget-line-row" style={{ flexWrap: 'wrap' }}>
-                    <select className="select budget-line-input" style={{ flex: 1, minWidth: '100px' }} value={line.position_label}
-                      onChange={e => updateLog(line._id, 'position_label', e.target.value)}>
-                      <option value="">Category</option>
-                      {expenseCats.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                      {line.position_label && !expenseCats.find(c => c.name === line.position_label) && (
-                        <option value={line.position_label}>{line.position_label}</option>
-                      )}
-                    </select>
-                    <input className="input budget-line-input" style={{ flex: 1, minWidth: '80px' }} value={line.description || ''}
-                      onChange={e => updateLog(line._id, 'description', e.target.value)}
-                      placeholder="Optional detail" />
-                    <input type="number" className="input budget-line-input" style={{ width: '90px' }}
-                      value={line.amount} min="0"
-                      onChange={e => updateLog(line._id, 'amount', e.target.value)} />
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <input type="number" className="input budget-line-input" style={{ width: '76px' }}
-                        value={line.discount || 0} min="0" placeholder="0"
-                        onChange={e => updateLog(line._id, 'discount', e.target.value)} />
-                      {discLbl && <span style={{ fontSize: '11px', color: 'var(--color-ember)', whiteSpace: 'nowrap' }}>{discLbl}</span>}
-                    </div>
-                    <button className="btn-icon" style={{ width: '28px', height: '28px', borderRadius: '10px', flexShrink: 0 }}
-                      onClick={() => setLogLines(prev => prev.filter(l => l._id !== line._id))}>
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
-                );
-              })}
+              {logLines.map(line => (
+                <StaticLine
+                  key={line._id}
+                  label={line.position_label}
+                  detail={line.description || null}
+                  amount={line.amount}
+                  discount={line.discount}
+                />
+              ))}
               <div className="budget-subtotal-row"><span>Section subtotal</span><span>{fmt(logSubtotal)}</span></div>
             </>
           )}
@@ -1302,19 +1276,10 @@ function StepReview({
         </div>
       </div>
 
-      {/* Notes & Status */}
-      <div className="form-grid" style={{ marginTop: '20px' }}>
-        <div className="form-row">
-          <label className="form-label">Notes (appears on PDF)</label>
-          <textarea className="input" rows={3} value={info.notes} onChange={e => setInfo(p => ({ ...p, notes: e.target.value }))} placeholder="Any additional notes for the client..." />
-        </div>
-        <div className="form-row">
-          <label className="form-label">Status</label>
-          <select className="select" value={info.status} onChange={e => setInfo(p => ({ ...p, status: e.target.value }))}>
-            <option value="draft">Draft</option>
-            <option value="finalized">Finalized</option>
-          </select>
-        </div>
+      {/* Notes */}
+      <div className="form-row" style={{ marginTop: '20px' }}>
+        <label className="form-label">Notes (appears on PDF)</label>
+        <textarea className="input" rows={3} value={info.notes} onChange={e => setInfo(p => ({ ...p, notes: e.target.value }))} placeholder="Any additional notes for the client..." />
       </div>
     </div>
   );
