@@ -57,6 +57,9 @@ function getBudgetFull(id) {
 router.get('/', (req, res) => {
   const budgets = db.prepare(`
     SELECT b.*, p.title as project_title,
+      (SELECT COALESCE(SUM(bl.amount), 0) FROM budget_lines bl WHERE bl.budget_id = b.id AND bl.section = 'crew') as crew_total,
+      (SELECT COALESCE(SUM(bl.amount), 0) FROM budget_lines bl WHERE bl.budget_id = b.id AND bl.section = 'equipment') as equip_total,
+      (SELECT COALESCE(SUM(bl.amount), 0) FROM budget_lines bl WHERE bl.budget_id = b.id AND bl.section = 'logistical') as log_total,
       (SELECT COALESCE(SUM(bl.amount), 0) FROM budget_lines bl WHERE bl.budget_id = b.id) as subtotal,
       (SELECT COALESCE(SUM(MIN(bl.discount, bl.amount)), 0) FROM budget_lines bl WHERE bl.budget_id = b.id) as total_discount,
       (SELECT COALESCE(SUM(MAX(bl.amount - bl.discount, 0)), 0) FROM budget_lines bl WHERE bl.budget_id = b.id) as net_subtotal,
@@ -88,8 +91,8 @@ router.post('/', (req, res) => {
   }
 
   const result = db.prepare(`
-    INSERT INTO budgets (project_id, title, category, client_name, shoot_days, shoot_location, status, vat_enabled, vat_rate, notes, show_providers)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO budgets (project_id, title, category, client_name, shoot_days, shoot_location, status, vat_enabled, vat_rate, notes, show_providers, sent_at, responded_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     project_id || null,
     title,
@@ -102,6 +105,8 @@ router.post('/', (req, res) => {
     vat_rate != null ? vat_rate : 18,
     notes || null,
     show_providers ? 1 : 0,
+    req.body.sent_at || null,
+    req.body.responded_at || null,
   );
 
   res.json({ id: result.lastInsertRowid });
@@ -109,7 +114,7 @@ router.post('/', (req, res) => {
 
 // PUT /api/budgets/:id
 router.put('/:id', (req, res) => {
-  const budget = db.prepare('SELECT id FROM budgets WHERE id = ?').get(req.params.id);
+  const budget = db.prepare('SELECT * FROM budgets WHERE id = ?').get(req.params.id);
   if (!budget) return res.status(404).json({ error: 'Budget not found' });
 
   const { title, project_id, category, client_name, shoot_days, shoot_location, status, vat_enabled, vat_rate, notes, show_providers } = req.body;
@@ -118,11 +123,18 @@ router.put('/:id', (req, res) => {
     if (!Number.isFinite(vr) || vr < 0 || vr > 100) return res.status(400).json({ error: 'vat_rate must be between 0 and 100' });
   }
 
+  // Pipeline timestamps are owned by the status endpoint, not the editor. A
+  // plain save keeps whatever the timestamps already are unless the caller
+  // explicitly sends new ones, so editing an estimate never resets its age.
+  const sentAt = req.body.sent_at !== undefined ? req.body.sent_at : budget.sent_at;
+  const respondedAt = req.body.responded_at !== undefined ? req.body.responded_at : budget.responded_at;
+
   db.prepare(`
     UPDATE budgets SET
       project_id = ?, title = ?, category = ?, client_name = ?,
       shoot_days = ?, shoot_location = ?, status = ?,
-      vat_enabled = ?, vat_rate = ?, notes = ?, show_providers = ?
+      vat_enabled = ?, vat_rate = ?, notes = ?, show_providers = ?,
+      sent_at = ?, responded_at = ?
     WHERE id = ?
   `).run(
     project_id || null,
@@ -136,6 +148,8 @@ router.put('/:id', (req, res) => {
     vat_rate != null ? vat_rate : 18,
     notes || null,
     show_providers ? 1 : 0,
+    sentAt || null,
+    respondedAt || null,
     req.params.id,
   );
 
@@ -148,6 +162,124 @@ router.delete('/:id', (req, res) => {
   if (!budget) return res.status(404).json({ error: 'Budget not found' });
   db.prepare('DELETE FROM budgets WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
+});
+
+// POST /api/budgets/:id/status: move one estimate through the pipeline without
+// resending the whole record. Moving to sent stamps sent_at and clears any old
+// reply; moving to accepted or rejected stamps responded_at; moving back to
+// draft clears both, so a re-drafted estimate starts clean.
+const ESTIMATE_STATUSES = new Set(['draft', 'sent', 'accepted', 'rejected']);
+router.post('/:id/status', (req, res) => {
+  const budget = db.prepare('SELECT * FROM budgets WHERE id = ?').get(req.params.id);
+  if (!budget) return res.status(404).json({ error: 'Estimate not found' });
+
+  const { status } = req.body;
+  if (!ESTIMATE_STATUSES.has(status)) {
+    return res.status(400).json({ error: 'status must be one of draft, sent, accepted, rejected' });
+  }
+
+  let sentAt = budget.sent_at;
+  let respondedAt = budget.responded_at;
+  if (status === 'draft') {
+    sentAt = null;
+    respondedAt = null;
+  } else if (status === 'sent') {
+    sentAt = new Date().toISOString();
+    respondedAt = null;
+  } else {
+    // accepted or rejected
+    if (!sentAt) sentAt = new Date().toISOString();
+    respondedAt = new Date().toISOString();
+  }
+
+  db.prepare('UPDATE budgets SET status = ?, sent_at = ?, responded_at = ? WHERE id = ?')
+    .run(status, sentAt, respondedAt, req.params.id);
+
+  res.json(getBudgetFull(parseInt(req.params.id)));
+});
+
+// POST /api/budgets/:id/duplicate: copy an estimate and every line. Most
+// estimates are variations of a previous one, so the copy resets to draft with
+// no pipeline history and the title is suffixed so the two are told apart.
+router.post('/:id/duplicate', (req, res) => {
+  const src = db.prepare('SELECT * FROM budgets WHERE id = ?').get(req.params.id);
+  if (!src) return res.status(404).json({ error: 'Estimate not found' });
+
+  const lines = db.prepare(
+    'SELECT * FROM budget_lines WHERE budget_id = ? ORDER BY section, sort_order, id'
+  ).all(src.id);
+
+  const newId = db.transaction(() => {
+    const r = db.prepare(`
+      INSERT INTO budgets (project_id, title, category, client_name, shoot_days, shoot_location, status, vat_enabled, vat_rate, notes, show_providers, sent_at, responded_at)
+      VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, NULL, NULL)
+    `).run(
+      src.project_id, `${src.title} (Copy)`, src.category, src.client_name,
+      src.shoot_days, src.shoot_location, src.vat_enabled, src.vat_rate, src.notes, src.show_providers,
+    );
+    const nid = r.lastInsertRowid;
+    const ins = db.prepare(`
+      INSERT INTO budget_lines (budget_id, section, position_label, description, crew_id, days, rate, amount, sort_order, discount)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    lines.forEach(l => ins.run(
+      nid, l.section, l.position_label, l.description, l.crew_id,
+      l.days, l.rate, l.amount, l.sort_order, l.discount,
+    ));
+    return nid;
+  })();
+
+  res.json({ id: newId });
+});
+
+// POST /api/budgets/:id/project: turn an accepted estimate into a project,
+// mirroring the create-invoice-from-estimate flow. The estimate total becomes
+// the agreed budget, the category maps to the matching project category, and
+// the estimate is linked to the new project.
+const PROJECT_PHASES = ['Development', 'Pre-Production', 'Production', 'Post-Production'];
+router.post('/:id/project', (req, res) => {
+  const budget = getBudgetFull(parseInt(req.params.id));
+  if (!budget) return res.status(404).json({ error: 'Estimate not found' });
+
+  // Resolve the client: prefer the client already on a linked project, else
+  // match the estimate's free-text client name against the clients table.
+  let clientId = null;
+  if (budget.project_id) {
+    const proj = db.prepare('SELECT client_id FROM projects WHERE id = ?').get(budget.project_id);
+    if (proj && proj.client_id) clientId = proj.client_id;
+  }
+  if (!clientId && budget.client_name) {
+    const match = db.prepare('SELECT id FROM clients WHERE name = ? OR company = ? LIMIT 1')
+      .get(budget.client_name, budget.client_name);
+    if (match) clientId = match.id;
+  }
+
+  const cat = db.prepare('SELECT id FROM project_categories WHERE name = ? LIMIT 1').get(budget.category);
+  const categoryId = cat ? cat.id : null;
+
+  try {
+    const result = db.prepare(
+      'INSERT INTO projects (client_id, title, category_id, agreed_budget, notes, shoot_days, shoot_location, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(
+      clientId, budget.title, categoryId, budget.total || 0,
+      budget.notes || null, budget.shoot_days || 1, budget.shoot_location || null,
+      PROJECT_PHASES[0].toLowerCase().replace(/ /g, '-'),
+    );
+    const projectId = result.lastInsertRowid;
+
+    const insertPhase = db.prepare('INSERT INTO project_phases (project_id, phase_name, order_index, status) VALUES (?, ?, ?, ?)');
+    PROJECT_PHASES.forEach((name, i) => insertPhase.run(projectId, name, i, i === 0 ? 'active' : 'pending'));
+
+    // Link the estimate to the project it produced, if it was not already tied
+    // to one, so the two stay connected.
+    if (!budget.project_id) {
+      db.prepare('UPDATE budgets SET project_id = ? WHERE id = ?').run(projectId, budget.id);
+    }
+
+    res.json({ id: projectId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // POST /api/budgets/:id/lines
@@ -288,7 +420,7 @@ router.get('/:id/pdf', (req, res) => {
   const doc = new PDFDocument({ size: 'A4', margin: 0 });
   const safeTitle = (budget.title || 'budget').replace(/[^a-z0-9]/gi, '-');
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="Investment-Estimation-${safeTitle}.pdf"`);
+  res.setHeader('Content-Disposition', `attachment; filename="Estimate-${safeTitle}.pdf"`);
   doc.pipe(res);
 
   const fmt = v => `€${Number(v || 0).toFixed(2)}`;
@@ -332,7 +464,7 @@ router.get('/:id/pdf', (req, res) => {
 
   const dateStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
   doc.font('Helvetica-Bold').fontSize(20).fillColor('#FFFFFF')
-     .text('INVESTMENT ESTIMATION', 0, y + 30, { width: VW - 40, align: 'right', lineBreak: false });
+     .text('ESTIMATE', 0, y + 30, { width: VW - 40, align: 'right', lineBreak: false });
   doc.font('Helvetica').fontSize(9).fillColor('#888888')
      .text(dateStr, 0, y + 62, { width: VW - 40, align: 'right', lineBreak: false });
   doc.font('Helvetica').fontSize(9).fillColor('#888888')

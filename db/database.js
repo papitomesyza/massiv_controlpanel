@@ -475,6 +475,11 @@ function initDb() {
     'ALTER TABLE projects ADD COLUMN location_lat REAL',
     'ALTER TABLE projects ADD COLUMN location_lng REAL',
     'ALTER TABLE budgets ADD COLUMN show_providers INTEGER DEFAULT 0',
+    // Estimate pipeline: when it went out to the client, and when they replied.
+    // Both nullable: a draft has neither, a sent estimate has sent_at only, an
+    // answered one has both. sent_at also drives the age ring on the cards.
+    'ALTER TABLE budgets ADD COLUMN sent_at DATETIME',
+    'ALTER TABLE budgets ADD COLUMN responded_at DATETIME',
     'ALTER TABLE expenses ADD COLUMN submitted_by TEXT',
     'ALTER TABLE expenses ADD COLUMN invoice_image_path TEXT',
     "ALTER TABLE expenses ADD COLUMN source TEXT DEFAULT 'admin'",
@@ -539,6 +544,22 @@ function initDb() {
   // Backfill: any existing expense with no status gets confirmed
   try {
     db.exec("UPDATE expenses SET status = 'confirmed' WHERE status IS NULL");
+  } catch (_) {}
+
+  // Estimates gained a real pipeline: draft, sent, accepted, rejected. The old
+  // two-state model (draft, finalized) maps finalized onto sent, since a
+  // finalized estimate is one that went out to the client. Draft stays draft.
+  // sent_at seeds from created_at for the migrated rows so their age ring has a
+  // starting point. The settings guard makes this run exactly once.
+  try {
+    const done = db.prepare("SELECT value FROM settings WHERE key = 'budget_status_pipeline_migrated'").get();
+    if (!done) {
+      const r = db.prepare(
+        "UPDATE budgets SET status = 'sent', sent_at = COALESCE(sent_at, created_at) WHERE status = 'finalized'"
+      ).run();
+      db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('budget_status_pipeline_migrated', '1')").run();
+      if (r.changes) console.log(`INFO: Migrated ${r.changes} finalized estimate(s) to the sent pipeline stage.`);
+    }
   } catch (_) {}
 
   // Backfill client_payments.invoice_id by matching the legacy note string that
