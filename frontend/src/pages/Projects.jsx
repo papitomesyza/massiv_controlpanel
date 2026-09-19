@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  Plus, List, GanttChart, Lightbulb, ChevronDown, ChevronUp,
-  Search, SlidersHorizontal, Camera, Flag,
+  Plus, List, GanttChart, Lightbulb, ChevronDown, ChevronUp, ChevronRight,
+  Search, Camera, Flag, CheckCircle2, Circle,
 } from 'lucide-react';
 import { api, fmt, fmtDate } from '../api';
 import { Private } from '../context/PrivacyContext';
@@ -10,10 +10,17 @@ import ProjectWizard from '../components/ProjectWizard';
 import AddLeadModal from '../components/AddLeadModal';
 import LeadsRail from '../components/LeadsRail';
 import ProjectTimeline from '../components/ProjectTimeline';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { makeDeadlinePatcher } from '../lib/patchDeadline';
+import { advanceToPhase } from '../lib/advancePhase';
+import { GROUP_TINT, categoryVisual, CategoryTile } from '../lib/categoryIcons';
 
 // The four active statuses, in flow order. Completed lives on its own tab.
 const ACTIVE_STATUSES = ['development', 'pre-production', 'production', 'post-production'];
+
+// The five category groups in a fixed order, so the group filter row never
+// reshuffles. Each one carries its own palette tint (see categoryIcons).
+const GROUPS = Object.keys(GROUP_TINT);
 
 // One status colour system, shared with the Dashboard hero and the timeline
 // (see index.css). The same token decodes the row dot, the filter dot and the
@@ -41,22 +48,14 @@ const SORTS = [
   { key: 'margin_high', label: 'Margin: high to low' },
 ];
 
+const NEXT_SHOOT_WINDOW = 30; // days: the ring is full at the shoot, empty a month out
+
 // Projected margin: what the project keeps if it collects its agreed budget and
 // its committed costs land as booked. It is budget minus crew minus expenses over
 // budget, not received over budget, so an unpaid project does not read as a loss.
 function getMargin(p) {
   if (!p.agreed_budget || p.agreed_budget <= 0) return null;
   return ((p.agreed_budget - p.total_crew_cost - p.total_expenses) / p.agreed_budget) * 100;
-}
-
-/* ── Hover tooltip primitive: a fact travels on hover instead of taking space. ── */
-function Tip({ content, children, className = '' }) {
-  return (
-    <span className={`tip-wrap ${className}`}>
-      {children}
-      <span className="tip-pop" role="tooltip">{content}</span>
-    </span>
-  );
 }
 
 function MarginBadge({ p }) {
@@ -66,7 +65,7 @@ function MarginBadge({ p }) {
   return <span className={`badge ${cls}`}>{Math.round(margin)}%</span>;
 }
 
-// The status word never prints on the card. The dot carries it; the word lives in
+// The status word never prints on the row. The dot carries it; the word lives in
 // the dot's tooltip and once in the legend at the foot of the page.
 function StatusDot({ status, size = 10 }) {
   if (status === 'completed') {
@@ -106,17 +105,92 @@ function DateChip({ info, Icon, muted, title }) {
   );
 }
 
+// A small ring that fills as its date approaches, matching the win-rate ring on
+// the Estimates strip. frac 0 reads as an empty track, frac 1 as a full hue.
+function ProximityRing({ frac, color }) {
+  const size = 46, R = 19, C = 2 * Math.PI * R;
+  const f = Math.max(0, Math.min(1, frac || 0));
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="win-ring">
+      <circle cx={size / 2} cy={size / 2} r={R} fill="none" stroke="var(--color-hairline)" strokeWidth="4" />
+      <circle
+        cx={size / 2} cy={size / 2} r={R} fill="none" stroke={color} strokeWidth="4"
+        strokeLinecap="round" strokeDasharray={C} strokeDashoffset={C * (1 - f)}
+        transform={`rotate(-90 ${size / 2} ${size / 2})`}
+      />
+    </svg>
+  );
+}
+
+// ── Stat strip ────────────────────────────────────────────────────────────────
+// Opens the page with four figures, matching the construction of the Estimates
+// pipeline strip so the two pages read as siblings.
+function StatStrip({ projects }) {
+  const strip = useMemo(() => {
+    const active = projects.filter(p => p.status !== 'completed');
+    const inProduction = active.filter(p => p.status === 'production').length;
+    const agreedValue = active.reduce((s, p) => s + (Number(p.agreed_budget) || 0), 0);
+    const outstanding = active.reduce((s, p) => {
+      const owed = (Number(p.agreed_budget) || 0) - (Number(p.total_received) || 0);
+      return s + Math.max(0, owed);
+    }, 0);
+
+    // Next upcoming shoot among active projects.
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    let nextShoot = null;
+    active.forEach(p => {
+      if (!p.shoot_date) return;
+      const d = new Date(p.shoot_date + 'T00:00:00');
+      if (isNaN(d.getTime()) || d < today) return;
+      if (!nextShoot || d < nextShoot) nextShoot = d;
+    });
+    let shootDays = null, shootFrac = 0;
+    if (nextShoot) {
+      shootDays = Math.round((nextShoot - today) / 86400000);
+      shootFrac = Math.max(0, Math.min(1, 1 - shootDays / NEXT_SHOOT_WINDOW));
+    }
+    return { inProduction, agreedValue, outstanding, nextShoot, shootDays, shootFrac };
+  }, [projects]);
+
+  const shootTip = strip.nextShoot
+    ? `Next shoot ${fmtDate(strip.nextShoot.toISOString().slice(0, 10))}${strip.shootDays === 0 ? ' (today)' : ` (in ${strip.shootDays}d)`}`
+    : 'No upcoming shoot';
+
+  return (
+    <div className="est-pipeline est-pipeline-4">
+      <div className="est-pipe-cell">
+        <div className="est-pipe-label">In production</div>
+        <div className="est-pipe-value">{strip.inProduction}</div>
+      </div>
+      <div className="est-pipe-cell">
+        <div className="est-pipe-label">Active agreed value</div>
+        <div className="est-pipe-value"><Private>{fmt(strip.agreedValue)}</Private></div>
+      </div>
+      <div className="est-pipe-cell">
+        <div className="est-pipe-label">Outstanding</div>
+        <div className="est-pipe-value"><Private>{fmt(strip.outstanding)}</Private></div>
+      </div>
+      <div className="est-pipe-cell">
+        <div className="est-pipe-label">Next shoot</div>
+        <div className="est-pipe-ring" title={shootTip}>
+          <ProximityRing frac={strip.shootFrac} color="var(--cat-2)" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Projects() {
   const [projects, setProjects]       = useState([]);
-  const [categories, setCategories]   = useState([]);
   const [leads, setLeads]             = useState([]);
   const [loading, setLoading]         = useState(true);
   const [activeTab, setActiveTab]     = useState('active');
   const [filterStatus, setFilterStatus] = useState('');
+  const [filterGroup, setFilterGroup] = useState('');
   const [query, setQuery]             = useState('');
-  const [filterCat, setFilterCat]     = useState('');
   const [sort, setSort]               = useState('newest');
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [expandedId, setExpandedId]   = useState(null);
+  const [backConfirm, setBackConfirm] = useState(null); // { project, targetIndex }
   const [view, setView]               = useState(() => {
     const v = localStorage.getItem('massiv_projects_view');
     return v === 'timeline' || v === 'gantt' ? 'timeline' : 'list';
@@ -129,20 +203,24 @@ export default function Projects() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Everything the page needs is small and fully in memory, so we fetch once on
-  // mount and do all filtering and sorting client side. The API query params are
-  // left intact for other callers; this page just stops using them.
+  // mount and do all filtering and sorting client side.
   async function load() {
-    const [p, ca, l] = await Promise.all([
+    const [p, l] = await Promise.all([
       api.get('/projects'),
-      api.get('/settings/project-categories'),
       api.get('/leads'),
     ]);
     setProjects(p);
-    setCategories(ca);
     setLeads(l);
     setLeadsOpen(l.length > 0);
     setLoading(false);
     return { leads: l };
+  }
+
+  // A quieter refetch used to reconcile after an inline phase change, so the
+  // leads section and its open/closed state are left untouched.
+  async function reloadProjects() {
+    const p = await api.get('/projects');
+    setProjects(p);
   }
 
   useEffect(() => {
@@ -173,14 +251,42 @@ export default function Projects() {
   // this page saves and re-syncs the calendar exactly as the Dashboard does.
   const onPatchDeadline = useMemo(() => makeDeadlinePatcher(setProjects), []);
 
-  function switchTab(tab) { setActiveTab(tab); setFilterStatus(''); }
+  function switchTab(tab) { setActiveTab(tab); setFilterStatus(''); setExpandedId(null); }
   function switchView(v) { setView(v); localStorage.setItem('massiv_projects_view', v); }
 
-  const grouped = categories.reduce((acc, c) => {
-    acc[c.group_name] = acc[c.group_name] || [];
-    acc[c.group_name].push(c);
-    return acc;
-  }, {});
+  // Clicking a row's status dot drives the same filter the top dot row uses.
+  function filterByStatus(status) {
+    if (!ACTIVE_STATUSES.includes(status)) return;
+    setActiveTab('active');
+    setFilterStatus(cur => (cur === status ? '' : status));
+  }
+
+  // Inline phase advance. Forward moves happen immediately; a backward move is
+  // destructive to the phase record, so it is confirmed first.
+  function requestAdvance(project, targetIndex) {
+    const current = project.completed_phases || 0;
+    const isCurrent = project.status !== 'completed' && targetIndex === current;
+    if (isCurrent) return;
+    if (targetIndex < current || project.status === 'completed') {
+      setBackConfirm({ project, targetIndex });
+      return;
+    }
+    runAdvance(project, targetIndex);
+  }
+
+  async function runAdvance(project, targetIndex) {
+    const snapshot = projects;
+    // Optimistic: fill segments up to the target straight away.
+    setProjects(list => list.map(x =>
+      x.id === project.id ? { ...x, completed_phases: targetIndex } : x
+    ));
+    try {
+      await advanceToPhase(project, targetIndex);
+      await reloadProjects();
+    } catch (_) {
+      setProjects(snapshot);
+    }
+  }
 
   function handleCreated(id) {
     setShowWizard(false);
@@ -194,8 +300,6 @@ export default function Projects() {
     setShowAddLead(false);
   }
 
-  // Convert on this page keeps the richer wizard based flow: prefill the wizard,
-  // and on success mark the lead converted and drop it.
   async function handleConvertLead(lead) {
     setWizardPrefill(lead);
     setShowWizard(true);
@@ -217,7 +321,7 @@ export default function Projects() {
       activeTab === 'active' ? p.status !== 'completed' : p.status === 'completed'
     );
     if (activeTab === 'active' && filterStatus) list = list.filter(p => p.status === filterStatus);
-    if (filterCat) list = list.filter(p => String(p.category_id) === String(filterCat));
+    if (filterGroup) list = list.filter(p => p.group_name === filterGroup);
     if (q) list = list.filter(p =>
       (p.title || '').toLowerCase().includes(q) || (p.client_name || '').toLowerCase().includes(q)
     );
@@ -239,9 +343,7 @@ export default function Projects() {
       }
     });
     return sorted;
-  }, [projects, activeTab, filterStatus, filterCat, query, sort]);
-
-  const moreActive = filterCat !== '' || sort !== 'newest';
+  }, [projects, activeTab, filterStatus, filterGroup, query, sort]);
 
   if (loading) return <div className="loading">Loading...</div>;
 
@@ -263,6 +365,8 @@ export default function Projects() {
         </div>
       </div>
 
+      {projects.length > 0 && <StatStrip projects={projects} />}
+
       {/* Active / Completed tabs */}
       <div style={{ display: 'flex', gap: '4px', marginBottom: '16px' }}>
         <button
@@ -281,7 +385,7 @@ export default function Projects() {
         </button>
       </div>
 
-      {/* Search + status dots + a single compact control for category and sort. */}
+      {/* Search, status dots, group dots and an inline sort. */}
       <div className="est-controls">
         <div className="est-search">
           <Search size={15} />
@@ -309,36 +413,34 @@ export default function Projects() {
           </div>
         )}
 
-        <div className="proj-filter-more">
-          <button
-            className={`est-filter-dot${moreActive ? ' active' : ''}`}
-            title="Category and sort"
-            aria-label="Category and sort"
-            onClick={() => setFiltersOpen(o => !o)}
-          >
-            <SlidersHorizontal size={15} />
-          </button>
-          {filtersOpen && (
-            <>
-              <div className="proj-filter-scrim" onClick={() => setFiltersOpen(false)} />
-              <div className="proj-filter-pop">
-                <label className="form-label">Category</label>
-                <select className="select input" value={filterCat} onChange={e => setFilterCat(e.target.value)}>
-                  <option value="">All categories</option>
-                  {Object.entries(grouped).map(([g, cats]) => (
-                    <optgroup key={g} label={g}>
-                      {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </optgroup>
-                  ))}
-                </select>
-                <label className="form-label" style={{ marginTop: '10px' }}>Sort</label>
-                <select className="select input" value={sort} onChange={e => setSort(e.target.value)}>
-                  {SORTS.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
-                </select>
-              </div>
-            </>
-          )}
+        {/* Group filter: the five group glyphs, tinted to match the row tiles. */}
+        <div className="est-filter-dots proj-group-dots">
+          {GROUPS.map(g => {
+            const { Icon, tint } = categoryVisual(undefined, g);
+            return (
+              <button
+                key={g}
+                className={`est-filter-dot proj-group-dot ${filterGroup === g ? 'active' : ''}`}
+                style={{ '--tint': tint }}
+                title={g}
+                aria-label={g}
+                onClick={() => setFilterGroup(cur => cur === g ? '' : g)}
+              >
+                <Icon size={16} />
+              </button>
+            );
+          })}
         </div>
+
+        <select
+          className="select input proj-sort-select"
+          value={sort}
+          onChange={e => setSort(e.target.value)}
+          title="Sort"
+          aria-label="Sort"
+        >
+          {SORTS.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+        </select>
       </div>
 
       {displayProjects.length === 0 ? (
@@ -349,7 +451,17 @@ export default function Projects() {
         </div>
       ) : (
         <div className="card">
-          {displayProjects.map(p => <ProjectRowCard key={p.id} p={p} />)}
+          {displayProjects.map(p => (
+            <ProjectRow
+              key={p.id}
+              p={p}
+              expanded={expandedId === p.id}
+              onToggleExpand={() => setExpandedId(cur => cur === p.id ? null : p.id)}
+              onNavigate={() => navigate(`/projects/${p.id}`)}
+              onSegment={idx => requestAdvance(p, idx)}
+              onFilterStatus={() => filterByStatus(p.status)}
+            />
+          ))}
         </div>
       )}
 
@@ -389,75 +501,204 @@ export default function Projects() {
         />
       )}
       {showAddLead && <AddLeadModal onClose={() => setShowAddLead(false)} onSaved={handleLeadSaved} />}
+
+      {backConfirm && (
+        <ConfirmDialog
+          title="Move this project back a phase?"
+          message="Reopening an earlier phase rewrites the phase record and cannot be undone cleanly."
+          confirmLabel="Move back"
+          tone="danger"
+          onConfirm={() => { const bc = backConfirm; setBackConfirm(null); runAdvance(bc.project, bc.targetIndex); }}
+          onCancel={() => setBackConfirm(null)}
+        />
+      )}
     </div>
   );
 }
 
-/* ─── Project row card ─── */
-function ProjectRowCard({ p }) {
+/* ─── Segmented phase track ─── */
+// One segment per phase from total_phases (never assumed to be four). Completed
+// phases render solid in the status hue, the active phase reads bright and
+// outlined, the rest are hollow. Clicking a segment advances the project.
+function PhaseTrack({ p, hue, onSegment }) {
+  const total = p.total_phases || 0;
+  if (total <= 0) return null;
+  const done = p.completed_phases || 0;
+  const currentIdx = p.status === 'completed' ? -1 : done;
+  return (
+    <div className="phase-track" style={{ '--hue': hue }} role="group" aria-label="Project phases">
+      {Array.from({ length: total }).map((_, i) => {
+        const state = i < done ? 'done' : i === currentIdx ? 'current' : 'todo';
+        return (
+          <button
+            key={i}
+            type="button"
+            className={`phase-seg is-${state}`}
+            aria-label={`Go to phase ${i + 1}`}
+            onClick={e => { e.stopPropagation(); onSegment(i); }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+/* ─── Payment track ─── */
+// Received against agreed. When the deadline has passed and the project is not
+// fully paid, the track tints ember, the same overdue language as the timeline.
+function PaymentTrack({ p, overdue }) {
+  const agreed = Number(p.agreed_budget) || 0;
+  if (agreed <= 0) return null; // no agreed budget: no track at all
+  const pct = Math.min(100, Math.round(((Number(p.total_received) || 0) / agreed) * 100));
+  return (
+    <div className={`pay-track${overdue ? ' is-overdue' : ''}`}>
+      <div className="pay-fill" style={{ width: `${pct}%` }} />
+    </div>
+  );
+}
+
+/* ─── Project row ─── */
+function ProjectRow({ p, expanded, onToggleExpand, onNavigate, onSegment, onFilterStatus }) {
   const shoot = dateInfo(p.shoot_date);
   const dead  = dateInfo(p.deadline);
-  // The nearer date (smaller distance from today) reads as the emphasised chip.
   let shootMuted = false, deadMuted = false;
   if (shoot && dead) {
     if (Math.abs(dead.diff) < Math.abs(shoot.diff)) shootMuted = true;
     else deadMuted = true;
   }
 
-  const totalPhases   = p.total_phases || 4;
-  const phaseProgress = totalPhases > 0 ? Math.round((p.completed_phases / totalPhases) * 100) : 0;
-  const receivedPct   = p.agreed_budget > 0
-    ? Math.min(100, Math.round((p.total_received / p.agreed_budget) * 100)) : 0;
+  const hue = p.status === 'completed'
+    ? 'var(--color-hairline-strong)'
+    : (STATUS_HUE[p.status] || 'var(--color-hairline-strong)');
+
+  const agreed = Number(p.agreed_budget) || 0;
+  const overdue = !!p.deadline && (dead && dead.diff < 0) && (Number(p.total_received) || 0) < agreed;
 
   return (
-    <Link to={`/projects/${p.id}`} style={{ textDecoration: 'none', display: 'block', color: 'inherit' }}>
-      <div className="project-row-card">
-        {/* Row 1: Title + status dot + date chips */}
-        <div className="project-row-top">
-          <span className="project-row-title">{p.title}</span>
-          <Tip content={STATUS_LABEL[p.status] || p.status}>
-            <StatusDot status={p.status} />
-          </Tip>
+    <div className="prow-wrap">
+      <div
+        className="project-row"
+        role="button"
+        tabIndex={0}
+        onClick={onNavigate}
+        onKeyDown={e => { if (e.key === 'Enter') onNavigate(); }}
+      >
+        {/* Left: identity */}
+        <div className="prow-left">
+          <CategoryTile categoryName={p.category_name} groupName={p.group_name} />
+          <div className="prow-identity">
+            <span className="prow-title">{p.title}</span>
+            {p.client_name && <span className="prow-client">{p.client_name}</span>}
+          </div>
+        </div>
+
+        {/* Middle: the two tracks fill the space that used to be empty */}
+        <div className="prow-mid">
+          <PhaseTrack p={p} hue={hue} onSegment={onSegment} />
+          <PaymentTrack p={p} overdue={overdue} />
+        </div>
+
+        {/* Right: dates, margin and the status dot (which filters) */}
+        <div className="prow-right">
+          <MarginBadge p={p} />
           {shoot && <DateChip info={shoot} Icon={Camera} muted={shootMuted} title={`Shoot: ${fmtDate(p.shoot_date)}`} />}
           {dead  && <DateChip info={dead}  Icon={Flag}   muted={deadMuted}  title={`Deadline: ${fmtDate(p.deadline)}`} />}
+          <button
+            type="button"
+            className="prow-dot-btn"
+            title={`Filter by ${STATUS_LABEL[p.status] || p.status}`}
+            aria-label={`Filter by ${STATUS_LABEL[p.status] || p.status}`}
+            onClick={e => { e.stopPropagation(); onFilterStatus(); }}
+          >
+            <StatusDot status={p.status} />
+          </button>
         </div>
 
-        {/* Row 2: Client · Category + margin */}
-        <div className="project-row-meta">
-          {p.client_name && <span>{p.client_name}</span>}
-          {p.client_name && p.category_name && <span style={{ color: 'var(--color-hairline-strong)' }}>·</span>}
-          {p.category_name && <span>{p.category_name}</span>}
-          <span style={{ marginLeft: 'auto' }}><MarginBadge p={p} /></span>
+        {/* Expand affordance, kept visually distinct from the navigating row */}
+        <button
+          type="button"
+          className={`prow-expand${expanded ? ' is-open' : ''}`}
+          aria-expanded={expanded}
+          aria-label={expanded ? 'Hide phases and tasks' : 'Show phases and tasks'}
+          title={expanded ? 'Hide phases and tasks' : 'Show phases and tasks'}
+          onClick={e => { e.stopPropagation(); onToggleExpand(); }}
+        >
+          <ChevronRight size={16} />
+        </button>
+
+        {/* Row tooltip: the facts that were dropped from the row itself. */}
+        <div className="prow-tip" role="tooltip">
+          <div className="prow-tip-row"><span>Category</span><b>{p.category_name || 'Uncategorised'}</b></div>
+          <div className="prow-tip-row"><span>Phase</span><b>{p.current_phase || (p.status === 'completed' ? 'Completed' : 'No active phase')}</b></div>
+          {agreed > 0 && (
+            <div className="prow-tip-row"><span>Payment</span><b><Private>{fmt(p.total_received)}</Private> / <Private>{fmt(agreed)}</Private></b></div>
+          )}
+          <div className="prow-tip-row"><span>Shoot</span><b>{p.shoot_date ? fmtDate(p.shoot_date) : 'Not set'}</b></div>
+          <div className="prow-tip-row"><span>Deadline</span><b>{p.deadline ? fmtDate(p.deadline) : 'Open'}</b></div>
         </div>
+      </div>
 
-        {/* Row 3: Progress bars — the bars carry the proportion, no counters or figures. */}
-        <div className="project-row-bars">
-          {/* Phase progress: the bar shows the proportion, the label names the phase. */}
-          <div>
-            <div className="project-bar-label">
-              <span>{p.current_phase || 'No active phase'}</span>
-            </div>
-            <div className="progress-bar">
-              <div className="progress-fill" style={{ width: `${phaseProgress}%` }} />
-            </div>
-          </div>
+      {expanded && <ProjectDrawer projectId={p.id} />}
+    </div>
+  );
+}
 
-          {/* Budget received: the fill shows the proportion, the exact amounts on hover. */}
-          {p.agreed_budget > 0 ? (
-            <Tip
-              className="project-bar-tip"
-              content={<span><Private>{fmt(p.total_received)}</Private> / <Private>{fmt(p.agreed_budget)}</Private> received</span>}
-            >
-              <div className="mini-bar-track">
-                <div className="mini-bar-fill mini-bar-received" style={{ width: `${receivedPct}%` }} />
+/* ─── Expanded row drawer: phase checklist and open tasks ─── */
+function ProjectDrawer({ projectId }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let live = true;
+    setLoading(true);
+    api.get(`/projects/${projectId}`)
+      .then(d => { if (live) { setData(d); setLoading(false); } })
+      .catch(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [projectId]);
+
+  if (loading) return <div className="prow-drawer"><div className="prow-drawer-loading">Loading...</div></div>;
+  if (!data) return <div className="prow-drawer"><div className="prow-drawer-loading">Could not load.</div></div>;
+
+  const phases = data.phases || [];
+  const openTasks = phases.flatMap(ph => (ph.tasks || []).filter(t => t.status !== 'done'));
+
+  return (
+    <div className="prow-drawer">
+      <div className="prow-drawer-inner">
+        <div className="prow-phase-list">
+          {phases.map(ph => {
+            const done = ph.status === 'completed';
+            const active = ph.status === 'active';
+            const openCount = (ph.tasks || []).filter(t => t.status !== 'done').length;
+            return (
+              <div key={ph.id} className={`prow-phase${active ? ' is-active' : ''}`}>
+                {done
+                  ? <CheckCircle2 size={15} className="prow-phase-done" />
+                  : <Circle size={15} className={active ? 'prow-phase-active' : 'prow-phase-todo'} />}
+                <span className="prow-phase-name">{ph.phase_name}</span>
+                {openCount > 0 && <span className="prow-phase-count">{openCount}</span>}
               </div>
-            </Tip>
+            );
+          })}
+        </div>
+
+        <div className="prow-task-list">
+          {openTasks.length === 0 ? (
+            <div className="prow-task-empty">No open tasks</div>
           ) : (
-            <div />
+            openTasks.map(t => (
+              <div key={t.id} className="prow-task">
+                <Circle size={9} className="prow-task-dot" />
+                <span className="prow-task-title">{t.title}</span>
+                {t.crew_name && <span className="prow-task-crew">{t.crew_name}</span>}
+                {t.due_date && <span className="prow-task-due">{fmtDate(t.due_date)}</span>}
+              </div>
+            ))
           )}
         </div>
       </div>
-    </Link>
+    </div>
   );
 }
 

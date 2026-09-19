@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import {
   X, Plus, Lightbulb, Check, StickyNote, Edit2, Trash2,
-  Video, Camera, Scissors, Palette, Film, Tag,
 } from 'lucide-react';
 import { api, fmt, fmtDate } from '../api';
 import { Private } from '../context/PrivacyContext';
+import { categoryIconEl } from '../lib/categoryIcons';
 import AddLeadModal from './AddLeadModal';
 
 // One leads rail, shared by the Dashboard and the Projects page. The chip is the
@@ -12,15 +12,10 @@ import AddLeadModal from './AddLeadModal';
 // Convert lives on the chip. Edit and dismiss live behind the chip's drawer, so
 // the rail never grows a row of permanently visible buttons.
 
-function categoryIcon(name) {
-  const n = (name || '').toLowerCase();
-  const size = 13;
-  if (/photo|retouch|cull/.test(n)) return <Camera size={size} />;
-  if (/video|film|commercial|documentary|event/.test(n)) return <Video size={size} />;
-  if (/edit|color|colour|vfx|audio|podcast|subtit|mix|master/.test(n)) return <Scissors size={size} />;
-  if (/brand|social|graphic|web|design/.test(n)) return <Palette size={size} />;
-  if (/anim|2d|3d|motion/.test(n)) return <Film size={size} />;
-  return <Tag size={size} />;
+// The category glyph now comes from the one shared icon system (see
+// lib/categoryIcons), so a category reads the same here as on the Projects rows.
+function categoryIcon(name, group) {
+  return categoryIconEl(name, group, 13);
 }
 
 function ageDotClass(contactedAt) {

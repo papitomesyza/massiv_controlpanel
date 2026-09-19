@@ -1777,35 +1777,135 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
   opacity: 0.65;
 }
 
-/* ===== PROJECT ROW CARD (Projects page list view) ===== */
-.project-row-card {
-  padding: 16px 20px;
-  display: flex; flex-direction: column; gap: 10px;
-  border-bottom: 1px solid var(--color-hairline);
-  transition: background 0.15s ease;
+/* ===== PROJECT ROW (Projects page list view) =====
+   Three zones across the width: identity on the left, the two tracks in the
+   middle (the space that used to be empty), dates and the status dot on the
+   right, with a distinct expand chevron at the far edge. */
+.prow-wrap { border-bottom: 1px solid var(--color-hairline); }
+.prow-wrap:last-child { border-bottom: none; }
+.project-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(120px, 2fr) auto auto;
+  align-items: center; gap: 18px;
+  padding: 14px 20px;
   cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
-.project-row-card:last-child { border-bottom: none; }
-.project-row-card:hover { background: var(--overlay-01); }
-.project-row-top {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+.project-row:hover {
+  background: var(--overlay-01);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-raised);
 }
-.project-row-title {
+
+/* Left zone: category tile + title + client */
+.prow-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.prow-identity { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.prow-title {
   font-size: 14px; font-weight: 700; color: var(--color-ink);
-  flex: 1; min-width: 0;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.project-row-meta {
-  display: flex; align-items: center; gap: 8px;
-  font-size: 12px; color: var(--color-mid-gray); flex-wrap: wrap;
+.prow-client {
+  font-size: 12px; color: var(--color-mid-gray);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.project-row-bars {
-  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px;
+
+/* Category tile: the tinted rounded tile sized like the dashboard stat icons.
+   The hue arrives on --tint; the wash and glyph are computed from that token. */
+.cat-tile {
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-nested, 12px);
+  flex-shrink: 0;
+  color: var(--tint);
+  background: color-mix(in srgb, var(--tint) 15%, transparent);
 }
-.project-bar-label {
-  display: flex; justify-content: space-between; align-items: baseline;
-  margin-bottom: 4px; font-size: 11px; color: var(--color-mid-gray);
+
+/* Middle zone: segmented phase track over a thinner payment track */
+.prow-mid { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.phase-track { display: flex; gap: 4px; width: 100%; }
+.phase-seg {
+  flex: 1; height: 7px; min-width: 8px; padding: 0;
+  border-radius: 3px; cursor: pointer;
+  border: 1.5px solid var(--hue);
+  background: transparent;
+  transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
+.phase-seg.is-done    { background: var(--hue); border-color: var(--hue); }
+.phase-seg.is-current { background: transparent; border-color: var(--hue); box-shadow: inset 0 0 0 1.5px var(--hue); opacity: 1; }
+.phase-seg.is-todo    { border-color: var(--color-hairline-strong); background: transparent; }
+.phase-seg:hover      { transform: scaleY(1.35); }
+
+.pay-track {
+  height: 4px; width: 100%;
+  background: var(--overlay-03);
+  border-radius: 4px; overflow: hidden;
+}
+.pay-fill {
+  height: 100%; border-radius: 4px;
+  background: var(--overlay-05);
+  transition: width 0.3s ease;
+}
+.pay-track.is-overdue .pay-fill { background: var(--tl-overdue); }
+
+/* Right zone: margin, date chips, status dot */
+.prow-right { display: flex; align-items: center; gap: 8px; justify-self: end; }
+.prow-dot-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 50%;
+  border: none; background: none; cursor: pointer; padding: 0;
+  transition: background 0.15s ease;
+}
+.prow-dot-btn:hover { background: var(--overlay-04); }
+
+/* Expand chevron: an outlined pill, deliberately unlike the flat clickable row,
+   so it never reads as part of navigation. */
+.prow-expand {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 9px;
+  border: 1px solid var(--border); background: var(--surface-card);
+  color: var(--color-mid-gray); cursor: pointer; justify-self: end;
+  transition: transform 0.2s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.prow-expand:hover { color: var(--color-ink); border-color: var(--color-hairline-strong); }
+.prow-expand.is-open { transform: rotate(90deg); color: var(--color-ink); }
+
+/* Row tooltip: category, phase, payment and dates, revealed on hover. */
+.prow-tip {
+  position: absolute; top: calc(100% - 6px); right: 56px; z-index: 45;
+  min-width: 220px; padding: 10px 12px;
+  background: var(--color-ink); color: var(--accent-contrast);
+  border-radius: var(--radius-md, 8px); box-shadow: 0 10px 30px var(--overlay-06);
+  opacity: 0; visibility: hidden; transform: translateY(-4px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  pointer-events: none;
+}
+.project-row:hover .prow-tip { opacity: 1; visibility: visible; transform: translateY(0); }
+.prow-tip-row { display: flex; justify-content: space-between; gap: 16px; font-size: 11px; line-height: 1.8; }
+.prow-tip-row > span { opacity: 0.7; }
+.prow-tip-row > b { font-weight: 600; }
+
+/* Expanded drawer: phase checklist and open tasks, in place. */
+.prow-drawer { padding: 0 20px 16px 20px; background: var(--overlay-01); }
+.prow-drawer-loading { padding: 12px 0; font-size: 12px; color: var(--color-mid-gray); }
+.prow-drawer-inner { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 20px; padding-top: 12px; }
+.prow-phase-list { display: flex; flex-direction: column; gap: 8px; }
+.prow-phase { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--color-ink-soft); }
+.prow-phase.is-active { color: var(--color-ink); font-weight: 600; }
+.prow-phase-name { flex: 1; min-width: 0; }
+.prow-phase-count {
+  font-size: 11px; font-weight: 700; color: var(--color-mid-gray);
+  background: var(--overlay-04); border-radius: 10px; padding: 1px 8px;
+}
+.prow-phase-done   { color: var(--cat-6); }
+.prow-phase-active { color: var(--accent); }
+.prow-phase-todo   { color: var(--color-hairline-strong); }
+.prow-task-list { display: flex; flex-direction: column; gap: 7px; }
+.prow-task { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--color-ink-soft); }
+.prow-task-dot { color: var(--color-hairline-strong); flex-shrink: 0; }
+.prow-task-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prow-task-crew { color: var(--color-mid-gray); font-size: 11px; }
+.prow-task-due { color: var(--color-mid-gray); font-size: 11px; white-space: nowrap; }
+.prow-task-empty { font-size: 12px; color: var(--color-mid-gray); padding: 4px 0; }
 
 /* ===== SHOOT CHIP ===== */
 .shoot-chip {
@@ -1821,17 +1921,24 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
    full emphasis and the other reads quieter, so the eye lands on what is next. */
 .shoot-chip.muted  { opacity: 0.6; font-weight: 500; }
 
-/* The received bar sits inside a hover tooltip; the wrapper must fill the column
-   so the bar keeps its full width. */
-.project-bar-tip { display: block; width: 100%; }
-
 /* ===== RESPONSIVE ADDITIONS ===== */
 @media (max-width: 680px) {
-  .project-row-bars { grid-template-columns: minmax(0, 1fr); }
   .dash-leads-grid  { grid-template-columns: minmax(0, 1fr); }
-}
-@media (max-width: 768px) {
-  .project-row-card { padding: 12px 16px; }
+  /* Stack the row's three zones rather than compressing them. */
+  .project-row {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "left expand"
+      "mid  mid"
+      "right right";
+    gap: 12px; padding: 14px 16px;
+  }
+  .prow-left   { grid-area: left; }
+  .prow-expand { grid-area: expand; align-self: start; }
+  .prow-mid    { grid-area: mid; }
+  .prow-right  { grid-area: right; justify-self: start; flex-wrap: wrap; }
+  .prow-tip    { right: 16px; left: 16px; min-width: 0; }
+  .prow-drawer-inner { grid-template-columns: 1fr; gap: 14px; }
 }
 
 /* ===== SETUP WIZARD ===== */
@@ -2209,9 +2316,8 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
   /* Charts at sensible compact height */
   .mobile-chart-wrap { height: 160px; }
 
-  /* Project row cards: prevent overflow, wrap meta cleanly */
-  .project-row-title { white-space: normal; word-break: break-word; }
-  .project-row-top { flex-wrap: wrap; }
+  /* Project rows: prevent overflow, let the title wrap cleanly */
+  .prow-title { white-space: normal; word-break: break-word; }
 
   /* No horizontal scroll anywhere */
   .page-inner { overflow-x: hidden; }
@@ -3874,6 +3980,10 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 .est-pipe-ring { display: flex; align-items: center; }
 .win-ring { display: block; }
 
+/* Projects stat strip: same construction as the estimates pipeline, one extra
+   figure. The ring cell keeps its intrinsic width at the end. */
+.est-pipeline-4 { grid-template-columns: 1fr 1fr 1fr auto; }
+
 /* Controls: search + status filter dots */
 .est-controls { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
 .est-search { position: relative; display: flex; align-items: center; flex: 1; min-width: 200px; }
@@ -3889,19 +3999,15 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 .est-filter-dot:hover { opacity: 0.85; }
 .est-filter-dot.active { opacity: 1; border-color: var(--accent); background: var(--overlay-04); }
 
-/* Projects page: category and sort tuck behind one compact control, so the
-   default state of the page is a search box and a row of dots and nothing else. */
-.proj-filter-more { position: relative; display: flex; }
-.proj-filter-scrim { position: fixed; inset: 0; z-index: 40; }
-.proj-filter-pop {
-  position: absolute; top: calc(100% + 6px); right: 0; z-index: 41;
-  width: 240px; padding: 14px;
-  background: var(--surface-card); border: 1px solid var(--border);
-  border-radius: 12px; box-shadow: 0 12px 32px var(--overlay-06);
-  display: flex; flex-direction: column;
-}
-.proj-filter-pop .form-label { margin-bottom: 4px; }
-.proj-filter-pop .select { width: 100%; }
+/* Group filter: the five group glyphs, each in its own tint. A thin rule sets
+   them apart from the status dots that precede them. */
+.proj-group-dots { padding-left: 10px; margin-left: 2px; border-left: 1px solid var(--color-hairline); }
+.proj-group-dot { color: var(--tint); }
+.proj-group-dot.active { opacity: 1; border-color: var(--tint); background: color-mix(in srgb, var(--tint) 12%, transparent); }
+
+/* Inline sort control: replaces the old hidden filter panel now that group and
+   status filter live out in the open. */
+.proj-sort-select { width: auto; min-width: 150px; flex-shrink: 0; }
 
 /* Card grid */
 .est-grid {
@@ -4009,7 +4115,10 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 
 @media (max-width: 640px) {
   .est-pipeline { grid-template-columns: 1fr 1fr; }
-  .est-pipe-cell:nth-child(3) { grid-column: 1 / -1; flex-direction: row; align-items: center; justify-content: space-between; }
+  .est-pipeline:not(.est-pipeline-4) .est-pipe-cell:nth-child(3) { grid-column: 1 / -1; flex-direction: row; align-items: center; justify-content: space-between; }
+  /* The four-figure strip drops to a clean 2x2, ring bottom right. */
+  .est-pipeline-4 { grid-template-columns: 1fr 1fr; }
+  .est-pipeline-4 .est-pipe-cell:nth-child(4) { flex-direction: row; align-items: center; justify-content: space-between; }
   .est-grid { grid-template-columns: 1fr; }
 }
 

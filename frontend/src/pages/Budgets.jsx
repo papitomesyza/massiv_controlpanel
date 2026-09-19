@@ -1,10 +1,10 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus, FileText, Search, MoreVertical, Pencil, Copy, Download, Receipt, Trash2,
-  Video, Camera, Film, Palette, Sparkles, Tag,
 } from 'lucide-react';
 import { api, fmt, fmtDate } from '../api';
 import { documentFilename } from '../lib/filename';
+import { categoryVisual } from '../lib/categoryIcons';
 import { Private } from '../context/PrivacyContext';
 import { useNavigate } from 'react-router-dom';
 import BudgetWizard from '../components/BudgetWizard';
@@ -24,16 +24,6 @@ const STATUS_VAR = {
 };
 
 const FOLLOW_UP_DAYS = 7;   // a sent estimate is stale once its ring is full
-
-// Project category groups map to one icon each; anything unknown falls back to a
-// neutral tag. The word itself is never printed, it lives in the hover tooltip.
-const GROUP_ICON = {
-  'Video Production': Video,
-  'Photography': Camera,
-  'Post Production': Film,
-  'Branding & Digital': Palette,
-  'Animation & Motion': Sparkles,
-};
 
 function daysSince(iso) {
   if (!iso) return 0;
@@ -93,8 +83,11 @@ function StatusDot({ status, sentAt, size = 12 }) {
 }
 
 // ── Category icon ────────────────────────────────────────────────────────────
+// The glyph comes from the one shared category icon system (see
+// lib/categoryIcons), so an estimate's category reads the same as the matching
+// project row. The word itself is never printed, it lives in the hover tooltip.
 function CategoryIcon({ category, group }) {
-  const Icon = GROUP_ICON[group] || Tag;
+  const { Icon } = categoryVisual(category, group);
   return (
     <Tip content={category || 'Uncategorised'}>
       <span className="est-cat-icon"><Icon size={15} /></span>
