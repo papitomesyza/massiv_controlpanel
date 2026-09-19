@@ -40,15 +40,48 @@ function uid() {
 }
 
 function mkCrewLine(override = {}) {
-  return { _id: uid(), crew_id: null, position_label: '', days: 1, rate: 0, amount: 0, discount: 0, ...override };
+  return { _id: uid(), crew_id: null, position_label: '', days: 1, rate: 0, amount: 0, discount: 0, price_pending: 0, ...override };
 }
 
 function mkEquipLine(override = {}) {
-  return { _id: uid(), item_id: null, provider_id: null, position_label: '', provider_name: '', days: 1, rate: 0, amount: 0, discount: 0, ...override };
+  return { _id: uid(), item_id: null, provider_id: null, position_label: '', provider_name: '', days: 1, rate: 0, amount: 0, discount: 0, price_pending: 0, ...override };
 }
 
 function mkLogLine(override = {}) {
-  return { _id: uid(), position_label: '', description: '', amount: 0, discount: 0, ...override };
+  return { _id: uid(), position_label: '', description: '', amount: 0, discount: 0, price_pending: 0, ...override };
+}
+
+// A line whose price is not settled yet prints TBC rather than a zero euro
+// figure, which would read to a client as free. Toggling it on forces the line
+// to contribute nothing to any total, exactly like a zero line, so the totals
+// math never needs a special case.
+function TbcToggle({ active, onToggle }) {
+  return (
+    <button
+      type="button"
+      className="budget-tbc-toggle"
+      title={active ? 'Price pending (TBC). Click to price this line now.' : 'Mark this line as price pending (TBC)'}
+      onClick={onToggle}
+      style={{
+        width: 'auto', height: '28px', padding: '0 9px', borderRadius: '10px',
+        fontSize: '11px', fontWeight: 600, flexShrink: 0, cursor: 'pointer',
+        color: active ? 'var(--accent-contrast, #fff)' : 'var(--color-mid-gray)',
+        background: active ? 'var(--accent)' : 'transparent',
+        border: `1px solid ${active ? 'var(--accent)' : 'var(--color-hairline)'}`,
+      }}
+    >
+      TBC
+    </button>
+  );
+}
+
+// Muted TBC marker used in place of an amount wherever a line is price pending.
+function TbcAmount({ style }) {
+  return (
+    <span style={{ color: 'var(--color-mid-gray)', fontStyle: 'italic', fontSize: '13px', textAlign: 'right', ...style }}>
+      TBC
+    </span>
+  );
 }
 
 function discountLabel(amount, discount) {
@@ -298,11 +331,14 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
   }
 
   // ── Totals ──
-  const crewSubtotal = crewLines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0);
-  const equipSubtotal = equipLines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0);
-  const logSubtotal = logLines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0);
+  // A price pending line contributes nothing, mirroring how it is stored as a
+  // zero on save, so no total gains a special case.
+  const crewSubtotal = crewLines.reduce((s, l) => s + (l.price_pending ? 0 : (parseFloat(l.amount) || 0)), 0);
+  const equipSubtotal = equipLines.reduce((s, l) => s + (l.price_pending ? 0 : (parseFloat(l.amount) || 0)), 0);
+  const logSubtotal = logLines.reduce((s, l) => s + (l.price_pending ? 0 : (parseFloat(l.amount) || 0)), 0);
   const grossSubtotal = crewSubtotal + equipSubtotal + logSubtotal;
   const totalDiscount = [...crewLines, ...equipLines, ...logLines].reduce((s, l) => {
+    if (l.price_pending) return s;
     const amt = parseFloat(l.amount) || 0;
     const disc = parseFloat(l.discount) || 0;
     return s + Math.min(disc, amt);
@@ -346,8 +382,9 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
         crew_id: l.crew_id || null,
         days: isFlatFee ? 1 : parseFloat(l.days) || 1,
         rate: isFlatFee ? 0 : parseFloat(l.rate) || 0,
-        amount: parseFloat(l.amount) || 0,
+        amount: l.price_pending ? 0 : (parseFloat(l.amount) || 0),
         discount: parseFloat(l.discount) || 0,
+        price_pending: l.price_pending ? 1 : 0,
         sort_order: i,
       })),
       ...equipLines.map((l, i) => {
@@ -360,8 +397,9 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
           crew_id: null,
           days,
           rate,
-          amount: days * rate,
+          amount: l.price_pending ? 0 : days * rate,
           discount: parseFloat(l.discount) || 0,
+          price_pending: l.price_pending ? 1 : 0,
           sort_order: i,
         };
       }),
@@ -372,8 +410,9 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
         crew_id: null,
         days: 1,
         rate: 0,
-        amount: parseFloat(l.amount) || 0,
+        amount: l.price_pending ? 0 : (parseFloat(l.amount) || 0),
         discount: parseFloat(l.discount) || 0,
+        price_pending: l.price_pending ? 1 : 0,
         sort_order: i,
       })),
     ];
@@ -698,8 +737,10 @@ function StepCrew({ crewMembers, lines, isFlatFee, shootDays, selected, onToggle
                     placeholder="0"
                   />
                 )}
-                <div className="budget-line-total" style={{ width: '80px' }}>
-                  {isFlatFee ? (
+                <div className="budget-line-total" style={{ width: '80px', textAlign: 'right' }}>
+                  {line.price_pending ? (
+                    <TbcAmount style={{ width: '80px', display: 'inline-block' }} />
+                  ) : isFlatFee ? (
                     <input
                       type="number"
                       className="input budget-line-input"
@@ -713,20 +754,25 @@ function StepCrew({ crewMembers, lines, isFlatFee, shootDays, selected, onToggle
                     <span>{fmt(line.amount)}</span>
                   )}
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <input
-                    type="number"
-                    className="input budget-line-input"
-                    style={{ width: '76px' }}
-                    value={line.discount || 0}
-                    min="0"
-                    placeholder="0"
-                    onChange={e => onUpdate(line._id, 'discount', e.target.value)}
-                  />
-                  {discLbl && (
-                    <span style={{ fontSize: '11px', color: 'var(--color-ember)', whiteSpace: 'nowrap' }}>{discLbl}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', width: '76px' }}>
+                  {!line.price_pending && (
+                    <>
+                      <input
+                        type="number"
+                        className="input budget-line-input"
+                        style={{ width: '76px' }}
+                        value={line.discount || 0}
+                        min="0"
+                        placeholder="0"
+                        onChange={e => onUpdate(line._id, 'discount', e.target.value)}
+                      />
+                      {discLbl && (
+                        <span style={{ fontSize: '11px', color: 'var(--color-ember)', whiteSpace: 'nowrap' }}>{discLbl}</span>
+                      )}
+                    </>
                   )}
                 </div>
+                <TbcToggle active={!!line.price_pending} onToggle={() => onUpdate(line._id, 'price_pending', line.price_pending ? 0 : 1)} />
                 <button className="btn-icon" style={{ width: '28px', height: '28px', borderRadius: '10px', flexShrink: 0 }} onClick={() => onRemove(line._id)}>
                   <Trash2 size={12} />
                 </button>
@@ -925,22 +971,29 @@ function StepEquipmentAssets({ assetProviders, assetAllItems, lines, selectedKey
                     placeholder="0"
                   />
                   <div className="budget-line-total" style={{ width: '72px', textAlign: 'right' }}>
-                    {fmt((parseFloat(line.days) || 0) * (parseFloat(line.rate) || 0))}
+                    {line.price_pending
+                      ? <TbcAmount style={{ width: '72px', display: 'inline-block' }} />
+                      : fmt((parseFloat(line.days) || 0) * (parseFloat(line.rate) || 0))}
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <input
-                      type="number"
-                      className="input budget-line-input"
-                      style={{ width: '76px' }}
-                      value={line.discount || 0}
-                      min="0"
-                      placeholder="0"
-                      onChange={e => onUpdate(line._id, 'discount', e.target.value)}
-                    />
-                    {discLbl && (
-                      <span style={{ fontSize: '11px', color: 'var(--color-ember)', whiteSpace: 'nowrap' }}>{discLbl}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', width: '76px' }}>
+                    {!line.price_pending && (
+                      <>
+                        <input
+                          type="number"
+                          className="input budget-line-input"
+                          style={{ width: '76px' }}
+                          value={line.discount || 0}
+                          min="0"
+                          placeholder="0"
+                          onChange={e => onUpdate(line._id, 'discount', e.target.value)}
+                        />
+                        {discLbl && (
+                          <span style={{ fontSize: '11px', color: 'var(--color-ember)', whiteSpace: 'nowrap' }}>{discLbl}</span>
+                        )}
+                      </>
                     )}
                   </div>
+                  <TbcToggle active={!!line.price_pending} onToggle={() => onUpdate(line._id, 'price_pending', line.price_pending ? 0 : 1)} />
                   <button className="btn-icon" style={{ width: '28px', height: '28px', borderRadius: '10px', flexShrink: 0 }} onClick={() => onRemove(line._id)}>
                     <Trash2 size={12} />
                   </button>
@@ -1011,29 +1064,40 @@ function StepLogistics({ lines, expenseCats, onAdd, onUpdate, onRemove, subtotal
                 onChange={e => onUpdate(line._id, 'description', e.target.value)}
                 placeholder="Optional detail"
               />
-              <input
-                type="number"
-                className="input budget-line-input"
-                style={{ width: '90px' }}
-                value={line.amount}
-                min="0"
-                onChange={e => onUpdate(line._id, 'amount', e.target.value)}
-                placeholder="0"
-              />
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              {line.price_pending ? (
+                <div style={{ width: '90px', textAlign: 'right' }}>
+                  <TbcAmount style={{ width: '90px', display: 'inline-block' }} />
+                </div>
+              ) : (
                 <input
                   type="number"
                   className="input budget-line-input"
-                  style={{ width: '76px' }}
-                  value={line.discount || 0}
+                  style={{ width: '90px' }}
+                  value={line.amount}
                   min="0"
+                  onChange={e => onUpdate(line._id, 'amount', e.target.value)}
                   placeholder="0"
-                  onChange={e => onUpdate(line._id, 'discount', e.target.value)}
                 />
-                {discLbl && (
-                  <span style={{ fontSize: '11px', color: 'var(--color-ember)', whiteSpace: 'nowrap' }}>{discLbl}</span>
+              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', width: '76px' }}>
+                {!line.price_pending && (
+                  <>
+                    <input
+                      type="number"
+                      className="input budget-line-input"
+                      style={{ width: '76px' }}
+                      value={line.discount || 0}
+                      min="0"
+                      placeholder="0"
+                      onChange={e => onUpdate(line._id, 'discount', e.target.value)}
+                    />
+                    {discLbl && (
+                      <span style={{ fontSize: '11px', color: 'var(--color-ember)', whiteSpace: 'nowrap' }}>{discLbl}</span>
+                    )}
+                  </>
                 )}
               </div>
+              <TbcToggle active={!!line.price_pending} onToggle={() => onUpdate(line._id, 'price_pending', line.price_pending ? 0 : 1)} />
               <button className="btn-icon" style={{ width: '28px', height: '28px', borderRadius: '10px', flexShrink: 0 }} onClick={() => onRemove(line._id)}>
                 <Trash2 size={12} />
               </button>
@@ -1083,7 +1147,7 @@ function StepReview({
     );
   }
 
-  function StaticLine({ label, detail, amount, discount }) {
+  function StaticLine({ label, detail, amount, discount, pending }) {
     const discLbl = discountLabel(amount, discount);
     return (
       <div className="budget-review-line">
@@ -1092,8 +1156,10 @@ function StepReview({
           {detail && <span className="brl-detail">{detail}</span>}
         </div>
         <div className="brl-right">
-          <span className="brl-amount">{fmt(amount)}</span>
-          {discLbl && <span className="brl-disc">{discLbl}</span>}
+          {pending
+            ? <span className="brl-amount" style={{ color: 'var(--color-mid-gray)', fontStyle: 'italic' }}>TBC</span>
+            : <span className="brl-amount">{fmt(amount)}</span>}
+          {!pending && discLbl && <span className="brl-disc">{discLbl}</span>}
         </div>
       </div>
     );
@@ -1159,6 +1225,7 @@ function StepReview({
                 detail={isFlatFee ? null : `${line.days} × ${fmt(line.rate)}`}
                 amount={line.amount}
                 discount={line.discount}
+                pending={line.price_pending}
               />
             ))}
             <div className="budget-subtotal-row"><span>Section subtotal</span><span>{fmt(crewSubtotal)}</span></div>
@@ -1185,6 +1252,7 @@ function StepReview({
                     detail={detail}
                     amount={amt}
                     discount={line.discount}
+                    pending={line.price_pending}
                   />
                 );
               })}
@@ -1209,6 +1277,7 @@ function StepReview({
                   detail={line.description || null}
                   amount={line.amount}
                   discount={line.discount}
+                  pending={line.price_pending}
                 />
               ))}
               <div className="budget-subtotal-row"><span>Section subtotal</span><span>{fmt(logSubtotal)}</span></div>

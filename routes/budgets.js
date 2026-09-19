@@ -60,6 +60,7 @@ router.get('/', (req, res) => {
       (SELECT COALESCE(SUM(bl.amount), 0) FROM budget_lines bl WHERE bl.budget_id = b.id AND bl.section = 'crew') as crew_total,
       (SELECT COALESCE(SUM(bl.amount), 0) FROM budget_lines bl WHERE bl.budget_id = b.id AND bl.section = 'equipment') as equip_total,
       (SELECT COALESCE(SUM(bl.amount), 0) FROM budget_lines bl WHERE bl.budget_id = b.id AND bl.section = 'logistical') as log_total,
+      (SELECT COUNT(*) FROM budget_lines bl WHERE bl.budget_id = b.id AND bl.price_pending = 1) as pending_count,
       (SELECT COALESCE(SUM(bl.amount), 0) FROM budget_lines bl WHERE bl.budget_id = b.id) as subtotal,
       (SELECT COALESCE(SUM(MIN(bl.discount, bl.amount)), 0) FROM budget_lines bl WHERE bl.budget_id = b.id) as total_discount,
       (SELECT COALESCE(SUM(MAX(bl.amount - bl.discount, 0)), 0) FROM budget_lines bl WHERE bl.budget_id = b.id) as net_subtotal,
@@ -219,12 +220,12 @@ router.post('/:id/duplicate', (req, res) => {
     );
     const nid = r.lastInsertRowid;
     const ins = db.prepare(`
-      INSERT INTO budget_lines (budget_id, section, position_label, description, crew_id, days, rate, amount, sort_order, discount)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO budget_lines (budget_id, section, position_label, description, crew_id, days, rate, amount, sort_order, discount, price_pending)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     lines.forEach(l => ins.run(
       nid, l.section, l.position_label, l.description, l.crew_id,
-      l.days, l.rate, l.amount, l.sort_order, l.discount,
+      l.days, l.rate, l.amount, l.sort_order, l.discount, l.price_pending ? 1 : 0,
     ));
     return nid;
   })();
@@ -287,19 +288,24 @@ router.post('/:id/lines', (req, res) => {
   const budget = db.prepare('SELECT id FROM budgets WHERE id = ?').get(req.params.id);
   if (!budget) return res.status(404).json({ error: 'Budget not found' });
 
-  const { section, position_label, description, crew_id, days, rate, amount, sort_order, discount } = req.body;
+  const { section, position_label, description, crew_id, days, rate, amount, sort_order, discount, price_pending } = req.body;
   if (!section) return res.status(400).json({ error: 'Section required' });
   const lineErr = validateLineFields({ days, rate, amount, discount });
   if (lineErr) return res.status(400).json({ error: lineErr });
 
+  // A price pending line contributes nothing until it is priced, so its amount
+  // is forced to zero here. This keeps every total calculation untouched.
+  const pending = price_pending ? 1 : 0;
+  const storedAmount = pending ? 0 : (amount || 0);
+
   const result = db.prepare(`
-    INSERT INTO budget_lines (budget_id, section, position_label, description, crew_id, days, rate, amount, sort_order, discount)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO budget_lines (budget_id, section, position_label, description, crew_id, days, rate, amount, sort_order, discount, price_pending)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     req.params.id, section,
     position_label || null, description || null, crew_id || null,
-    days || 1, rate || 0, amount || 0, sort_order || 0,
-    discount != null ? discount : 0,
+    days || 1, rate || 0, storedAmount, sort_order || 0,
+    discount != null ? discount : 0, pending,
   );
 
   res.json({ id: result.lastInsertRowid });
@@ -310,19 +316,22 @@ router.put('/:id/lines/:lineId', (req, res) => {
   const line = db.prepare('SELECT id FROM budget_lines WHERE id = ? AND budget_id = ?').get(req.params.lineId, req.params.id);
   if (!line) return res.status(404).json({ error: 'Line not found' });
 
-  const { section, position_label, description, crew_id, days, rate, amount, sort_order, discount } = req.body;
+  const { section, position_label, description, crew_id, days, rate, amount, sort_order, discount, price_pending } = req.body;
   const lineErr2 = validateLineFields({ days, rate, amount, discount });
   if (lineErr2) return res.status(400).json({ error: lineErr2 });
+
+  const pending = price_pending ? 1 : 0;
+  const storedAmount = pending ? 0 : (amount || 0);
 
   db.prepare(`
     UPDATE budget_lines SET
       section = ?, position_label = ?, description = ?, crew_id = ?,
-      days = ?, rate = ?, amount = ?, sort_order = ?, discount = ?
+      days = ?, rate = ?, amount = ?, sort_order = ?, discount = ?, price_pending = ?
     WHERE id = ?
   `).run(
     section, position_label || null, description || null, crew_id || null,
-    days || 1, rate || 0, amount || 0, sort_order || 0,
-    discount != null ? discount : 0,
+    days || 1, rate || 0, storedAmount, sort_order || 0,
+    discount != null ? discount : 0, pending,
     req.params.lineId,
   );
 
@@ -347,8 +356,8 @@ router.post('/:id/lines/batch-replace', (req, res) => {
 
   const deleteLines = db.prepare('DELETE FROM budget_lines WHERE budget_id = ?');
   const insertLine = db.prepare(`
-    INSERT INTO budget_lines (budget_id, section, position_label, description, crew_id, days, rate, amount, sort_order, discount)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO budget_lines (budget_id, section, position_label, description, crew_id, days, rate, amount, sort_order, discount, price_pending)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   for (const l of lines) {
@@ -359,11 +368,15 @@ router.post('/:id/lines/batch-replace', (req, res) => {
   db.transaction(() => {
     deleteLines.run(req.params.id);
     lines.forEach((l, i) => {
+      // Forcing a price pending line to zero keeps it out of every total while
+      // still recording that the line exists and is yet to be priced.
+      const pending = l.price_pending ? 1 : 0;
+      const storedAmount = pending ? 0 : (l.amount || 0);
       insertLine.run(
         req.params.id, l.section,
         l.position_label || null, l.description || null, l.crew_id || null,
-        l.days || 1, l.rate || 0, l.amount || 0, l.sort_order != null ? l.sort_order : i,
-        l.discount != null ? l.discount : 0,
+        l.days || 1, l.rate || 0, storedAmount, l.sort_order != null ? l.sort_order : i,
+        l.discount != null ? l.discount : 0, pending,
       );
     });
   })();
@@ -371,17 +384,43 @@ router.post('/:id/lines/batch-replace', (req, res) => {
   res.json({ ok: true });
 });
 
+
 // GET /api/budgets/:id/pdf
+//
+// The estimate PDF shares the invoice's visual language: a white page, the same
+// typeface and grey values, the same rule weights and spacing rhythm. It is
+// drawn in real A4 coordinates with no canvas transform. When the content is
+// taller than one page, every layout constant, coordinate and font size is
+// multiplied by a single scale factor so it still fits, down to a legibility
+// floor. Below that floor the document paginates instead of shrinking further.
 router.get('/:id/pdf', (req, res) => {
   const PDFDocument = require('pdfkit');
 
   const budget = getBudgetFull(parseInt(req.params.id));
   if (!budget) return res.status(404).json({ error: 'Budget not found' });
 
-  const logoSetting = db.prepare("SELECT value FROM settings WHERE key = 'agency_logo'").get();
-  const logoData = logoSetting && logoSetting.value ? logoSetting.value : null;
-  const agencyNameRow = db.prepare("SELECT value FROM settings WHERE key = 'agency_name'").get();
-  const agencyName = (agencyNameRow && agencyNameRow.value) ? agencyNameRow.value : 'MASSIV TV';
+  // How long the estimate stands, counted from the estimate date. Named once so
+  // a future change to the validity window is a single edit.
+  const VALIDITY_DAYS = 30;
+  // An estimate is squeezed onto one page only while it stays legible. Below
+  // this scale text drops under roughly 6pt, so past it the document paginates
+  // rather than sending the client a page they cannot read.
+  const LEGIBILITY_FLOOR = 0.75;
+
+  const getSetting = (key, fallback = null) => {
+    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+    return row && row.value != null ? row.value : fallback;
+  };
+
+  // Company identity is pulled from the same settings the invoice uses, so the
+  // two documents read as one company. Payment fields (bank, account, SWIFT)
+  // are deliberately not read here: an estimate carries no payment furniture.
+  const companyName = getSetting('invoice_billing_name')
+    || getSetting('agency_name') || 'MASSIV TV';
+  const companyAddr = getSetting('invoice_billing_address', '');
+  const companyTel  = getSetting('invoice_billing_tel', '');
+  const companyNr   = getSetting('invoice_billing_nr_unik', '');
+  const logoData    = getSetting('invoice_logo') || getSetting('agency_logo');
 
   const crewLines  = budget.lines.filter(l => l.section === 'crew');
   const equipLines = budget.lines.filter(l => l.section === 'equipment');
@@ -393,247 +432,332 @@ router.get('/:id/pdf', (req, res) => {
     { title: 'LOGISTICAL COSTS',    num: '03', lines: logLines,   isLog: true  },
   ].filter(s => s.lines.length > 0);
 
-  const HEADER_H     = 120;
-  const INFO_H       = 90;
-  const SEC_HEADER_H = 24;
-  const TBL_HDR_H    = 20;
-  const ROW_H        = 22;
-  const SUB_ROW_H    = 22;
-  const SEC_GAP      = 20;
+  // ── Money and dates ──────────────────────────────────────────────────────
+  const fmtMoney = v => `€${Number(v || 0).toFixed(2)}`;
+  const fmtDate = d => {
+    if (!d) return '';
+    const date = new Date(String(d).includes('T') ? d : d + 'T00:00:00');
+    if (isNaN(date.getTime())) return '';
+    const dd = String(date.getDate()).padStart(2, '0');
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    return `${dd}/${mm}/${date.getFullYear()}`;
+  };
+
+  const estimateDate = budget.created_at
+    ? new Date(String(budget.created_at).includes('T') ? budget.created_at : budget.created_at.replace(' ', 'T'))
+    : new Date();
+  const baseDate = isNaN(estimateDate.getTime()) ? new Date() : estimateDate;
+  const validUntil = new Date(baseDate.getTime());
+  validUntil.setDate(validUntil.getDate() + VALIDITY_DAYS);
+
+  const refStr        = `#${String(budget.id).padStart(4, '0')}`;
   const totalDiscount = budget.total_discount || 0;
   const hasDiscount   = totalDiscount > 0;
-  const totalsH       = 48 + 20 + (hasDiscount ? 40 : 0) + (budget.vat_enabled ? 16 : 0);
-  const notesH       = budget.notes ? 46 : 0;
+  const vatOn         = !!budget.vat_enabled;
+
+  // ── Page geometry (real A4 coordinates) ──────────────────────────────────
+  const ML = 50, MR = 50, MT = 45, MB = 40;
+  const PW = 595, PH = 842, CW = PW - ML - MR;   // 495
+  const usableH = PH - MT - MB;
+
+  // ── Base metrics at scale 1. Every value below is multiplied by the scale
+  //    factor S at draw time, so nothing is ever drawn past the page height. ──
+  const B = {
+    headerH:   66,   // logo / company identity block
+    ruleGap:   14,
+    titleH:    28,   // ESTIMATE title
+    metaRow:   14,   // ref / date / validity rows
+    projLabelH: 13,  // "PREPARED FOR" label
+    projNameH:  16,  // project title
+    projRow:    13,  // category / client / location / shoot days
+    secGap:    16,
+    secTitleH: 18,
+    tblHdrH:   16,
+    rowH:      19,
+    subRowH:   18,
+    totalRow:  14,
+    totalGap:  8,
+    totalBigH: 20,
+    notesHead: 14,
+    notesLine: 11,
+    sigH:      64,
+  };
+
+  // Project detail rows that will be shown on the right identity block.
+  const projRows = [
+    ['CATEGORY', budget.category || '-'],
+    ['CLIENT', budget.client_name || '-'],
+    ['LOCATION', budget.shoot_location || '-'],
+    ['SHOOT DAYS', String(budget.shoot_days || '-')],
+  ];
+
+  // ── Measure total content height at scale 1 to choose the scale factor ──
+  const leftColH  = B.titleH + 3 * B.metaRow;
+  const rightColH = B.projLabelH + B.projNameH + projRows.length * B.projRow;
+  const identityH = Math.max(leftColH, rightColH);
 
   const sectionsH = activeSections.reduce(
-    (s, sec) => s + SEC_GAP + SEC_HEADER_H + TBL_HDR_H + sec.lines.length * ROW_H + SUB_ROW_H, 0
+    (s, sec) => s + B.secGap + B.secTitleH + B.tblHdrH + sec.lines.length * B.rowH + B.subRowH, 0
   );
-  const totalContentH = HEADER_H + INFO_H + sectionsH +
-    SEC_GAP + totalsH + (notesH ? SEC_GAP + notesH : 0) + 38;
 
-  const PAGE_W = 595;
-  const PAGE_H = 841;
-  const scale  = totalContentH > PAGE_H ? PAGE_H / totalContentH : 1;
-  const VW     = PAGE_W / scale;
-  const VH     = PAGE_H / scale;
+  const totalsRows = 1 + (hasDiscount ? 2 : 0) + (vatOn ? 1 : 0);
+  const totalsH = totalsRows * B.totalRow + B.totalGap + B.totalBigH;
 
-  const doc = new PDFDocument({ size: 'A4', margin: 0 });
-  const safeTitle = (budget.title || 'budget').replace(/[^a-z0-9]/gi, '-');
+  const notesText = (budget.notes || '').trim();
+  const notesLines = notesText ? Math.ceil(notesText.length / 95) + 1 : 0;
+  const notesH = notesText ? B.notesHead + notesLines * B.notesLine : 0;
+
+  const contentH = B.headerH + B.ruleGap + identityH + B.secGap + sectionsH
+    + B.secGap + totalsH
+    + (notesText ? B.secGap + notesH : 0)
+    + B.secGap + B.sigH;
+
+  // A 2pt slack keeps the single page path from spilling on rounding.
+  const rawScale = (usableH - 2) / contentH;
+  const paginate = rawScale < LEGIBILITY_FLOOR;
+  const S = paginate ? LEGIBILITY_FLOOR : Math.min(1, rawScale);
+
+  // Scaled metrics used from here on.
+  const m = {};
+  Object.keys(B).forEach(k => { m[k] = B[k] * S; });
+
+  // ── Document ──────────────────────────────────────────────────────────────
+  const doc = new PDFDocument({ size: 'A4', margin: 0, autoFirstPage: true, bufferPages: true });
+  const safeTitle = (budget.title || 'estimate').replace(/[^a-z0-9]/gi, '-');
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="Estimate-${safeTitle}.pdf"`);
   doc.pipe(res);
 
-  const fmt = v => `€${Number(v || 0).toFixed(2)}`;
+  const INK = '#111111', INK_SOFT = '#333333', GREY = '#666666', MUTED = '#999999';
+  const HAIR = '#EEEEEE', RULE = '#CCCCCC', BAR = '#F2F2F2', ZEBRA = '#FAFAFA';
 
-  function gradHex(t) {
-    const r = Math.round(255 + (114 - 255) * t);
-    const g = Math.round(144 + (60  - 144) * t);
-    const b = Math.round(47  + (235 - 47 ) * t);
-    return '#' + [r, g, b].map(c => Math.max(0, Math.min(255, c)).toString(16).padStart(2, '0')).join('');
+  // Text helper: font sizes are given in base points and scaled by S here.
+  function txt(text, x, y, size, opts = {}, font = 'Helvetica', color = INK_SOFT) {
+    doc.font(font).fontSize(size * S).fillColor(color)
+       .text(text == null ? '' : String(text), x, y, { lineBreak: false, ...opts });
   }
 
-  // Full-page background (physical coords, before transform)
-  doc.rect(0, 0, PAGE_W, PAGE_H).fill('#131313');
+  function newPageSetup() { doc.rect(0, 0, PW, PH).fill('#FFFFFF'); }
+  newPageSetup();
 
-  // Scale transform so all content fits one page
-  doc.save();
-  doc.transform(scale, 0, 0, scale, 0, 0);
+  let y = MT;
 
-  let y = 0;
-
-  // Gradient accent bar
-  const STEPS = 24;
-  for (let i = 0; i < STEPS; i++) {
-    doc.rect(i * (VW / STEPS), 0, VW / STEPS + 1, 4).fill(gradHex(i / (STEPS - 1)));
-  }
-  y = 4;
-
-  // Header block
-  doc.rect(0, y, VW, HEADER_H - 4).fill('#1e1e1e');
-
+  // ── HEADER: logo left, company identity right ───────────────────────────────
   if (logoData) {
     try {
-      const imgBuf = Buffer.from(logoData.replace(/^data:image\/\w+;base64,/, ''), 'base64');
-      doc.image(imgBuf, 40, y + 28, { fit: [160, 52] });
+      const buf = Buffer.from(String(logoData).replace(/^data:image\/\w+;base64,/, ''), 'base64');
+      doc.image(buf, ML, y, { fit: [140 * S, 56 * S] });
     } catch (_) {
-      doc.font('Helvetica-Bold').fontSize(18).fillColor('#FFFFFF').text(agencyName, 40, y + 44, { lineBreak: false });
+      txt(companyName, ML, y + 10 * S, 14, {}, 'Helvetica-Bold', INK);
     }
   } else {
-    doc.font('Helvetica-Bold').fontSize(18).fillColor('#FFFFFF').text(agencyName, 40, y + 44, { lineBreak: false });
+    txt(companyName, ML, y + 10 * S, 14, {}, 'Helvetica-Bold', INK);
   }
 
-  const dateStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
-  doc.font('Helvetica-Bold').fontSize(20).fillColor('#FFFFFF')
-     .text('ESTIMATE', 0, y + 30, { width: VW - 40, align: 'right', lineBreak: false });
-  doc.font('Helvetica').fontSize(9).fillColor('#888888')
-     .text(dateStr, 0, y + 62, { width: VW - 40, align: 'right', lineBreak: false });
-  doc.font('Helvetica').fontSize(9).fillColor('#888888')
-     .text(`Ref: #${String(budget.id).padStart(4, '0')}`, 0, y + 76, { width: VW - 40, align: 'right', lineBreak: false });
+  const detW = 200 * S;
+  const detX = PW - MR - detW;
+  let detY = y;
+  txt(companyName, detX, detY, 10, { width: detW, align: 'right' }, 'Helvetica-Bold', INK);
+  detY += 14 * S;
+  if (companyAddr) { txt(companyAddr, detX, detY, 8, { width: detW, align: 'right' }, 'Helvetica', GREY); detY += 12 * S; }
+  const detRow = (lbl, val) => {
+    if (!val) return;
+    txt(`${lbl}: ${val}`, detX, detY, 8, { width: detW, align: 'right' }, 'Helvetica', GREY);
+    detY += 11 * S;
+  };
+  detRow('Tel', companyTel);
+  detRow('Business No.', companyNr);
 
-  y = HEADER_H;
-  doc.moveTo(0, y).lineTo(VW, y).strokeColor('#2d2d2d').lineWidth(1).stroke();
+  y = Math.max(y + m.headerH, detY) + m.ruleGap * 0.5;
+  doc.moveTo(ML, y).lineTo(PW - MR, y).strokeColor('#DDDDDD').lineWidth(0.7).stroke();
+  y += m.ruleGap * 0.5;
 
-  // Project info block
-  doc.rect(0, y, VW, INFO_H).fill('#1a1a1a');
+  // ── IDENTITY ROW: ESTIMATE + meta (left), project block (right) ─────────────
+  const baseY = y;
+  const rightColX = ML + CW * 0.52;
+  const rightColW = PW - MR - rightColX;
 
-  const infoTop = y + 14;
-  const halfW   = Math.floor(VW / 2) - 50;
+  // Left: ESTIMATE title + ref / date / validity
+  txt('ESTIMATE', ML, baseY, 22, {}, 'Helvetica-Bold', INK);
+  let ly = baseY + m.titleH;
+  const metaLabelW = 74 * S;
+  const metaValX = ML + 78 * S;
+  const metaValW = rightColX - metaValX - 8 * S;
+  const metaRow = (lbl, val) => {
+    txt(lbl, ML, ly, 9, { width: metaLabelW }, 'Helvetica-Bold', GREY);
+    txt(val, metaValX, ly, 9, { width: metaValW }, 'Helvetica', INK);
+    ly += m.metaRow;
+  };
+  metaRow('Ref', refStr);
+  metaRow('Date', fmtDate(baseDate.toISOString()));
+  metaRow('Valid until', `${fmtDate(validUntil.toISOString())} (${VALIDITY_DAYS} days)`);
 
-  function drawInfo(label, val, x, iy) {
-    doc.font('Helvetica-Bold').fontSize(7).fillColor('#888888').text(label, x, iy, { lineBreak: false });
-    doc.font('Helvetica').fontSize(9.5).fillColor('#FFFFFF').text(String(val || '—'), x, iy + 10, { width: halfW, lineBreak: false });
+  // Right: project identity block
+  let ry = baseY;
+  txt('PREPARED FOR', rightColX, ry, 8, { width: rightColW }, 'Helvetica-Bold', MUTED);
+  ry += m.projLabelH;
+  txt(budget.title || '-', rightColX, ry, 12, { width: rightColW }, 'Helvetica-Bold', INK);
+  ry += m.projNameH;
+  projRows.forEach(([lbl, val]) => {
+    txt(`${lbl}: ${val}`, rightColX, ry, 8.5, { width: rightColW }, 'Helvetica', INK_SOFT);
+    ry += m.projRow;
+  });
+
+  y = Math.max(ly, ry) + m.secGap;
+
+  // ── Section column geometry ─────────────────────────────────────────────────
+  const amtW = 92 * S;
+  const amtX = PW - MR - amtW;              // right-aligned amount column
+  const labelX = ML + 4 * S;
+  const catW = CW * 0.30;                   // logistics: category column
+  const descX = ML + 4 * S + catW + 8 * S; // logistics: description column
+  const descW = amtX - descX - 8 * S;
+  const posW = amtX - labelX - 8 * S;       // crew / equipment: single wide label
+
+  function drawColumnHeader(sec, yPos, continued) {
+    // Section title line (plain, bold), with an optional continued marker.
+    const titleTxt = `SECTION ${sec.num}  ·  ${sec.title}${continued ? '  (continued)' : ''}`;
+    txt(titleTxt, ML, yPos, 9, {}, 'Helvetica-Bold', INK);
+    let yy = yPos + m.secTitleH;
+    // Column header bar, mirroring the invoice table header.
+    doc.rect(ML, yy, CW, m.tblHdrH).fill(BAR);
+    const hY = yy + 4 * S;
+    if (sec.isLog) {
+      txt('CATEGORY', labelX, hY, 7.5, { width: catW }, 'Helvetica-Bold', GREY);
+      txt('DESCRIPTION', descX, hY, 7.5, { width: descW }, 'Helvetica-Bold', GREY);
+    } else {
+      txt('POSITION / SERVICE', labelX, hY, 7.5, { width: posW }, 'Helvetica-Bold', GREY);
+    }
+    txt('AMOUNT', amtX, hY, 7.5, { width: amtW, align: 'right' }, 'Helvetica-Bold', GREY);
+    return yy + m.tblHdrH;
   }
 
-  [['PROJECT', budget.title], ['CATEGORY', budget.category], ['CLIENT', budget.client_name || '—']]
-    .forEach(([l, v], i) => drawInfo(l, v, 40, infoTop + i * 25));
-  [['LOCATION', budget.shoot_location || '—'], ['SHOOT DAYS', String(budget.shoot_days || '—')], ['DATE', dateStr]]
-    .forEach(([l, v], i) => drawInfo(l, v, Math.floor(VW / 2), infoTop + i * 25));
+  function pageBreak() {
+    doc.addPage();
+    newPageSetup();
+    return MT;
+  }
 
-  y += INFO_H;
-  doc.moveTo(0, y).lineTo(VW, y).strokeColor('#2d2d2d').lineWidth(0.5).stroke();
-
-  // Sections
-  let grandSubtotal = 0;
-
+  // ── SECTIONS ────────────────────────────────────────────────────────────────
   activeSections.forEach(sec => {
     const secTotal = sec.lines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0);
-    grandSubtotal += secTotal;
-    y += SEC_GAP;
 
-    doc.rect(0, y, VW, SEC_HEADER_H).fill('#242424');
-    doc.font('Helvetica-Bold').fontSize(8).fillColor('#FFFFFF')
-       .text(`SECTION ${sec.num} — ${sec.title}`, 40, y + 8, { lineBreak: false });
-    doc.font('Helvetica-Bold').fontSize(8).fillColor('#FFFFFF')
-       .text(fmt(secTotal), 0, y + 8, { width: VW - 40, align: 'right', lineBreak: false });
-    y += SEC_HEADER_H;
+    // Never leave a section title stranded: it needs room for its header plus at
+    // least two rows, or it starts on the next page.
+    if (y + m.secTitleH + m.tblHdrH + 2 * m.rowH > PH - MB) y = pageBreak();
 
-    doc.rect(0, y, VW, TBL_HDR_H).fill('#2a1f3d');
-    if (sec.isLog) {
-      doc.font('Helvetica-Bold').fontSize(7).fillColor('#888888')
-         .text('CATEGORY', 44, y + 7, { lineBreak: false });
-      doc.font('Helvetica-Bold').fontSize(7).fillColor('#888888')
-         .text('DESCRIPTION', 44 + VW * 0.32, y + 7, { lineBreak: false });
-    } else {
-      doc.font('Helvetica-Bold').fontSize(7).fillColor('#888888')
-         .text('POSITION / SERVICE', 44, y + 7, { lineBreak: false });
-    }
-    doc.font('Helvetica-Bold').fontSize(7).fillColor('#888888')
-       .text('AMOUNT', 0, y + 7, { width: VW - 40, align: 'right', lineBreak: false });
-    y += TBL_HDR_H;
+    y = drawColumnHeader(sec, y, false);
 
     sec.lines.forEach((line, i) => {
-      doc.rect(0, y, VW, ROW_H).fill(i % 2 === 0 ? '#1e1e1e' : '#242424');
+      if (y + m.rowH > PH - MB) {
+        y = pageBreak();
+        y = drawColumnHeader(sec, y, true);
+      }
+
+      if (i % 2 === 1) doc.rect(ML, y, CW, m.rowH).fill(ZEBRA);
+      const rY = y + 5 * S;
+
       if (sec.isLog) {
-        doc.font('Helvetica').fontSize(8).fillColor('#FFFFFF')
-           .text(line.position_label || '', 44, y + 7, { width: VW * 0.28, lineBreak: false });
-        doc.font('Helvetica').fontSize(8).fillColor('#CCCCCC')
-           .text(line.description || '', 44 + VW * 0.32, y + 7, { width: VW * 0.38, lineBreak: false });
+        txt(line.position_label || '', labelX, rY, 8.5, { width: catW }, 'Helvetica', INK_SOFT);
+        txt(line.description || '', descX, rY, 8.5, { width: descW }, 'Helvetica', GREY);
       } else {
         const showProvider = budget.show_providers && line.description;
         const label = showProvider
-          ? `${line.position_label || ''} — ${line.description}`
+          ? `${line.position_label || ''}  ·  ${line.description}`
           : (line.position_label || '');
-        doc.font('Helvetica').fontSize(8).fillColor('#FFFFFF')
-           .text(label, 44, y + 7, { width: VW * 0.60, lineBreak: false });
+        txt(label, labelX, rY, 8.5, { width: posW }, 'Helvetica', INK_SOFT);
       }
-      const lineDisc = Math.min(parseFloat(line.discount) || 0, parseFloat(line.amount) || 0);
-      if (lineDisc > 0) {
-        doc.font('Helvetica').fontSize(8).fillColor('#888888')
-           .text(fmt(line.amount), 0, y + 3, { width: VW - 40, align: 'right', lineBreak: false });
-        doc.font('Helvetica').fontSize(7).fillColor('#FF902F')
-           .text(`-${fmt(lineDisc)}`, 0, y + 12, { width: VW - 40, align: 'right', lineBreak: false });
+
+      if (line.price_pending) {
+        // A line whose price is not settled prints TBC, not a zero that would
+        // read as free, in the same muted grey used for secondary text.
+        txt('TBC', amtX, rY, 8.5, { width: amtW, align: 'right' }, 'Helvetica', MUTED);
       } else {
-        doc.font('Helvetica').fontSize(8).fillColor('#FFFFFF')
-           .text(fmt(line.amount), 0, y + 7, { width: VW - 40, align: 'right', lineBreak: false });
+        const lineDisc = Math.min(parseFloat(line.discount) || 0, parseFloat(line.amount) || 0);
+        if (lineDisc > 0) {
+          txt(fmtMoney(line.amount), amtX, y + 3 * S, 8.5, { width: amtW, align: 'right' }, 'Helvetica-Bold', INK);
+          txt(`-${fmtMoney(lineDisc)}`, amtX, y + 12 * S, 7, { width: amtW, align: 'right' }, 'Helvetica', GREY);
+        } else {
+          txt(fmtMoney(line.amount), amtX, rY, 8.5, { width: amtW, align: 'right' }, 'Helvetica-Bold', INK);
+        }
       }
-      y += ROW_H;
+
+      y += m.rowH;
+      doc.moveTo(ML, y).lineTo(PW - MR, y).strokeColor(HAIR).lineWidth(0.3).stroke();
     });
 
-    doc.rect(0, y, VW, SUB_ROW_H).fill('#1a1a1a');
-    doc.moveTo(0, y).lineTo(VW, y).strokeColor('#333333').lineWidth(0.5).stroke();
-    doc.font('Helvetica').fontSize(8.5).fillColor('#888888')
-       .text('Subtotal', 40, y + 7, { lineBreak: false });
-    doc.font('Helvetica').fontSize(8.5).fillColor('#888888')
-       .text(fmt(secTotal), 0, y + 7, { width: VW - 40, align: 'right', lineBreak: false });
-    y += SUB_ROW_H;
+    // Section subtotal row.
+    doc.moveTo(ML, y).lineTo(PW - MR, y).strokeColor(RULE).lineWidth(0.6).stroke();
+    const subY = y + 5 * S;
+    txt('Subtotal', labelX, subY, 8.5, {}, 'Helvetica', GREY);
+    txt(fmtMoney(secTotal), amtX, subY, 8.5, { width: amtW, align: 'right' }, 'Helvetica-Bold', INK);
+    y += m.subRowH + m.secGap;
   });
 
-  // Totals block
-  y += SEC_GAP;
-  const grossSubtotal = grandSubtotal;
-  const netSubtotal   = grossSubtotal - totalDiscount;
-  const vatAmount     = budget.vat_enabled ? netSubtotal * (budget.vat_rate / 100) : 0;
-  const grandTotal    = netSubtotal + vatAmount;
+  // ── TOTALS (never split across pages) ───────────────────────────────────────
+  const grossSubtotal = activeSections.reduce(
+    (s, sec) => s + sec.lines.reduce((ss, l) => ss + (parseFloat(l.amount) || 0), 0), 0
+  );
+  const netSubtotal = grossSubtotal - totalDiscount;
+  const vatAmount   = vatOn ? netSubtotal * (budget.vat_rate / 100) : 0;
+  const grandTotal  = netSubtotal + vatAmount;
 
-  doc.rect(0, y, VW, totalsH).fill('#1e1e1e');
-  doc.rect(0, y, 3, totalsH).fill('#723CEB');
+  if (y + totalsH > PH - MB) y = pageBreak();
 
-  let ty = y + 16;
-  doc.font('Helvetica').fontSize(10).fillColor('#888888')
-     .text('SUBTOTAL', 40, ty, { lineBreak: false });
-  doc.font('Helvetica').fontSize(10).fillColor('#888888')
-     .text(fmt(grossSubtotal), 0, ty, { width: VW - 40, align: 'right', lineBreak: false });
-  ty += 20;
+  const totValW = amtW, totValX = amtX;
+  const totLabelW = 150 * S, totLabelX = totValX - totLabelW;
+  let ty = y;
+  const totRow = (label, value, opts = {}) => {
+    const { big = false, color = INK_SOFT } = opts;
+    const fs = big ? 12 : 9;
+    txt(label, totLabelX, ty, fs, { width: totLabelW, align: 'right' }, 'Helvetica-Bold', GREY);
+    txt(value, totValX, ty, fs, { width: totValW, align: 'right' }, big ? 'Helvetica-Bold' : 'Helvetica', color);
+    ty += big ? m.totalBigH : m.totalRow;
+  };
 
+  totRow('Subtotal', fmtMoney(grossSubtotal));
   if (hasDiscount) {
-    doc.font('Helvetica').fontSize(10).fillColor('#FF902F')
-       .text('DISCOUNT', 40, ty, { lineBreak: false });
-    doc.font('Helvetica').fontSize(10).fillColor('#FF902F')
-       .text(`-${fmt(totalDiscount)}`, 0, ty, { width: VW - 40, align: 'right', lineBreak: false });
-    ty += 20;
-    doc.font('Helvetica').fontSize(10).fillColor('#888888')
-       .text('NET SUBTOTAL', 40, ty, { lineBreak: false });
-    doc.font('Helvetica').fontSize(10).fillColor('#888888')
-       .text(fmt(netSubtotal), 0, ty, { width: VW - 40, align: 'right', lineBreak: false });
-    ty += 20;
+    totRow('Discount', `-${fmtMoney(totalDiscount)}`);
+    totRow('Net subtotal', fmtMoney(netSubtotal), { color: INK });
+  }
+  if (vatOn) totRow(`VAT ${budget.vat_rate}%`, fmtMoney(vatAmount));
+
+  doc.moveTo(totLabelX, ty + 2 * S).lineTo(PW - MR, ty + 2 * S).strokeColor('#AAAAAA').lineWidth(0.7).stroke();
+  ty += m.totalGap;
+  totRow(vatOn ? 'TOTAL INC. VAT' : 'TOTAL', fmtMoney(grandTotal), { big: true, color: INK });
+  y = ty + m.secGap;
+
+  // ── NOTES ────────────────────────────────────────────────────────────────
+  if (notesText) {
+    const blockH = notesH;
+    if (y + blockH > PH - MB) y = pageBreak();
+    txt('NOTES', ML, y, 8, {}, 'Helvetica-Bold', MUTED);
+    doc.font('Helvetica-Oblique').fontSize(8.5 * S).fillColor(GREY)
+       .text(notesText, ML, y + m.notesHead, { width: CW, lineGap: 1 });
+    y = doc.y + m.secGap;
   }
 
-  if (budget.vat_enabled) {
-    doc.font('Helvetica').fontSize(10).fillColor('#888888')
-       .text(`VAT ${budget.vat_rate}%`, 40, ty, { lineBreak: false });
-    doc.font('Helvetica').fontSize(10).fillColor('#888888')
-       .text(fmt(vatAmount), 0, ty, { width: VW - 40, align: 'right', lineBreak: false });
-    ty += 16;
+  // ── APPROVAL: client signature and date ─────────────────────────────────────
+  if (y + m.sigH > PH - MB) y = pageBreak();
+  txt('To approve this estimate, please sign and date below.', ML, y, 8.5, { width: CW }, 'Helvetica', GREY);
+  const sigY = y + 40 * S;
+  const sigW = 200 * S, dateW = 150 * S;
+  const dateX = PW - MR - dateW;
+  doc.moveTo(ML, sigY).lineTo(ML + sigW, sigY).strokeColor('#888888').lineWidth(0.7).stroke();
+  txt('Client signature', ML, sigY + 5 * S, 8, { width: sigW }, 'Helvetica', GREY);
+  doc.moveTo(dateX, sigY).lineTo(dateX + dateW, sigY).strokeColor('#888888').lineWidth(0.7).stroke();
+  txt('Date', dateX, sigY + 5 * S, 8, { width: dateW }, 'Helvetica', GREY);
+
+  // ── PAGE NUMBERS (only when the document runs to more than one page) ─────────
+  const range = doc.bufferedPageRange();
+  if (range.count > 1) {
+    for (let i = 0; i < range.count; i++) {
+      doc.switchToPage(range.start + i);
+      doc.font('Helvetica').fontSize(7).fillColor(MUTED)
+         .text(`Page ${i + 1} of ${range.count}`, ML, PH - 24, { width: CW, align: 'center', lineBreak: false });
+    }
   }
 
-  doc.moveTo(40, ty + 2).lineTo(VW - 40, ty + 2).strokeColor('#333333').lineWidth(0.5).stroke();
-  ty += 10;
-
-  if (budget.vat_enabled) {
-    doc.font('Helvetica-Bold').fontSize(13).fillColor('#FF902F')
-       .text('TOTAL INC. VAT', 40, ty, { lineBreak: false });
-    doc.font('Helvetica-Bold').fontSize(13).fillColor('#FF902F')
-       .text(fmt(grandTotal), 0, ty, { width: VW - 40, align: 'right', lineBreak: false });
-  } else {
-    doc.font('Helvetica-Bold').fontSize(13).fillColor('#FFFFFF')
-       .text('TOTAL', 40, ty, { lineBreak: false });
-    doc.font('Helvetica-Bold').fontSize(13).fillColor('#FFFFFF')
-       .text(fmt(grandTotal), 0, ty, { width: VW - 40, align: 'right', lineBreak: false });
-  }
-  y += totalsH;
-
-  // Notes
-  if (budget.notes) {
-    y += SEC_GAP;
-    doc.rect(0, y, VW, notesH).fill('#1a1a1a');
-    doc.font('Helvetica-Bold').fontSize(7).fillColor('#888888')
-       .text('NOTES', 40, y + 10, { lineBreak: false });
-    doc.font('Helvetica-Oblique').fontSize(8).fillColor('#888888')
-       .text(budget.notes, 40, y + 22, { width: VW - 80, lineBreak: false });
-    y += notesH;
-  }
-
-  // Footer
-  const footerY = VH - 26;
-  doc.moveTo(0, footerY).lineTo(VW, footerY).strokeColor('#333333').lineWidth(0.5).stroke();
-  doc.font('Helvetica-Bold').fontSize(8).fillColor('#888888')
-     .text(agencyName, 40, footerY + 7, { lineBreak: false });
-  doc.font('Helvetica').fontSize(7).fillColor('#555555')
-     .text('This document is confidential and intended for the named client only.', 0, footerY + 8, { width: VW, align: 'center', lineBreak: false });
-  doc.font('Helvetica').fontSize(7).fillColor('#555555')
-     .text('built by year28', 0, footerY + 7, { width: VW - 40, align: 'right', lineBreak: false });
-
-  doc.restore();
   doc.end();
 });
 

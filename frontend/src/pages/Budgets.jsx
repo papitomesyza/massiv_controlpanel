@@ -208,7 +208,21 @@ function EstimateCard({ budget, catGroup, onOpen, onAction, onStatus }) {
       <div className="est-card-client">{budget.client_name || 'No client'}</div>
 
       <div className="est-card-total">
-        <Private>{fmt(budget.total)}</Private>
+        {budget.pending_count > 0 && !(budget.total > 0) ? (
+          <span style={{ fontStyle: 'italic', color: 'var(--color-mid-gray)' }}>TBC</span>
+        ) : (
+          <>
+            <Private>{fmt(budget.total)}</Private>
+            {budget.pending_count > 0 && (
+              <span
+                title="Some lines are price pending"
+                style={{ marginLeft: '8px', fontSize: '12px', fontWeight: 600, color: 'var(--color-mid-gray)', fontStyle: 'italic' }}
+              >
+                + TBC
+              </span>
+            )}
+          </>
+        )}
       </div>
 
       <SplitBar crew={budget.crew_total} equip={budget.equip_total} log={budget.log_total} />

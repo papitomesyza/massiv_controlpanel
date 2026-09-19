@@ -493,6 +493,10 @@ function initDb() {
     'ALTER TABLE collections ADD COLUMN sort_order INTEGER NULL',
     'ALTER TABLE collection_cards ADD COLUMN sort_order INTEGER NULL',
     'ALTER TABLE budget_lines ADD COLUMN discount REAL DEFAULT 0',
+    // A line whose price is not settled yet. When set, the amount is forced to
+    // zero on save so no existing total changes, and the PDF and app print TBC
+    // instead of a zero euro figure that would read to a client as free.
+    'ALTER TABLE budget_lines ADD COLUMN price_pending INTEGER DEFAULT 0',
     'ALTER TABLE calendar_events ADD COLUMN task_id INTEGER',
     'ALTER TABLE calendar_events ADD COLUMN standalone_task_id INTEGER',
     'ALTER TABLE mind_accounts ADD COLUMN password_cipher TEXT',
