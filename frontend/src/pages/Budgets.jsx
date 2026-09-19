@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus, FileText, Search, MoreVertical, Pencil, Copy, Download, Receipt, Trash2,
   Video, Camera, Film, Palette, Sparkles, Tag,
 } from 'lucide-react';
 import { api, fmt, fmtDate } from '../api';
+import { documentFilename } from '../lib/filename';
 import { Private } from '../context/PrivacyContext';
 import { useNavigate } from 'react-router-dom';
 import BudgetWizard from '../components/BudgetWizard';
@@ -136,30 +137,61 @@ function SplitBar({ crew, equip, log }) {
 }
 
 // ── Overflow menu ────────────────────────────────────────────────────────────
-function OverflowMenu({ budget, onAction, onStatus }) {
-  const [open, setOpen] = useState(false);
+// Controlled by the page so only one menu is open at a time. When open, the
+// parent lifts the whole card above its siblings (see .est-card.is-menu-open in
+// index.css) so the menu paints over the row below instead of under it. The
+// menu also flips upward when there is not enough room beneath the trigger, so
+// a card on the bottom row does not push its menu past the viewport.
+function OverflowMenu({ budget, isOpen, onOpenChange, onAction, onStatus }) {
   const ref = useRef(null);
+  const menuRef = useRef(null);
+  const [dropUp, setDropUp] = useState(false);
 
+  // Close on an outside click or the Escape key while open.
   useEffect(() => {
-    if (!open) return;
-    function onDoc(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    if (!isOpen) return;
+    function onDoc(e) { if (ref.current && !ref.current.contains(e.target)) onOpenChange(null); }
+    function onKey(e) { if (e.key === 'Escape') onOpenChange(null); }
     document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
-  }, [open]);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [isOpen, onOpenChange]);
+
+  // Decide direction the moment the menu mounts: measure the trigger's position
+  // and the menu's own height, and open upward when it would not fit below.
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    const btn = ref.current?.querySelector('.est-overflow-btn');
+    const menu = menuRef.current;
+    if (!btn || !menu) return;
+    const btnRect = btn.getBoundingClientRect();
+    const menuH = menu.offsetHeight;
+    const spaceBelow = window.innerHeight - btnRect.bottom;
+    setDropUp(spaceBelow < menuH + 12 && btnRect.top > menuH);
+  }, [isOpen]);
 
   function pick(fn) {
-    return (e) => { e.stopPropagation(); setOpen(false); fn(); };
+    return (e) => { e.stopPropagation(); onOpenChange(null); fn(); };
   }
 
   const nextStatuses = STATUSES.filter(s => s !== budget.status);
 
   return (
     <div className="est-overflow" ref={ref} onClick={e => e.stopPropagation()}>
-      <button className="btn-icon est-overflow-btn" title="Actions" onClick={e => { e.stopPropagation(); setOpen(o => !o); }}>
+      <button
+        className="btn-icon est-overflow-btn"
+        title="Actions"
+        aria-haspopup="true"
+        aria-expanded={isOpen}
+        onClick={e => { e.stopPropagation(); onOpenChange(isOpen ? null : budget.id); }}
+      >
         <MoreVertical size={16} />
       </button>
-      {open && (
-        <div className="est-menu">
+      {isOpen && (
+        <div className={`est-menu ${dropUp ? 'drop-up' : ''}`} ref={menuRef} role="menu">
           <button className="est-menu-item" onClick={pick(() => onAction('edit'))}><Pencil size={14} /> Edit</button>
           <button className="est-menu-item" onClick={pick(() => onAction('duplicate'))}><Copy size={14} /> Duplicate</button>
           <button className="est-menu-item" onClick={pick(() => onAction('pdf'))}><Download size={14} /> Export PDF</button>
@@ -181,7 +213,7 @@ function OverflowMenu({ budget, onAction, onStatus }) {
 }
 
 // ── Estimate card ────────────────────────────────────────────────────────────
-function EstimateCard({ budget, catGroup, onOpen, onAction, onStatus }) {
+function EstimateCard({ budget, catGroup, onOpen, onAction, onStatus, menuOpen, onMenuChange }) {
   const metaTip = (
     <span>
       <div>{budget.project_title ? `Project: ${budget.project_title}` : 'No linked project'}</div>
@@ -193,7 +225,7 @@ function EstimateCard({ budget, catGroup, onOpen, onAction, onStatus }) {
   );
 
   return (
-    <div className="est-card" onClick={() => onOpen(budget)} role="button" tabIndex={0}
+    <div className={`est-card ${menuOpen ? 'is-menu-open' : ''}`} onClick={() => onOpen(budget)} role="button" tabIndex={0}
       onKeyDown={e => { if (e.key === 'Enter') onOpen(budget); }}>
       <div className="est-card-top">
         <Tip content={metaTip} className="est-status">
@@ -201,7 +233,13 @@ function EstimateCard({ budget, catGroup, onOpen, onAction, onStatus }) {
         </Tip>
         <CategoryIcon category={budget.category} group={catGroup} />
         <div style={{ flex: 1 }} />
-        <OverflowMenu budget={budget} onAction={a => onAction(a, budget)} onStatus={s => onStatus(s, budget)} />
+        <OverflowMenu
+          budget={budget}
+          isOpen={menuOpen}
+          onOpenChange={onMenuChange}
+          onAction={a => onAction(a, budget)}
+          onStatus={s => onStatus(s, budget)}
+        />
       </div>
 
       <div className="est-card-title">{budget.title}</div>
@@ -286,6 +324,7 @@ export default function Budgets() {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState(null);
   const [confirm, setConfirm] = useState(null);      // active ConfirmDialog config
+  const [openMenuId, setOpenMenuId] = useState(null); // which card's action menu is open
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -320,7 +359,10 @@ export default function Budgets() {
 
   async function exportPdf(budget) {
     try {
-      await api.download(`/budgets/${budget.id}/pdf`, `Estimate-${budget.title.replace(/[^a-z0-9]/gi, '-')}.pdf`);
+      // Mirror the server's filename shape so the downloaded file reads the same
+      // whichever side names it (the anchor's download attribute wins).
+      const name = `${documentFilename('Estimate', budget.id, budget.title)}.pdf`;
+      await api.download(`/budgets/${budget.id}/pdf`, name);
     } catch (e) { setError(e.message); }
   }
 
@@ -471,6 +513,8 @@ export default function Budgets() {
               onOpen={openEstimate}
               onAction={handleAction}
               onStatus={handleStatus}
+              menuOpen={openMenuId === b.id}
+              onMenuChange={setOpenMenuId}
             />
           ))}
         </div>

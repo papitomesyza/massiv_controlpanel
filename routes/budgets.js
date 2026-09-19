@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { db } = require('../db/database');
+const { documentFilename } = require('../lib/filename');
 
 function validateLineFields({ days, rate, amount, discount }) {
   if (days !== undefined && days !== null) {
@@ -459,17 +460,24 @@ router.get('/:id/pdf', (req, res) => {
   const ML = 50, MR = 50, MT = 45, MB = 40;
   const PW = 595, PH = 842, CW = PW - ML - MR;   // 495
   const usableH = PH - MT - MB;
+  // Right hand identity column (the PREPARED FOR block). Its width is fixed
+  // page geometry: it does not scale with the font, so a value wraps inside it
+  // rather than running into the section table. Declared here so the same width
+  // drives both the content height measurement and the drawing.
+  const rightColX = ML + CW * 0.52;
+  const rightColW = PW - MR - rightColX;
 
   // ── Base metrics at scale 1. Every value below is multiplied by the scale
-  //    factor S at draw time, so nothing is ever drawn past the page height. ──
+  //    factor S at draw time, so nothing is ever drawn past the page height.
+  //    Blocks whose height depends on how a value wraps (the PREPARED FOR
+  //    block, the notes) are not listed here as fixed constants: their height
+  //    is measured with doc.heightOfString so a wrapped value is accounted for
+  //    rather than assumed to be a single line. ──
   const B = {
     headerH:   66,   // logo / company identity block
     ruleGap:   14,
     titleH:    28,   // ESTIMATE title
     metaRow:   14,   // ref / date / validity rows
-    projLabelH: 13,  // "PREPARED FOR" label
-    projNameH:  16,  // project title
-    projRow:    13,  // category / client / location / shoot days
     secGap:    16,
     secTitleH: 18,
     tblHdrH:   16,
@@ -479,33 +487,100 @@ router.get('/:id/pdf', (req, res) => {
     totalGap:  8,
     totalBigH: 20,
     notesHead: 14,
-    notesLine: 11,
     sigH:      64,
+    fieldGap:   4,   // vertical gap between stacked, flowing fields
   };
 
-  // Project detail rows that will be shown on the right identity block.
+  // ── Document ──────────────────────────────────────────────────────────────
+  // The document is created before the scale is chosen so its own text
+  // measurement (doc.heightOfString) can drive the one page decision. Nothing
+  // is drawn until the scale is known.
+  const doc = new PDFDocument({ size: 'A4', margin: 0, autoFirstPage: true, bufferPages: true });
+
+  const INK = '#111111', INK_SOFT = '#333333', GREY = '#666666', MUTED = '#999999';
+  const HAIR = '#EEEEEE', RULE = '#CCCCCC', BAR = '#F2F2F2', ZEBRA = '#FAFAFA';
+
+  // Measure the height a value actually occupies when wrapped inside a fixed
+  // width column, at a given scale, capped to maxLines lines. The same routine
+  // both chooses the page scale (measured at scale 1, an upper bound on the
+  // final height) and advances the cursor while drawing (measured at the chosen
+  // scale). Because a smaller font wraps to no more lines than a larger one, a
+  // scale 1 measurement never under counts the scaled draw, so the one page
+  // guarantee holds even when several values wrap.
+  function measureText(text, size, width, { font = 'Helvetica', maxLines = 0, lineGap = 0, scale = 1 } = {}) {
+    doc.font(font).fontSize(size * scale);
+    const natural = doc.heightOfString(text == null ? '' : String(text), { width, lineGap, lineBreak: true });
+    if (maxLines > 0) {
+      const maxH = maxLines * doc.currentLineHeight(true) + lineGap * (maxLines - 1);
+      return Math.min(natural, maxH);
+    }
+    return natural;
+  }
+
+  // Height of a stack of flowing fields: each field's measured height plus a
+  // fixed gap after it. Used to reserve room for the PREPARED FOR block.
+  function stackHeight(fields, width, scale) {
+    return fields.reduce(
+      (h, f) => h + measureText(f.text, f.size, width, { font: f.font, maxLines: f.maxLines, scale }) + B.fieldGap * scale,
+      0,
+    );
+  }
+
+  // Client facing location. A full Google formatted address, for example
+  // "Pristina, Municipality of Pristina, District of Prishtina, 10000, Kosovo",
+  // is machine formatting a client does not need to read. For the PDF only,
+  // when it has more than two comma separated parts keep just the first and the
+  // last ("Pristina, Kosovo"); two parts or fewer print unchanged. The full
+  // address is left untouched everywhere else in the app.
+  function shortenLocation(addr) {
+    const parts = String(addr || '').split(',').map(p => p.trim()).filter(Boolean);
+    if (parts.length > 2) return `${parts[0]}, ${parts[parts.length - 1]}`;
+    return addr;
+  }
+
+  // The PREPARED FOR block as an ordered list of flowing fields, so a long
+  // value pushes the ones below it down instead of overlapping them. Wrapping
+  // values are capped at two lines.
   const projRows = [
     ['CATEGORY', budget.category || '-'],
     ['CLIENT', budget.client_name || '-'],
-    ['LOCATION', budget.shoot_location || '-'],
+    ['LOCATION', shortenLocation(budget.shoot_location) || '-'],
     ['SHOOT DAYS', String(budget.shoot_days || '-')],
+  ];
+  const preparedFields = [
+    { text: 'PREPARED FOR', size: 8, font: 'Helvetica-Bold', color: MUTED, maxLines: 1 },
+    { text: budget.title || '-', size: 12, font: 'Helvetica-Bold', color: INK, maxLines: 2 },
+    ...projRows.map(([lbl, val]) => ({
+      text: `${lbl}: ${val}`, size: 8.5, font: 'Helvetica', color: INK_SOFT, maxLines: 2,
+    })),
   ];
 
   // ── Measure total content height at scale 1 to choose the scale factor ──
-  const leftColH  = B.titleH + 3 * B.metaRow;
-  const rightColH = B.projLabelH + B.projNameH + projRows.length * B.projRow;
+  // The identity row height is the taller of the two columns, both measured so
+  // a wrapped title, client name or location is counted, not assumed. The left
+  // column's meta rows (ref, date, validity) are single line, so their height
+  // does not depend on the exact column width.
+  const leftColH = measureText('ESTIMATE', 22, CW, { font: 'Helvetica-Bold', maxLines: 1, scale: 1 }) + B.fieldGap
+    + 3 * (measureText('Ag', 9, rightColW, { maxLines: 1, scale: 1 }) + B.fieldGap);
+  const rightColH = stackHeight(preparedFields, rightColW, 1);
   const identityH = Math.max(leftColH, rightColH);
 
   const sectionsH = activeSections.reduce(
     (s, sec) => s + B.secGap + B.secTitleH + B.tblHdrH + sec.lines.length * B.rowH + B.subRowH, 0
   );
 
-  const totalsRows = 1 + (hasDiscount ? 2 : 0) + (vatOn ? 1 : 0);
-  const totalsH = totalsRows * B.totalRow + B.totalGap + B.totalBigH;
+  // Totals rows are single line (money never wraps), but they flow like every
+  // other block: each row advances by its measured height plus a gap, so the
+  // reservation is measured the same way rather than assumed from a constant.
+  const totalsMoneyRows = 1 + (hasDiscount ? 2 : 0) + (vatOn ? 1 : 0);
+  const totalMoneyRowH = measureText('Ag', 9, 150, { maxLines: 1, scale: 1 }) + B.fieldGap;
+  const totalBigRowH   = measureText('Ag', 12, 150, { maxLines: 1, scale: 1 }) + B.fieldGap;
+  const totalsH = totalsMoneyRows * totalMoneyRowH + B.totalGap + totalBigRowH;
 
   const notesText = (budget.notes || '').trim();
-  const notesLines = notesText ? Math.ceil(notesText.length / 95) + 1 : 0;
-  const notesH = notesText ? B.notesHead + notesLines * B.notesLine : 0;
+  const notesH = notesText
+    ? B.notesHead + measureText(notesText, 8.5, CW, { font: 'Helvetica-Oblique', lineGap: 1, scale: 1 })
+    : 0;
 
   const contentH = B.headerH + B.ruleGap + identityH + B.secGap + sectionsH
     + B.secGap + totalsH
@@ -521,20 +596,29 @@ router.get('/:id/pdf', (req, res) => {
   const m = {};
   Object.keys(B).forEach(k => { m[k] = B[k] * S; });
 
-  // ── Document ──────────────────────────────────────────────────────────────
-  const doc = new PDFDocument({ size: 'A4', margin: 0, autoFirstPage: true, bufferPages: true });
-  const safeTitle = (budget.title || 'estimate').replace(/[^a-z0-9]/gi, '-');
+  const downloadName = documentFilename('Estimate', budget.id, budget.title);
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="Estimate-${safeTitle}.pdf"`);
+  res.setHeader('Content-Disposition', `attachment; filename="${downloadName}.pdf"`);
   doc.pipe(res);
-
-  const INK = '#111111', INK_SOFT = '#333333', GREY = '#666666', MUTED = '#999999';
-  const HAIR = '#EEEEEE', RULE = '#CCCCCC', BAR = '#F2F2F2', ZEBRA = '#FAFAFA';
 
   // Text helper: font sizes are given in base points and scaled by S here.
   function txt(text, x, y, size, opts = {}, font = 'Helvetica', color = INK_SOFT) {
     doc.font(font).fontSize(size * S).fillColor(color)
        .text(text == null ? '' : String(text), x, y, { lineBreak: false, ...opts });
+  }
+
+  // Draw one flowing field: wrap it inside its column, cap it at maxLines with
+  // an ellipsis beyond that, and return the height it occupied (at scale S) so
+  // the caller can advance the cursor by the real height and never overlap the
+  // field below. Measured with the same font, size and width used to draw it.
+  function drawFlow(field, x, yPos, width, extraOpts = {}) {
+    const { text, size, font, color, maxLines = 0, lineGap = 0 } = field;
+    const h = measureText(text, size, width, { font, maxLines, lineGap, scale: S });
+    const opts = { width, lineGap, lineBreak: true, ...extraOpts };
+    if (maxLines > 0) { opts.height = maxLines * doc.currentLineHeight(true) + lineGap * (maxLines - 1); opts.ellipsis = true; }
+    doc.font(font).fontSize(size * S).fillColor(color)
+       .text(text == null ? '' : String(text), x, yPos, opts);
+    return h;
   }
 
   function newPageSetup() { doc.rect(0, 0, PW, PH).fill('#FFFFFF'); }
@@ -573,35 +657,30 @@ router.get('/:id/pdf', (req, res) => {
   y += m.ruleGap * 0.5;
 
   // ── IDENTITY ROW: ESTIMATE + meta (left), project block (right) ─────────────
+  // Both columns flow: every field advances the cursor by the height it really
+  // occupies plus a fixed gap, so a value that wraps pushes the fields below it
+  // down instead of being drawn on top of them.
   const baseY = y;
-  const rightColX = ML + CW * 0.52;
-  const rightColW = PW - MR - rightColX;
 
   // Left: ESTIMATE title + ref / date / validity
-  txt('ESTIMATE', ML, baseY, 22, {}, 'Helvetica-Bold', INK);
-  let ly = baseY + m.titleH;
+  let ly = baseY + drawFlow(
+    { text: 'ESTIMATE', size: 22, font: 'Helvetica-Bold', color: INK, maxLines: 1 }, ML, baseY, CW,
+  ) + m.fieldGap;
   const metaLabelW = 74 * S;
   const metaValX = ML + 78 * S;
   const metaValW = rightColX - metaValX - 8 * S;
   const metaRow = (lbl, val) => {
-    txt(lbl, ML, ly, 9, { width: metaLabelW }, 'Helvetica-Bold', GREY);
-    txt(val, metaValX, ly, 9, { width: metaValW }, 'Helvetica', INK);
-    ly += m.metaRow;
+    const hL = drawFlow({ text: lbl, size: 9, font: 'Helvetica-Bold', color: GREY, maxLines: 1 }, ML, ly, metaLabelW);
+    const hV = drawFlow({ text: val, size: 9, font: 'Helvetica', color: INK, maxLines: 1 }, metaValX, ly, metaValW);
+    ly += Math.max(hL, hV) + m.fieldGap;
   };
   metaRow('Ref', refStr);
   metaRow('Date', fmtDate(baseDate.toISOString()));
   metaRow('Valid until', `${fmtDate(validUntil.toISOString())} (${VALIDITY_DAYS} days)`);
 
-  // Right: project identity block
+  // Right: PREPARED FOR identity block, flowing
   let ry = baseY;
-  txt('PREPARED FOR', rightColX, ry, 8, { width: rightColW }, 'Helvetica-Bold', MUTED);
-  ry += m.projLabelH;
-  txt(budget.title || '-', rightColX, ry, 12, { width: rightColW }, 'Helvetica-Bold', INK);
-  ry += m.projNameH;
-  projRows.forEach(([lbl, val]) => {
-    txt(`${lbl}: ${val}`, rightColX, ry, 8.5, { width: rightColW }, 'Helvetica', INK_SOFT);
-    ry += m.projRow;
-  });
+  preparedFields.forEach(f => { ry += drawFlow(f, rightColX, ry, rightColW) + m.fieldGap; });
 
   y = Math.max(ly, ry) + m.secGap;
 
@@ -707,12 +786,16 @@ router.get('/:id/pdf', (req, res) => {
   const totValW = amtW, totValX = amtX;
   const totLabelW = 150 * S, totLabelX = totValX - totLabelW;
   let ty = y;
+  // Flowing totals rows: advance by the measured height of the taller of the
+  // label and value plus a gap. Both are drawn right aligned inside their own
+  // fixed width column, so neither can run into the other.
   const totRow = (label, value, opts = {}) => {
     const { big = false, color = INK_SOFT } = opts;
     const fs = big ? 12 : 9;
-    txt(label, totLabelX, ty, fs, { width: totLabelW, align: 'right' }, 'Helvetica-Bold', GREY);
-    txt(value, totValX, ty, fs, { width: totValW, align: 'right' }, big ? 'Helvetica-Bold' : 'Helvetica', color);
-    ty += big ? m.totalBigH : m.totalRow;
+    const valFont = big ? 'Helvetica-Bold' : 'Helvetica';
+    const hL = drawFlow({ text: label, size: fs, font: 'Helvetica-Bold', color: GREY, maxLines: 1 }, totLabelX, ty, totLabelW, { align: 'right' });
+    const hV = drawFlow({ text: value, size: fs, font: valFont, color, maxLines: 1 }, totValX, ty, totValW, { align: 'right' });
+    ty += Math.max(hL, hV) + m.fieldGap;
   };
 
   totRow('Subtotal', fmtMoney(grossSubtotal));
@@ -732,8 +815,11 @@ router.get('/:id/pdf', (req, res) => {
     const blockH = notesH;
     if (y + blockH > PH - MB) y = pageBreak();
     txt('NOTES', ML, y, 8, {}, 'Helvetica-Bold', MUTED);
+    // The notes flow: doc.y after the wrapped paragraph is the real bottom, so
+    // whatever follows sits below it. lineGap is scaled with S so the drawn
+    // height stays within the height reserved for it at scale 1.
     doc.font('Helvetica-Oblique').fontSize(8.5 * S).fillColor(GREY)
-       .text(notesText, ML, y + m.notesHead, { width: CW, lineGap: 1 });
+       .text(notesText, ML, y + m.notesHead, { width: CW, lineGap: 1 * S });
     y = doc.y + m.secGap;
   }
 

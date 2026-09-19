@@ -3883,6 +3883,11 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
   transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
 .est-card:hover { border-color: var(--color-hairline-strong); box-shadow: 0 8px 24px var(--overlay-04); transform: translateY(-1px); }
+/* Grid children paint in DOM order, so a first row card's open menu would be
+   covered by the cards below it. Lifting the card with the open menu above its
+   siblings (they carry z-index auto) makes the menu paint over them. Sibling
+   stacking contexts respect z-index, so no portal is needed. */
+.est-card.is-menu-open { z-index: 50; }
 .est-card-top { display: flex; align-items: center; gap: 10px; }
 .est-status { display: inline-flex; }
 .est-cat-icon { display: inline-flex; align-items: center; justify-content: center; color: var(--color-mid-gray); }
@@ -3900,6 +3905,8 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
   background: var(--surface-card); border: 1px solid var(--border);
   border-radius: 12px; box-shadow: 0 12px 32px var(--overlay-06);
 }
+/* Flip upward when there is not enough room below the trigger (bottom row). */
+.est-menu.drop-up { top: auto; bottom: calc(100% + 4px); }
 .est-menu-item {
   display: flex; align-items: center; gap: 10px; width: 100%;
   padding: 8px 10px; border: none; background: none; cursor: pointer;
