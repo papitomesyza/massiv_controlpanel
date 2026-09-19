@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Plus, List, GanttChart, Lightbulb, ChevronDown, ChevronUp, ChevronRight,
@@ -128,7 +128,13 @@ function ProximityRing({ frac, color }) {
 function StatStrip({ projects }) {
   const strip = useMemo(() => {
     const active = projects.filter(p => p.status !== 'completed');
-    const inProduction = active.filter(p => p.status === 'production').length;
+    // Every active project, meaning every project not yet completed, not only
+    // those in the single production status.
+    const activeCount = active.length;
+    // Active projects whose budget has not been agreed with the client yet (TBC).
+    // These contribute nothing to the money figures below, so counting them lets
+    // a zero total explain itself.
+    const awaitingBudget = active.filter(p => !((Number(p.agreed_budget) || 0) > 0)).length;
     const agreedValue = active.reduce((s, p) => s + (Number(p.agreed_budget) || 0), 0);
     const outstanding = active.reduce((s, p) => {
       const owed = (Number(p.agreed_budget) || 0) - (Number(p.total_received) || 0);
@@ -149,8 +155,14 @@ function StatStrip({ projects }) {
       shootDays = Math.round((nextShoot - today) / 86400000);
       shootFrac = Math.max(0, Math.min(1, 1 - shootDays / NEXT_SHOOT_WINDOW));
     }
-    return { inProduction, agreedValue, outstanding, nextShoot, shootDays, shootFrac };
+    return { activeCount, awaitingBudget, agreedValue, outstanding, nextShoot, shootDays, shootFrac };
   }, [projects]);
+
+  const awaitingNote = strip.awaitingBudget > 0 ? (
+    <div className="est-pipe-note" title={`${strip.awaitingBudget} active ${strip.awaitingBudget === 1 ? 'project is' : 'projects are'} awaiting a budget (TBC), so ${strip.awaitingBudget === 1 ? 'it contributes' : 'they contribute'} nothing here`}>
+      {strip.awaitingBudget} TBC
+    </div>
+  ) : null;
 
   const shootTip = strip.nextShoot
     ? `Next shoot ${fmtDate(strip.nextShoot.toISOString().slice(0, 10))}${strip.shootDays === 0 ? ' (today)' : ` (in ${strip.shootDays}d)`}`
@@ -159,16 +171,18 @@ function StatStrip({ projects }) {
   return (
     <div className="est-pipeline est-pipeline-4">
       <div className="est-pipe-cell">
-        <div className="est-pipe-label">In production</div>
-        <div className="est-pipe-value">{strip.inProduction}</div>
+        <div className="est-pipe-label">Active projects</div>
+        <div className="est-pipe-value">{strip.activeCount}</div>
       </div>
       <div className="est-pipe-cell">
         <div className="est-pipe-label">Active agreed value</div>
         <div className="est-pipe-value"><Private>{fmt(strip.agreedValue)}</Private></div>
+        {awaitingNote}
       </div>
       <div className="est-pipe-cell">
         <div className="est-pipe-label">Outstanding</div>
         <div className="est-pipe-value"><Private>{fmt(strip.outstanding)}</Private></div>
+        {awaitingNote}
       </div>
       <div className="est-pipe-cell">
         <div className="est-pipe-label">Next shoot</div>
@@ -548,7 +562,10 @@ function PhaseTrack({ p, hue, onSegment }) {
 // fully paid, the track tints ember, the same overdue language as the timeline.
 function PaymentTrack({ p, overdue }) {
   const agreed = Number(p.agreed_budget) || 0;
-  if (agreed <= 0) return null; // no agreed budget: no track at all
+  // No agreed budget means the budget has not been discussed with the client
+  // yet, not that the project is worth nothing. Speak the estimate wizard's TBC
+  // language with a small muted marker, visibly unlike a real empty track.
+  if (agreed <= 0) return <div className="pay-tbc" title="Budget not agreed with the client yet (TBC)">TBC</div>;
   const pct = Math.min(100, Math.round(((Number(p.total_received) || 0) / agreed) * 100));
   return (
     <div className={`pay-track${overdue ? ' is-overdue' : ''}`}>
@@ -559,6 +576,31 @@ function PaymentTrack({ p, overdue }) {
 
 /* ─── Project row ─── */
 function ProjectRow({ p, expanded, onToggleExpand, onNavigate, onSegment, onFilterStatus }) {
+  const rowRef = useRef(null);
+  const tipRef = useRef(null);
+  // The tooltip opens upward by default so it never covers the row below. It
+  // only drops down when there is no row beneath (last row) and the viewport
+  // has room; if neither direction fits comfortably it stays upward.
+  const [tipDir, setTipDir] = useState('up');
+
+  function placeTip() {
+    const row = rowRef.current, tip = tipRef.current;
+    if (!row || !tip) return;
+    const rect = row.getBoundingClientRect();
+    const tipH = tip.offsetHeight || 170;
+    const margin = 12;
+    const wrap = row.closest('.prow-wrap');
+    const next = wrap && wrap.nextElementSibling;
+    const hasRowBelow = !!(next && next.classList.contains('prow-wrap'));
+    const fitsAbove = rect.top >= tipH + margin;
+    const fitsBelow = (window.innerHeight - rect.bottom) >= tipH + margin;
+    let dir;
+    if (hasRowBelow && fitsAbove) dir = 'up';        // never cover the next row
+    else if (fitsBelow) dir = 'down';                // last row with room below
+    else dir = 'up';                                 // prefer upward otherwise
+    setTipDir(dir);
+  }
+
   const shoot = dateInfo(p.shoot_date);
   const dead  = dateInfo(p.deadline);
   let shootMuted = false, deadMuted = false;
@@ -578,9 +620,12 @@ function ProjectRow({ p, expanded, onToggleExpand, onNavigate, onSegment, onFilt
     <div className="prow-wrap">
       <div
         className="project-row"
+        ref={rowRef}
         role="button"
         tabIndex={0}
         onClick={onNavigate}
+        onMouseEnter={placeTip}
+        onFocus={placeTip}
         onKeyDown={e => { if (e.key === 'Enter') onNavigate(); }}
       >
         {/* Left: identity */}
@@ -627,12 +672,15 @@ function ProjectRow({ p, expanded, onToggleExpand, onNavigate, onSegment, onFilt
         </button>
 
         {/* Row tooltip: the facts that were dropped from the row itself. */}
-        <div className="prow-tip" role="tooltip">
+        <div className={`prow-tip tip-${tipDir}`} ref={tipRef} role="tooltip">
           <div className="prow-tip-row"><span>Category</span><b>{p.category_name || 'Uncategorised'}</b></div>
           <div className="prow-tip-row"><span>Phase</span><b>{p.current_phase || (p.status === 'completed' ? 'Completed' : 'No active phase')}</b></div>
-          {agreed > 0 && (
-            <div className="prow-tip-row"><span>Payment</span><b><Private>{fmt(p.total_received)}</Private> / <Private>{fmt(agreed)}</Private></b></div>
-          )}
+          <div className="prow-tip-row">
+            <span>Payment</span>
+            {agreed > 0
+              ? <b><Private>{fmt(p.total_received)}</Private> / <Private>{fmt(agreed)}</Private></b>
+              : <b className="tip-tbc">TBC</b>}
+          </div>
           <div className="prow-tip-row"><span>Shoot</span><b>{p.shoot_date ? fmtDate(p.shoot_date) : 'Not set'}</b></div>
           <div className="prow-tip-row"><span>Deadline</span><b>{p.deadline ? fmtDate(p.deadline) : 'Open'}</b></div>
         </div>

@@ -1781,12 +1781,17 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
    Three zones across the width: identity on the left, the two tracks in the
    middle (the space that used to be empty), dates and the status dot on the
    right, with a distinct expand chevron at the far edge. */
-.prow-wrap { border-bottom: 1px solid var(--color-hairline); }
+.prow-wrap { position: relative; border-bottom: 1px solid var(--color-hairline); }
 .prow-wrap:last-child { border-bottom: none; }
+/* While a row is hovered its tooltip must paint above neighbouring rows. Rows
+   paint in DOM order, so a later sibling would otherwise cover an earlier
+   row's tooltip regardless of the tooltip's own z-index. Lifting the whole
+   hovered wrap (the same trick the Estimates card menu uses) fixes that. */
+.prow-wrap:hover { z-index: 50; }
 .project-row {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(120px, 2fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) 240px auto auto;
   align-items: center; gap: 18px;
   padding: 14px 20px;
   cursor: pointer;
@@ -1802,7 +1807,7 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 .prow-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .prow-identity { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .prow-title {
-  font-size: 14px; font-weight: 700; color: var(--color-ink);
+  font-size: 15px; font-weight: 700; color: var(--color-ink);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .prow-client {
@@ -1846,6 +1851,11 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
   transition: width 0.3s ease;
 }
 .pay-track.is-overdue .pay-fill { background: var(--tl-overdue); }
+/* No agreed budget yet: a muted TBC marker stands in for the payment track,
+   matching the estimate wizard's price-pending language. It is deliberately a
+   word, not a bar, so it never reads as a genuine 0% track against a real
+   budget (which still renders an empty pay-track above). */
+.pay-tbc { font-size: 11px; font-weight: 600; font-style: italic; color: var(--color-mid-gray); letter-spacing: 0.02em; }
 
 /* Right zone: margin, date chips, status dot */
 .prow-right { display: flex; align-items: center; gap: 8px; justify-self: end; }
@@ -1869,20 +1879,28 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 .prow-expand:hover { color: var(--color-ink); border-color: var(--color-hairline-strong); }
 .prow-expand.is-open { transform: rotate(90deg); color: var(--color-ink); }
 
-/* Row tooltip: category, phase, payment and dates, revealed on hover. */
+/* Row tooltip: category, phase, payment and dates, revealed on hover. Built from
+   the same floating-surface tokens as the rest of the app (card surface,
+   hairline, radius and overlay shadow) so it reads as one system in both
+   themes. It opens up or down (see .tip-up / .tip-down) so it never runs off
+   the viewport, and the hovered wrap is lifted above its neighbours. */
 .prow-tip {
-  position: absolute; top: calc(100% - 6px); right: 56px; z-index: 45;
+  position: absolute; right: 56px; z-index: 55;
   min-width: 220px; padding: 10px 12px;
-  background: var(--color-ink); color: var(--accent-contrast);
-  border-radius: var(--radius-md, 8px); box-shadow: 0 10px 30px var(--overlay-06);
-  opacity: 0; visibility: hidden; transform: translateY(-4px);
+  background: var(--surface-card); color: var(--color-ink);
+  border: 1px solid var(--border);
+  border-radius: 12px; box-shadow: var(--shadow-overlay);
+  opacity: 0; visibility: hidden;
   transition: opacity 0.12s ease, transform 0.12s ease;
   pointer-events: none;
 }
+.prow-tip.tip-down { top: calc(100% - 6px); bottom: auto; transform: translateY(-4px); }
+.prow-tip.tip-up   { bottom: calc(100% - 6px); top: auto; transform: translateY(4px); }
 .project-row:hover .prow-tip { opacity: 1; visibility: visible; transform: translateY(0); }
 .prow-tip-row { display: flex; justify-content: space-between; gap: 16px; font-size: 11px; line-height: 1.8; }
-.prow-tip-row > span { opacity: 0.7; }
-.prow-tip-row > b { font-weight: 600; }
+.prow-tip-row > span { color: var(--color-mid-gray); }
+.prow-tip-row > b { font-weight: 600; color: var(--color-ink); }
+.prow-tip .tip-tbc { font-style: italic; font-weight: 500; color: var(--color-mid-gray); }
 
 /* Expanded drawer: phase checklist and open tasks, in place. */
 .prow-drawer { padding: 0 20px 16px 20px; background: var(--overlay-01); }
@@ -3977,6 +3995,9 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 .est-pipe-cell { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .est-pipe-label { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--color-mid-gray); }
 .est-pipe-value { font-size: 22px; font-weight: 700; color: var(--color-ink); }
+/* A small muted count of active projects still awaiting a budget, so a money
+   figure reading zero explains itself (TBC language) rather than looking broken. */
+.est-pipe-note { font-size: 11px; font-style: italic; font-weight: 600; color: var(--color-mid-gray); }
 .est-pipe-ring { display: flex; align-items: center; }
 .win-ring { display: block; }
 
