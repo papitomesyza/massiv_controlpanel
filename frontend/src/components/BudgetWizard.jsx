@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { X, Check, Plus, Trash2, Download, ChevronDown, ChevronRight, Search, Pencil } from 'lucide-react';
 import { api, fmt } from '../api';
+import { Private } from '../context/PrivacyContext';
 
 const STEP_LABELS = ['Project Info', 'Crew', 'Assets & Rentals', 'Logistical Costs', 'Review & Finalize'];
 
@@ -670,7 +671,7 @@ function StepCrew({ crewMembers, lines, isFlatFee, shootDays, selected, onToggle
             >
               <div className="budget-person-name">{m.name}</div>
               <div className="budget-person-role">{m.role || '—'}</div>
-              <div className="budget-person-rate">{isFlatFee ? `€${Number(m.day_rate || 0).toFixed(0)} flat` : `€${Number(m.day_rate || 0).toFixed(0)}/day`}</div>
+              <div className="budget-person-rate"><Private>{isFlatFee ? `€${Number(m.day_rate || 0).toFixed(0)} flat` : `€${Number(m.day_rate || 0).toFixed(0)}/day`}</Private></div>
             </div>
           ))}
           {visible.length === 0 && (
@@ -751,7 +752,7 @@ function StepCrew({ crewMembers, lines, isFlatFee, shootDays, selected, onToggle
                       placeholder="0"
                     />
                   ) : (
-                    <span>{fmt(line.amount)}</span>
+                    <span><Private>{fmt(line.amount)}</Private></span>
                   )}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px', width: '76px' }}>
@@ -767,7 +768,7 @@ function StepCrew({ crewMembers, lines, isFlatFee, shootDays, selected, onToggle
                         onChange={e => onUpdate(line._id, 'discount', e.target.value)}
                       />
                       {discLbl && (
-                        <span style={{ fontSize: '11px', color: 'var(--color-ember)', whiteSpace: 'nowrap' }}>{discLbl}</span>
+                        <span style={{ fontSize: '11px', color: 'var(--color-ember)', whiteSpace: 'nowrap' }}><Private>{discLbl}</Private></span>
                       )}
                     </>
                   )}
@@ -788,7 +789,7 @@ function StepCrew({ crewMembers, lines, isFlatFee, shootDays, selected, onToggle
         {lines.length > 0 && (
           <div className="budget-subtotal-row">
             <span>Subtotal</span>
-            <span>{fmt(subtotal)}</span>
+            <span><Private>{fmt(subtotal)}</Private></span>
           </div>
         )}
       </div>
@@ -904,7 +905,7 @@ function StepEquipmentAssets({ assetProviders, assetAllItems, lines, selectedKey
                             {item.category && <div style={{ fontSize: '11px', color: 'var(--color-mid-gray)' }}>{item.category}</div>}
                           </div>
                           <div style={{ fontSize: '12px', color: 'var(--color-mid-gray)', flexShrink: 0 }}>
-                            €{Number(item.daily_rate || 0).toFixed(0)}/day
+                            <Private>€{Number(item.daily_rate || 0).toFixed(0)}/day</Private>
                           </div>
                         </div>
                       );
@@ -973,7 +974,7 @@ function StepEquipmentAssets({ assetProviders, assetAllItems, lines, selectedKey
                   <div className="budget-line-total" style={{ width: '72px', textAlign: 'right' }}>
                     {line.price_pending
                       ? <TbcAmount style={{ width: '72px', display: 'inline-block' }} />
-                      : fmt((parseFloat(line.days) || 0) * (parseFloat(line.rate) || 0))}
+                      : <Private>{fmt((parseFloat(line.days) || 0) * (parseFloat(line.rate) || 0))}</Private>}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px', width: '76px' }}>
                     {!line.price_pending && (
@@ -988,7 +989,7 @@ function StepEquipmentAssets({ assetProviders, assetAllItems, lines, selectedKey
                           onChange={e => onUpdate(line._id, 'discount', e.target.value)}
                         />
                         {discLbl && (
-                          <span style={{ fontSize: '11px', color: 'var(--color-ember)', whiteSpace: 'nowrap' }}>{discLbl}</span>
+                          <span style={{ fontSize: '11px', color: 'var(--color-ember)', whiteSpace: 'nowrap' }}><Private>{discLbl}</Private></span>
                         )}
                       </>
                     )}
@@ -1013,7 +1014,7 @@ function StepEquipmentAssets({ assetProviders, assetAllItems, lines, selectedKey
         {lines.length > 0 && (
           <div className="budget-subtotal-row">
             <span>Subtotal</span>
-            <span>{fmt(subtotal)}</span>
+            <span><Private>{fmt(subtotal)}</Private></span>
           </div>
         )}
       </div>
@@ -1092,7 +1093,7 @@ function StepLogistics({ lines, expenseCats, onAdd, onUpdate, onRemove, subtotal
                       onChange={e => onUpdate(line._id, 'discount', e.target.value)}
                     />
                     {discLbl && (
-                      <span style={{ fontSize: '11px', color: 'var(--color-ember)', whiteSpace: 'nowrap' }}>{discLbl}</span>
+                      <span style={{ fontSize: '11px', color: 'var(--color-ember)', whiteSpace: 'nowrap' }}><Private>{discLbl}</Private></span>
                     )}
                   </>
                 )}
@@ -1113,7 +1114,7 @@ function StepLogistics({ lines, expenseCats, onAdd, onUpdate, onRemove, subtotal
       {lines.length > 0 && (
         <div className="budget-subtotal-row">
           <span>Subtotal</span>
-          <span>{fmt(subtotal)}</span>
+          <span><Private>{fmt(subtotal)}</Private></span>
         </div>
       )}
     </div>
@@ -1158,8 +1159,8 @@ function StepReview({
         <div className="brl-right">
           {pending
             ? <span className="brl-amount" style={{ color: 'var(--color-mid-gray)', fontStyle: 'italic' }}>TBC</span>
-            : <span className="brl-amount">{fmt(amount)}</span>}
-          {!pending && discLbl && <span className="brl-disc">{discLbl}</span>}
+            : <span className="brl-amount"><Private>{fmt(amount)}</Private></span>}
+          {!pending && discLbl && <span className="brl-disc"><Private>{discLbl}</Private></span>}
         </div>
       </div>
     );
@@ -1222,13 +1223,13 @@ function StepReview({
               <StaticLine
                 key={line._id}
                 label={line.position_label}
-                detail={isFlatFee ? null : `${line.days} × ${fmt(line.rate)}`}
+                detail={isFlatFee ? null : <>{line.days} × <Private>{fmt(line.rate)}</Private></>}
                 amount={line.amount}
                 discount={line.discount}
                 pending={line.price_pending}
               />
             ))}
-            <div className="budget-subtotal-row"><span>Section subtotal</span><span>{fmt(crewSubtotal)}</span></div>
+            <div className="budget-subtotal-row"><span>Section subtotal</span><span><Private>{fmt(crewSubtotal)}</Private></span></div>
           </>
         )}
       </div>
@@ -1244,7 +1245,8 @@ function StepReview({
             <>
               {equipLines.map(line => {
                 const amt = (parseFloat(line.days) || 0) * (parseFloat(line.rate) || 0);
-                const detail = [line.provider_name, `${line.days} × ${fmt(line.rate)}`].filter(Boolean).join(' · ');
+                const rateDetail = <>{line.days} × <Private>{fmt(line.rate)}</Private></>;
+                const detail = line.provider_name ? <>{line.provider_name} · {rateDetail}</> : rateDetail;
                 return (
                   <StaticLine
                     key={line._id}
@@ -1256,7 +1258,7 @@ function StepReview({
                   />
                 );
               })}
-              <div className="budget-subtotal-row"><span>Section subtotal</span><span>{fmt(equipSubtotal)}</span></div>
+              <div className="budget-subtotal-row"><span>Section subtotal</span><span><Private>{fmt(equipSubtotal)}</Private></span></div>
             </>
           )}
         </div>
@@ -1280,7 +1282,7 @@ function StepReview({
                   pending={line.price_pending}
                 />
               ))}
-              <div className="budget-subtotal-row"><span>Section subtotal</span><span>{fmt(logSubtotal)}</span></div>
+              <div className="budget-subtotal-row"><span>Section subtotal</span><span><Private>{fmt(logSubtotal)}</Private></span></div>
             </>
           )}
         </div>
@@ -1290,7 +1292,7 @@ function StepReview({
       <div className="budget-review-section budget-totals-block">
         <div className="fin-row" style={{ paddingTop: '12px' }}>
           <span className="text-2">Subtotal</span>
-          <span style={{ fontWeight: 600 }}>{fmt(grossSubtotal)}</span>
+          <span style={{ fontWeight: 600 }}><Private>{fmt(grossSubtotal)}</Private></span>
         </div>
 
         {totalDiscount > 0 && (
@@ -1303,13 +1305,13 @@ function StepReview({
                 </span>
               )}
             </span>
-            <span style={{ fontWeight: 600 }}>−{fmt(totalDiscount)}</span>
+            <span style={{ fontWeight: 600 }}>−<Private>{fmt(totalDiscount)}</Private></span>
           </div>
         )}
 
         <div className="fin-row">
           <span className="text-2">Net Subtotal</span>
-          <span style={{ fontWeight: 600 }}>{fmt(netSubtotal)}</span>
+          <span style={{ fontWeight: 600 }}><Private>{fmt(netSubtotal)}</Private></span>
         </div>
 
         <div className="fin-row" style={{ alignItems: 'flex-start' }}>
@@ -1332,7 +1334,7 @@ function StepReview({
                 onChange={e => setInfo(p => ({ ...p, vat_rate: e.target.value }))}
               />
               <span className="text-2 text-sm">%</span>
-              <span style={{ fontWeight: 600, color: 'var(--color-mid-gray)', fontSize: '13px' }}>{fmt(vatAmount)}</span>
+              <span style={{ fontWeight: 600, color: 'var(--color-mid-gray)', fontSize: '13px' }}><Private>{fmt(vatAmount)}</Private></span>
             </div>
           )}
         </div>
@@ -1340,7 +1342,7 @@ function StepReview({
         <div className="fin-row total" style={{ borderTop: '1px solid var(--color-hairline)', marginTop: '6px', paddingTop: '12px', fontSize: '18px' }}>
           <span>TOTAL</span>
           <span style={{ background: 'var(--gradient-primary)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-            {fmt(grandTotal)}
+            <Private>{fmt(grandTotal)}</Private>
           </span>
         </div>
       </div>

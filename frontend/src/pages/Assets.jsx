@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Plus, Edit2, Archive, RotateCcw, Trash2, MapPin, Package, ChevronDown, ChevronRight, Phone, X } from 'lucide-react';
 import { api } from '../api';
+import { Private } from '../context/PrivacyContext';
 
 const TYPE_SUGGESTIONS = ['Rental House', 'Freelancer', 'Studio', 'Post House', 'Other'];
 
@@ -279,7 +280,7 @@ export default function Assets() {
                                 onClick={() => setEditingRate({ id: item.id, value: String(item.daily_rate || 0) })}
                                 style={{ cursor: 'pointer', fontWeight: 600, fontSize: '13px', padding: '3px 10px', borderRadius: '6px', background: 'var(--overlay-02)', display: 'inline-block' }}
                               >
-                                €{Number(item.daily_rate || 0).toFixed(0)}
+                                <Private>€{Number(item.daily_rate || 0).toFixed(0)}</Private>
                               </span>
                             )}
                           </td>
@@ -339,7 +340,7 @@ export default function Assets() {
                                 onClick={() => setEditingRate({ id: item.id, value: String(item.daily_rate || 0) })}
                                 style={{ cursor: 'pointer', fontWeight: 700, fontSize: '13px', color: 'var(--accent)' }}
                               >
-                                €{Number(item.daily_rate || 0).toFixed(0)}/day
+                                <Private>€{Number(item.daily_rate || 0).toFixed(0)}/day</Private>
                               </span>
                             )}
                           </div>

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { X, Plus, Check, Search, SkipForward } from 'lucide-react';
 import { api } from '../api';
+import { Private } from '../context/PrivacyContext';
 import { getTasksForCategory } from '../data/projectTasks';
 
 /* ---- Nominatim Location Picker ---- */
@@ -708,7 +709,7 @@ function StepReview({ basicInfo, phaseTasks, clients, categories, skippedPhases 
         <div className="fin-row"><span className="text-2">Title</span><span className="text-bold">{basicInfo.title}</span></div>
         {client && <div className="fin-row"><span className="text-2">Client</span><span>{client.name}</span></div>}
         {cat && <div className="fin-row"><span className="text-2">Category</span><span>{cat.name}</span></div>}
-        {basicInfo.agreed_budget && <div className="fin-row"><span className="text-2">Agreed Budget</span><span>€{parseFloat(basicInfo.agreed_budget).toFixed(2)}</span></div>}
+        {basicInfo.agreed_budget && <div className="fin-row"><span className="text-2">Agreed Budget</span><span><Private>€{parseFloat(basicInfo.agreed_budget).toFixed(2)}</Private></span></div>}
         {basicInfo.deadline && <div className="fin-row"><span className="text-2">Deadline</span><span>{basicInfo.deadline}</span></div>}
         {isProduction && basicInfo.shoot_date && <div className="fin-row"><span className="text-2">Shoot Date</span><span>{basicInfo.shoot_date}</span></div>}
         {isProduction && basicInfo.location_name && <div className="fin-row"><span className="text-2">Location</span><span style={{ maxWidth: '200px', textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{basicInfo.location_name}</span></div>}

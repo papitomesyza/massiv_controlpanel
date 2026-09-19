@@ -4,6 +4,7 @@ import { ArrowLeft, Edit2, AlertCircle, MessageCircle } from 'lucide-react';
 import { api, fmt } from '../api';
 import Modal from '../components/Modal';
 import StatCard from '../components/StatCard';
+import { Private } from '../context/PrivacyContext';
 
 function waUrl(phone) {
   if (!phone) return null;
@@ -50,8 +51,8 @@ export default function ClientDetail() {
 
       <div className="stats-grid" style={{ marginBottom: '16px' }}>
         <StatCard label="Total Projects" value={stats.totalProjects} />
-        <StatCard label="Total Revenue" value={fmt(stats.totalRevenue)} />
-        <StatCard label="Total Profit" value={fmt(stats.totalProfit)} danger={stats.totalProfit < 0} />
+        <StatCard label="Total Revenue" value={<Private>{fmt(stats.totalRevenue)}</Private>} />
+        <StatCard label="Total Profit" value={<Private>{fmt(stats.totalProfit)}</Private>} danger={stats.totalProfit < 0} />
       </div>
 
       {/* Outstanding Balance Alert — per project (agreed_budget minus received) */}
@@ -59,12 +60,12 @@ export default function ClientDetail() {
         <div className="outstanding-alert" style={{ marginBottom: '20px' }}>
           <div className="flex-center gap-2" style={{ marginBottom: '10px' }}>
             <AlertCircle size={16} style={{ color: 'var(--danger)', flexShrink: 0 }} />
-            <span className="text-bold text-danger">Pending Payments: {fmt(totalOutstanding)}</span>
+            <span className="text-bold text-danger">Pending Payments: <Private>{fmt(totalOutstanding)}</Private></span>
           </div>
           {outstandingPayments.map(p => (
             <div key={p.project_id} className="flex-between text-sm" style={{ padding: '4px 0' }}>
               <span className="text-2">{p.project_title}</span>
-              <span className="text-danger">{fmt(p.amount)}</span>
+              <span className="text-danger"><Private>{fmt(p.amount)}</Private></span>
             </div>
           ))}
         </div>
@@ -125,11 +126,11 @@ export default function ClientDetail() {
                       </div>
                       <div className="flex-between text-sm text-2">
                         <span>{p.category_name || '—'}</span>
-                        <span>{fmt(p.agreed_budget)} budget</span>
+                        <span><Private>{fmt(p.agreed_budget)}</Private> budget</span>
                       </div>
                       <div className="flex-between text-sm mt-1">
-                        <span className="text-2">Received: {fmt(p.total_received)}</span>
-                        <span className={profit < 0 ? 'text-danger' : ''}>{fmt(profit)} profit</span>
+                        <span className="text-2">Received: <Private>{fmt(p.total_received)}</Private></span>
+                        <span className={profit < 0 ? 'text-danger' : ''}><Private>{fmt(profit)}</Private> profit</span>
                       </div>
                     </div>
                   </Link>

@@ -4,6 +4,7 @@ import { ArrowLeft, Edit2, Archive, Building2, MessageCircle, DollarSign, Plus, 
 import { api, fmt, fmtDate } from '../api';
 import Modal from '../components/Modal';
 import StatCard from '../components/StatCard';
+import { Private } from '../context/PrivacyContext';
 
 function waUrl(phone) {
   if (!phone) return null;
@@ -83,7 +84,7 @@ export default function CrewDetail() {
       </div>
 
       <div className="stats-grid" style={{ marginBottom: '20px' }}>
-        <StatCard label="Total Earnings" value={fmt(totalEarned)} icon={<DollarSign size={18} />} />
+        <StatCard label="Total Earnings" value={<Private>{fmt(totalEarned)}</Private>} icon={<DollarSign size={18} />} />
         <StatCard label="Projects" value={assignments.length} />
         <StatCard label="Paid" value={assignments.filter(a => a.paid_status === 'paid').length + ' / ' + assignments.length} />
       </div>
@@ -109,7 +110,7 @@ export default function CrewDetail() {
               [isCompany ? 'Service Type' : 'Role', isCompany ? member.service_type : member.role],
               ['Email', member.email],
               ['Location', member.location],
-              [isCompany ? 'Rate (€)' : 'Day Rate', member.day_rate ? fmt(member.day_rate) : null],
+              [isCompany ? 'Rate (€)' : 'Day Rate', member.day_rate ? <Private>{fmt(member.day_rate)}</Private> : null],
             ].filter(([, v]) => v).map(([label, val]) => (
               <div key={label} className="fin-row">
                 <span className="text-2 text-sm">{label}</span>
@@ -149,8 +150,8 @@ export default function CrewDetail() {
                         <td><Link to={`/projects/${a.project_id}`} className="link text-bold text-sm">{a.project_title}</Link></td>
                         <td className="text-2 text-sm">{a.role_on_project || a.crew_role || '—'}</td>
                         <td className="text-sm">{a.days}</td>
-                        <td className="text-sm">{fmt(a.rate_per_day)}</td>
-                        <td className="text-bold text-sm">{fmt(a.total_cost)}</td>
+                        <td className="text-sm"><Private>{fmt(a.rate_per_day)}</Private></td>
+                        <td className="text-bold text-sm"><Private>{fmt(a.total_cost)}</Private></td>
                         <td><span className={`badge ${a.paid_status === 'paid' ? 'badge-paid' : a.paid_status === 'partial' ? 'badge-partial' : 'badge-unpaid'}`}>{a.paid_status}</span></td>
                       </tr>
                     ))}
@@ -170,7 +171,7 @@ export default function CrewDetail() {
             Transactions &amp; Debts
             {unpaidTotal > 0 && (
               <span style={{ background: 'var(--color-ember)', color: 'var(--color-ink)', fontSize: '10px', fontWeight: 700, borderRadius: '18px', padding: '2px 8px', lineHeight: 1.4 }}>
-                {fmt(unpaidTotal)} owed
+                <Private>{fmt(unpaidTotal)}</Private> owed
               </span>
             )}
           </span>
@@ -180,8 +181,8 @@ export default function CrewDetail() {
         </div>
 
         <div className="stats-grid-3" style={{ marginBottom: '16px' }}>
-          <StatCard label="Total Owed" value={fmt(unpaidTotal)} danger={unpaidTotal > 0} />
-          <StatCard label="Total Paid" value={fmt(paidTotal)} />
+          <StatCard label="Total Owed" value={<Private>{fmt(unpaidTotal)}</Private>} danger={unpaidTotal > 0} />
+          <StatCard label="Total Paid" value={<Private>{fmt(paidTotal)}</Private>} />
           <StatCard label="Total Transactions" value={debts.length} />
         </div>
 
@@ -199,7 +200,7 @@ export default function CrewDetail() {
                     <tr key={debt.id}>
                       <td className="text-sm text-2">{fmtDate(debt.date_incurred)}</td>
                       <td className="text-sm text-bold">{debt.description}</td>
-                      <td className="text-bold">{fmt(debt.amount)}</td>
+                      <td className="text-bold"><Private>{fmt(debt.amount)}</Private></td>
                       <td>
                         <span className={`badge ${debt.status === 'paid' ? 'badge-paid' : 'badge-unpaid'}`}>
                           {debt.status === 'paid' ? 'Paid' : 'Unpaid'}

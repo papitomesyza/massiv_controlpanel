@@ -741,7 +741,7 @@ export default function Invoices() {
                       </div>
                     </div>
                     <div style={{ fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap', marginLeft: '16px' }}>
-                      {b.total != null ? `€${Number(b.total).toFixed(2)}` : '—'}
+                      {b.total != null ? <Private>€{Number(b.total).toFixed(2)}</Private> : '—'}
                     </div>
                   </button>
                 ))}

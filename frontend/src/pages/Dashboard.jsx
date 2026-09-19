@@ -67,7 +67,6 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [activeModal, setActiveModal] = useState(null);
   const currentMonth = getCurrentMonth();
-  const { hidden, toggle } = usePrivacy();
 
   const [layout, setLayout] = useState(DEFAULT_LAYOUT);
   const [savedLayout, setSavedLayout] = useState(DEFAULT_LAYOUT);
@@ -280,16 +279,6 @@ export default function Dashboard() {
             })()}</div>
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <button
-            className="btn btn-ghost btn-sm"
-            onClick={toggle}
-            aria-label={hidden ? 'Reveal figures' : 'Hide figures'}
-            aria-pressed={hidden}
-            title={hidden ? 'Reveal figures (Shift+H)' : 'Hide figures (Shift+H)'}
-            style={{ padding: '6px 8px' }}
-          >
-            {hidden ? <EyeOff size={15} /> : <Eye size={15} />}
-          </button>
           {editMode ? (
             <>
               <button className="btn btn-ghost btn-sm" onClick={cancelEdit}>Cancel</button>

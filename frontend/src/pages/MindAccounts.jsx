@@ -9,6 +9,7 @@ import {
   generateSalt, DEFAULT_ITERATIONS, deriveKey,
   encryptSecret, decryptSecret, makeSentinel, verifyKey,
 } from '../lib/vault';
+import { Private } from '../context/PrivacyContext';
 
 const CATEGORY_META = {
   project:  { label: 'Project Accounts',  icon: FolderKanban, emptyMsg: 'No project accounts yet.' },
@@ -387,7 +388,7 @@ function AccountCard({ account, onEdit, onDelete, onArchive, vaultKey, unlocked 
           }}>
             <CreditCard size={10} color="var(--accent)" />
             <span style={{ fontSize: '11px', color: 'var(--accent)', fontWeight: 600 }}>
-              {sym}{Number(account.cost).toFixed(2)}{billingCycleLabel(account.billing_cycle)}
+              <Private>{sym}{Number(account.cost).toFixed(2)}</Private>{billingCycleLabel(account.billing_cycle)}
             </span>
             {renewal && (
               <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
@@ -876,7 +877,7 @@ export default function MindAccounts() {
               Monthly Spend
             </div>
             <div style={{ fontSize: '22px', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1 }}>
-              €{monthlySpend.total.toFixed(2)}
+              <Private>€{monthlySpend.total.toFixed(2)}</Private>
               <span style={{ fontSize: '13px', color: 'var(--text-muted)', fontWeight: 400, marginLeft: '6px' }}>/ month</span>
             </div>
           </div>

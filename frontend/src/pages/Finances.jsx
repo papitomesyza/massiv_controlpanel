@@ -8,7 +8,7 @@ import {
   CheckCircle, Download, FileText, Clock, Receipt,
 } from 'lucide-react';
 import { api, fmt, fmtDate } from '../api';
-import { Private } from '../context/PrivacyContext';
+import { Private, usePrivacy } from '../context/PrivacyContext';
 import StatCard from '../components/StatCard';
 import { seriesColors, seriesColor, CHART_GRID, CHART_AXIS, CHART_SURFACE } from '../lib/chartColors';
 
@@ -43,6 +43,21 @@ const CustomTooltip = ({ active, payload, label }) => {
     </div>
   );
 };
+
+/* Privacy aware Y axis tick. The tick text lives inside an SVG, so it cannot be
+   wrapped in the Private component. It blurs with the same CSS filter instead,
+   driven by the shared privacy state, so chart axis figures hide with the rest. */
+function PrivacyYTick({ x, y, payload }) {
+  const { hidden } = usePrivacy();
+  return (
+    <text
+      x={x} y={y} dy={3} textAnchor="end" fontSize={11} fill={CHART_AXIS}
+      style={{ filter: hidden ? 'blur(6px)' : 'none', transition: 'filter 0.25s ease' }}
+    >
+      {`€${(Number(payload.value) / 1000).toFixed(0)}k`}
+    </text>
+  );
+}
 
 /* ───────────────────────── OVERVIEW TAB ───────────────────────── */
 
@@ -143,7 +158,7 @@ function OverviewTab({ month, setMonth, filterCat, setFilterCat, filterClient, s
                 <BarChart data={chart} margin={{ top: 0, right: 0, bottom: 0, left: 0 }} barGap={2}>
                   <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} vertical={false} />
                   <XAxis dataKey="month" tick={{ fontSize: 11, fill: CHART_AXIS }} />
-                  <YAxis tick={{ fontSize: 11, fill: CHART_AXIS }} tickFormatter={v => `€${(v / 1000).toFixed(0)}k`} />
+                  <YAxis tick={<PrivacyYTick />} />
                   <Tooltip content={<CustomTooltip />} />
                   <Legend wrapperStyle={{ fontSize: '12px', color: CHART_AXIS }} />
                   <Bar dataKey="revenue" name="Revenue" fill={seriesColors(3)[0]} radius={[4, 4, 0, 0]} />

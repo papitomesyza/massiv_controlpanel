@@ -3,6 +3,7 @@ import {
   X, Plus, Trash2, ChevronDown, FileText, Send, Check, Search,
 } from 'lucide-react';
 import { api, fmt, fmtDate } from '../api';
+import { Private } from '../context/PrivacyContext';
 
 function uid() { return Math.random().toString(36).slice(2); }
 
@@ -480,7 +481,7 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
                           disabled={isLocked} />
                       </div>
                       <span style={{ fontWeight: 700, fontSize: '16px', color: 'var(--color-ink)', whiteSpace: 'nowrap' }}>
-                        {fmt(computeLineAmount(line))}
+                        <Private>{fmt(computeLineAmount(line))}</Private>
                       </span>
                       {!isLocked && (
                         <button className="btn btn-ghost btn-sm" style={{ padding: '8px', flexShrink: 0 }}
@@ -585,7 +586,7 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
                         </td>
                         {/* Amount */}
                         <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'var(--color-ink)', whiteSpace: 'nowrap', fontSize: '13px' }}>
-                          {fmt(computeLineAmount(line))}
+                          <Private>{fmt(computeLineAmount(line))}</Private>
                         </td>
                         {!isLocked && (
                           <td style={{ padding: '6px 8px' }}>
@@ -695,7 +696,7 @@ function TotalRow({ label, value, bold, large }) {
         {label}
       </span>
       <span style={{ fontSize: large ? '16px' : '13px', fontWeight: bold ? 700 : 500, color: bold ? 'var(--color-ink)' : 'var(--color-ink-soft)' }}>
-        {value}
+        <Private>{value}</Private>
       </span>
     </div>
   );
@@ -820,7 +821,7 @@ function ServicePickerModal({ services, onSelect, onClose }) {
                   <div style={{ fontSize: '11px', color: 'var(--color-mid-gray)', marginTop: '2px' }}>{s.unit}</div>
                 </div>
                 <span style={{ fontSize: '13px', color: 'var(--accent)', fontWeight: 600, whiteSpace: 'nowrap', marginLeft: '16px' }}>
-                  {fmt(s.default_price)}
+                  <Private>{fmt(s.default_price)}</Private>
                 </span>
               </button>
             ))

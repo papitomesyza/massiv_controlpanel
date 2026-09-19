@@ -4,10 +4,11 @@ import {
   LayoutDashboard, FolderKanban, Users, UserCog, Package,
   BarChart3, FileText, Settings, LogOut, CalendarDays, MapPin, Receipt,
   Plus, X, Lightbulb, LayoutGrid, Library, ChevronRight, KeyRound, Presentation,
-  Sun, Moon, Clapperboard,
+  Sun, Moon, Clapperboard, Eye, EyeOff,
 } from 'lucide-react';
 import { useAgency } from '../context/AgencyContext';
 import { useTheme } from '../context/ThemeContext';
+import { usePrivacy } from '../context/PrivacyContext';
 import { api } from '../api';
 import SetupWizard from './SetupWizard';
 
@@ -91,6 +92,8 @@ export default function Layout() {
   const { name, tagline, logo } = useAgency();
   const { theme, toggleTheme } = useTheme();
   const isDark = theme === 'dark';
+  const { hidden, toggle: togglePrivacy } = usePrivacy();
+  const numbersVisible = !hidden;
   const [upcoming, setUpcoming] = useState([]);
   const [fabOpen, setFabOpen] = useState(false);
   const [floatMenuOpen, setFloatMenuOpen] = useState(false);
@@ -267,6 +270,22 @@ export default function Layout() {
         </div>
 
         <div className="sidebar-footer">
+          {/* Privacy control, built as a sibling of the theme toggle below so the
+              two read as a pair. Switch reads on when numbers are visible and off
+              when they are hidden, matching the way the theme toggle reads. */}
+          <button
+            className="theme-toggle"
+            onClick={togglePrivacy}
+            aria-pressed={numbersVisible}
+            aria-label={numbersVisible ? 'Hide money figures' : 'Show money figures'}
+            title={numbersVisible ? 'Hide figures (Shift+H)' : 'Show figures (Shift+H)'}
+          >
+            <div className="nav-icon"><Eye size={18} /></div>
+            <span>Numbers</span>
+            <span className="theme-toggle-track" aria-hidden="true">
+              <span className="theme-toggle-thumb" />
+            </span>
+          </button>
           <button
             className="theme-toggle"
             onClick={toggleTheme}
@@ -329,6 +348,17 @@ export default function Layout() {
             <div className="more-launcher-header">
               <span className="more-launcher-title">Navigation</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {/* Privacy control for mobile, where the sidebar row is hidden.
+                    Mirrors the theme toggle button beside it so the control stays
+                    reachable from every page. */}
+                <button
+                  className="modal-close"
+                  onClick={togglePrivacy}
+                  aria-pressed={numbersVisible}
+                  aria-label={numbersVisible ? 'Hide money figures' : 'Show money figures'}
+                >
+                  {numbersVisible ? <Eye size={18} /> : <EyeOff size={18} />}
+                </button>
                 <button
                   className="modal-close"
                   onClick={toggleTheme}

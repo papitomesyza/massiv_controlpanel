@@ -9,6 +9,7 @@ import MarkerClusterGroup from 'react-leaflet-cluster';
 import L from 'leaflet';
 import 'leaflet.heat';
 import { api, fmt } from '../api';
+import { Private } from '../context/PrivacyContext';
 
 // Fix default leaflet marker icon broken in webpack/vite environments
 delete L.Icon.Default.prototype._getIconUrl;
@@ -227,7 +228,7 @@ export default function Map() {
                         </div>
                         {p.agreed_budget > 0 && (
                           <div style={{ color: 'var(--accent)', fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>
-                            {fmt(p.agreed_budget)}
+                            <Private>{fmt(p.agreed_budget)}</Private>
                           </div>
                         )}
                         <button
