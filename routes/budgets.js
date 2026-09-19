@@ -221,12 +221,13 @@ router.post('/:id/duplicate', (req, res) => {
     );
     const nid = r.lastInsertRowid;
     const ins = db.prepare(`
-      INSERT INTO budget_lines (budget_id, section, position_label, description, crew_id, days, rate, amount, sort_order, discount, price_pending)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO budget_lines (budget_id, section, position_label, description, crew_id, days, rate, amount, sort_order, discount, price_pending, item_id, provider_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     lines.forEach(l => ins.run(
       nid, l.section, l.position_label, l.description, l.crew_id,
       l.days, l.rate, l.amount, l.sort_order, l.discount, l.price_pending ? 1 : 0,
+      l.item_id != null ? l.item_id : null, l.provider_id != null ? l.provider_id : null,
     ));
     return nid;
   })();
@@ -357,8 +358,8 @@ router.post('/:id/lines/batch-replace', (req, res) => {
 
   const deleteLines = db.prepare('DELETE FROM budget_lines WHERE budget_id = ?');
   const insertLine = db.prepare(`
-    INSERT INTO budget_lines (budget_id, section, position_label, description, crew_id, days, rate, amount, sort_order, discount, price_pending)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO budget_lines (budget_id, section, position_label, description, crew_id, days, rate, amount, sort_order, discount, price_pending, item_id, provider_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   for (const l of lines) {
@@ -378,6 +379,7 @@ router.post('/:id/lines/batch-replace', (req, res) => {
         l.position_label || null, l.description || null, l.crew_id || null,
         l.days || 1, l.rate || 0, storedAmount, l.sort_order != null ? l.sort_order : i,
         l.discount != null ? l.discount : 0, pending,
+        l.item_id != null ? l.item_id : null, l.provider_id != null ? l.provider_id : null,
       );
     });
   })();

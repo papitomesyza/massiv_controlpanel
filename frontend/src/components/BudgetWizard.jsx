@@ -1,7 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { X, Check, Plus, Trash2, Download, ChevronDown, ChevronRight, Search, Pencil } from 'lucide-react';
 import { api, fmt } from '../api';
+import { documentFilename } from '../lib/filename';
 import { Private } from '../context/PrivacyContext';
+import ConfirmDialog from './ConfirmDialog';
 
 const STEP_LABELS = ['Project Info', 'Crew', 'Assets & Rentals', 'Logistical Costs', 'Review & Finalize'];
 
@@ -134,14 +136,19 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
       // Migrate old flat-amount lines (rate=0, amount>0) to days × rate format
       const rate = dbRate === 0 && dbAmount > 0 ? dbAmount / days : dbRate;
       return {
+        // item_id and provider_id now ride along on the loaded line, so an
+        // edited estimate restores its catalogue selection: the picker shows the
+        // right items ticked and clicking a ticked item removes its line rather
+        // than adding a duplicate. Legacy rows saved before these columns existed
+        // arrive as null and simply read as custom rows.
         ...l,
         _id: uid(),
         days,
         rate,
         amount: days * rate,
         provider_name: l.description || '',
-        item_id: null,
-        provider_id: null,
+        item_id: l.item_id != null ? l.item_id : null,
+        provider_id: l.provider_id != null ? l.provider_id : null,
       };
     });
   });
@@ -157,6 +164,26 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [savedId, setSavedId] = useState(budget?.id || null);
+
+  // Any user edit since the wizard opened or since the last successful save. It
+  // gates the close confirmation and decides whether the finalise button offers
+  // to save again or simply close.
+  const [dirty, setDirty] = useState(false);
+  // A save or export has persisted this estimate during this session. Once true,
+  // closing is a plain dismissal, never a discard, and the record is never
+  // deleted on close.
+  const [saved, setSaved] = useState(false);
+  const [confirmClose, setConfirmClose] = useState(false);
+
+  // When shoot days changes and lines already carry the previous count, we offer
+  // to apply the new count to exactly those lines. daysBaseline is the count the
+  // current lines were built against; the prompt compares against it, and both
+  // applying and dismissing move it forward so the same change is never asked
+  // about twice.
+  const [daysBaseline, setDaysBaseline] = useState(parseInt(budget?.shoot_days) || 1);
+  const [daysPrompt, setDaysPrompt] = useState(null);   // { prev, next, count } | null
+
+  function markDirty() { setDirty(true); }
 
   useEffect(() => {
     Promise.all([
@@ -207,7 +234,7 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
 
     if (getNextStep(step) === 3 && !logisticsInitialized) {
       const presets = logisticsPresets(info.category);
-      if (presets.length > 0) setLogLines(presets.map(p => mkLogLine(p)));
+      if (presets.length > 0) setLogLines(presets.map(p => mkLogLine({ ...p, _preset: true })));
       setLogisticsInitialized(true);
     }
 
@@ -220,6 +247,7 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
   }
 
   function handleProjectSelect(projectId) {
+    markDirty();
     setInfo(p => ({ ...p, project_id: projectId }));
     if (!projectId) return;
     const proj = projects.find(p => p.id === parseInt(projectId));
@@ -231,15 +259,104 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
       shoot_days: proj.shoot_days || p.shoot_days,
       shoot_location: proj.shoot_location || p.shoot_location,
     }));
+    // Keep the day baseline aligned with a project supplied shoot day count so
+    // the later change offer compares against the right value.
+    if (proj.shoot_days) setDaysBaseline(parseInt(proj.shoot_days) || daysBaseline);
     if (proj.category_name) {
       setInfo(p => ({ ...p, category: proj.category_name }));
     }
   }
 
+  // Any info-field edit marks the wizard dirty. Passed to the step editors so a
+  // change on step one or in Review both flows through here.
+  function touchInfo(updater) {
+    markDirty();
+    setInfo(updater);
+  }
+
+  // ── Shoot days ──
+  // Changing shoot days must never silently rewrite line day counts: an editor
+  // billed five days on a two day shoot is real data. Instead, when lines still
+  // carry the previous count, we surface a one line offer to apply the new count
+  // to exactly those lines. Lines deliberately set to something else are left
+  // alone and are not counted in the offer.
+  function daysCandidates(prev) {
+    const p = parseFloat(prev);
+    // Flat fee crew carry no meaningful day count (days are forced to 1 on save
+    // and never priced by day), so only day-priced lines are ever offered.
+    const pool = [...(isFlatFee ? [] : crewLines), ...equipLines];
+    return pool.filter(l => (parseFloat(l.days) || 0) === p);
+  }
+
+  function handleShootDaysChange(raw) {
+    markDirty();
+    setInfo(p => ({ ...p, shoot_days: raw }));
+    const next = parseInt(raw);
+    // An empty or invalid entry (mid-typing) changes nothing and leaves the
+    // baseline where it is.
+    if (!Number.isFinite(next) || next < 1) { setDaysPrompt(null); return; }
+    if (next === daysBaseline) { setDaysPrompt(null); return; }
+    const count = daysCandidates(daysBaseline).length;
+    if (count > 0) {
+      // Lines still carry the previous count: offer to apply the new one. The
+      // baseline holds at the previous value until the offer is resolved.
+      setDaysPrompt({ prev: daysBaseline, next, count });
+    } else {
+      // Nothing to reconcile, so the new value simply becomes the baseline that
+      // new lines are built against and that a later change compares to.
+      setDaysBaseline(next);
+      setDaysPrompt(null);
+    }
+  }
+
+  function applyDaysPrompt() {
+    if (!daysPrompt) return;
+    markDirty();
+    const { prev, next } = daysPrompt;
+    if (!isFlatFee) {
+      setCrewLines(cur => cur.map(l => {
+        if ((parseFloat(l.days) || 0) !== prev) return l;
+        return { ...l, days: next, amount: next * (parseFloat(l.rate) || 0) };
+      }));
+    }
+    setEquipLines(cur => cur.map(l => {
+      if ((parseFloat(l.days) || 0) !== prev) return l;
+      return { ...l, days: next, amount: next * (parseFloat(l.rate) || 0) };
+    }));
+    setDaysBaseline(next);
+    setDaysPrompt(null);
+  }
+
+  function dismissDaysPrompt() {
+    // Move the baseline forward so this same change is never offered again; the
+    // lines left on the old count are now treated as deliberately different.
+    if (daysPrompt) setDaysBaseline(daysPrompt.next);
+    setDaysPrompt(null);
+  }
+
+  // Re-seed logistics presets when the category changes, but only replace preset
+  // rows the user has not touched. Rows the user edited or added keep their
+  // _preset flag cleared and survive untouched, so switching from a non event to
+  // an event category surfaces the event specific rows without destroying work.
+  const prevCatRef = useRef(info.category);
+  useEffect(() => {
+    const prevCat = prevCatRef.current;
+    prevCatRef.current = info.category;
+    if (isEditing) return;              // an edited estimate keeps its saved lines, never presets
+    if (!logisticsInitialized) return; // the first seed is owned by goNext
+    if (prevCat === info.category) return;
+    const seeds = logisticsPresets(info.category);
+    setLogLines(prev => {
+      const kept = prev.filter(l => !l._preset);
+      return [...seeds.map(p => mkLogLine({ ...p, _preset: true })), ...kept];
+    });
+  }, [info.category, logisticsInitialized, isEditing]);
+
   // ── Crew lines ──
   const crewSelected = new Set(crewLines.filter(l => l.crew_id).map(l => String(l.crew_id)));
 
   function addCrewMember(member) {
+    markDirty();
     if (crewSelected.has(String(member.id))) {
       setCrewLines(prev => prev.filter(l => String(l.crew_id) !== String(member.id)));
       return;
@@ -257,6 +374,7 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
   }
 
   function updateCrewLine(id, field, value) {
+    markDirty();
     setCrewLines(prev => prev.map(l => {
       if (l._id !== id) return l;
       const updated = { ...l, [field]: value };
@@ -268,11 +386,13 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
   }
 
   function removeCrewLine(id) {
+    markDirty();
     setCrewLines(prev => prev.filter(l => l._id !== id));
   }
 
   // ── Equipment / Asset lines ──
   function addAssetItem(item) {
+    markDirty();
     const exists = equipLines.find(l => l.provider_id === item.provider_id && l.item_id === item.item_id);
     if (exists) {
       setEquipLines(prev => prev.filter(l => !(l.provider_id === item.provider_id && l.item_id === item.item_id)));
@@ -295,6 +415,7 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
   }
 
   function updateEquipLine(id, field, value) {
+    markDirty();
     setEquipLines(prev => prev.map(l => {
       if (l._id !== id) return l;
       const updated = { ...l, [field]: value };
@@ -306,6 +427,7 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
   }
 
   function removeEquipLine(id) {
+    markDirty();
     setEquipLines(prev => prev.filter(l => l._id !== id));
   }
 
@@ -320,14 +442,19 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
 
   // ── Logistics lines ──
   function addLogRow() {
+    markDirty();
     setLogLines(prev => [...prev, mkLogLine()]);
   }
 
   function updateLogLine(id, field, value) {
-    setLogLines(prev => prev.map(l => l._id !== id ? l : { ...l, [field]: value }));
+    markDirty();
+    // Editing a preset row clears its preset flag so a later category change
+    // leaves it alone instead of replacing it.
+    setLogLines(prev => prev.map(l => l._id !== id ? l : { ...l, [field]: value, _preset: false }));
   }
 
   function removeLogLine(id) {
+    markDirty();
     setLogLines(prev => prev.filter(l => l._id !== id));
   }
 
@@ -347,6 +474,11 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
   const netSubtotal = grossSubtotal - totalDiscount;
   const vatAmount = info.vat_enabled ? netSubtotal * (parseFloat(info.vat_rate) / 100) : 0;
   const grandTotal = netSubtotal + vatAmount;
+
+  // An estimate with no lines anywhere is a header over a zero total: nothing a
+  // client should ever receive. Individual empty sections stay fine; only a
+  // completely empty estimate blocks Save and Export.
+  const isEmpty = crewLines.length === 0 && equipLines.length === 0 && logLines.length === 0;
 
   async function saveToDB() {
     if (!info.title.trim()) throw new Error('Title required');
@@ -396,6 +528,10 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
           position_label: l.position_label,
           description: l.provider_name || null,
           crew_id: null,
+          // Keep the catalogue link so an edited estimate can restore its picker
+          // selection. Custom rows carry neither and save as null.
+          item_id: l.item_id != null ? l.item_id : null,
+          provider_id: l.provider_id != null ? l.provider_id : null,
           days,
           rate,
           amount: l.price_pending ? 0 : days * rate,
@@ -423,6 +559,7 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
   }
 
   async function handleSave() {
+    if (isEmpty) return;
     setErr('');
     setSaving(true);
     try {
@@ -435,16 +572,37 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
   }
 
   async function handleExportPdf() {
+    if (isEmpty) return;
     setErr('');
     setExporting(true);
     try {
       const id = await saveToDB();
-      await api.download(`/budgets/${id}/pdf`, `Estimate-${info.title.replace(/[^a-z0-9]/gi, '-')}.pdf`);
-      onSaved(id);
+      // Same helper the card export uses, so an estimate downloads under one
+      // identical name whichever side names the file.
+      const name = `${documentFilename('Estimate', id, info.title)}.pdf`;
+      await api.download(`/budgets/${id}/pdf`, name);
+      // Exporting genuinely creates the record. Rather than pretend the wizard
+      // can still be cancelled away, we keep it open, mark it saved, and let the
+      // user close a real, listed estimate.
+      setSaved(true);
+      setDirty(false);
     } catch (e) {
       setErr(e.message);
     }
     setExporting(false);
+  }
+
+  // Closing routes: dirty work asks first through the in-app dialog; a clean
+  // wizard closes at once. Once saved, closing reloads the list so the estimate
+  // shows, and the record is never deleted.
+  function doClose() {
+    if (savedId) onSaved(savedId);
+    else onClose();
+  }
+
+  function attemptClose() {
+    if (dirty) { setConfirmClose(true); return; }
+    doClose();
   }
 
   const grouped = categories.reduce((acc, c) => {
@@ -468,7 +626,7 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
 
         <div className="wizard-header">
           <span className="wizard-title">{isEditing ? 'Edit Estimate' : 'New Estimate'}</span>
-          <button className="modal-close" onClick={onClose}><X size={18} /></button>
+          <button className="modal-close" onClick={attemptClose}><X size={18} /></button>
         </div>
 
         <div className="wizard-steps">
@@ -502,9 +660,13 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
         <div className="wizard-content">
           {step === 0 && (
             <StepInfo
-              info={info} setInfo={setInfo}
+              info={info} setInfo={touchInfo}
               projects={projects} grouped={grouped}
               onProjectSelect={handleProjectSelect}
+              onShootDaysChange={handleShootDaysChange}
+              daysPrompt={daysPrompt}
+              onApplyDays={applyDaysPrompt}
+              onDismissDays={dismissDaysPrompt}
             />
           )}
           {step === 1 && (
@@ -512,12 +674,11 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
               crewMembers={crewMembers}
               lines={crewLines}
               isFlatFee={isFlatFee}
-              shootDays={info.shoot_days}
               selected={crewSelected}
               onToggle={addCrewMember}
               onUpdate={updateCrewLine}
               onRemove={removeCrewLine}
-              onAddCustom={() => setCrewLines(prev => [...prev, mkCrewLine({ days: info.shoot_days || 1 })])}
+              onAddCustom={() => { markDirty(); setCrewLines(prev => [...prev, mkCrewLine({ days: info.shoot_days || 1 })]); }}
               subtotal={crewSubtotal}
             />
           )}
@@ -532,7 +693,7 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
               onAddItem={addAssetItem}
               onUpdate={updateEquipLine}
               onRemove={removeEquipLine}
-              onAddCustom={() => setEquipLines(prev => [...prev, mkEquipLine({ days: parseInt(info.shoot_days) || 1 })])}
+              onAddCustom={() => { markDirty(); setEquipLines(prev => [...prev, mkEquipLine({ days: parseInt(info.shoot_days) || 1 })]); }}
               subtotal={equipSubtotal}
             />
           )}
@@ -548,7 +709,7 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
           )}
           {step === 4 && (
             <StepReview
-              info={info} setInfo={setInfo}
+              info={info} setInfo={touchInfo}
               crewLines={crewLines}
               equipLines={equipLines}
               logLines={logLines}
@@ -569,30 +730,58 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
         {err && <div className="error-msg" style={{ padding: '0 28px 4px' }}>{err}</div>}
 
         <div className="wizard-footer">
-          <button className="btn btn-ghost" onClick={isFirstStep ? onClose : goPrev}>
+          <button className="btn btn-ghost" onClick={isFirstStep ? attemptClose : goPrev}>
             {isFirstStep ? 'Cancel' : '← Back'}
           </button>
           <div style={{ flex: 1 }} />
           {!isLastStep ? (
             <button className="btn btn-primary" onClick={goNext}>Next →</button>
           ) : (
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button className="btn btn-ghost" onClick={handleExportPdf} disabled={exporting || saving}>
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+              {isEmpty && (
+                <span style={{ fontSize: '12px', color: 'var(--color-mid-gray)' }}>
+                  Add at least one line to save or export.
+                </span>
+              )}
+              {saved && !dirty && !isEmpty && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: 'var(--color-mid-gray)' }}>
+                  <Check size={13} color="var(--cat-6, var(--accent))" /> Saved to your estimates
+                </span>
+              )}
+              <button className="btn btn-ghost" onClick={handleExportPdf} disabled={exporting || saving || isEmpty}>
                 <Download size={14} /> {exporting ? 'Exporting...' : 'Export PDF'}
               </button>
-              <button className="btn btn-primary" onClick={handleSave} disabled={saving || exporting}>
-                {saving ? 'Saving...' : 'Save Estimate'}
-              </button>
+              {saved && !dirty ? (
+                <button className="btn btn-primary" onClick={doClose}>Close</button>
+              ) : (
+                <button className="btn btn-primary" onClick={handleSave} disabled={saving || exporting || isEmpty}>
+                  {saving ? 'Saving...' : 'Save Estimate'}
+                </button>
+              )}
             </div>
           )}
         </div>
       </div>
+
+      {confirmClose && (
+        <ConfirmDialog
+          title="Discard unsaved changes?"
+          message={saved
+            ? 'Changes made since the last save will be lost. The saved estimate stays in your list.'
+            : 'This estimate has not been saved and will be lost.'}
+          confirmLabel="Discard"
+          cancelLabel="Keep editing"
+          tone="danger"
+          onConfirm={() => { setConfirmClose(false); doClose(); }}
+          onCancel={() => setConfirmClose(false)}
+        />
+      )}
     </div>
   );
 }
 
 /* ─── Step 1: Project Info ─── */
-function StepInfo({ info, setInfo, projects, grouped, onProjectSelect }) {
+function StepInfo({ info, setInfo, projects, grouped, onProjectSelect, onShootDaysChange, daysPrompt, onApplyDays, onDismissDays }) {
   function f(k, v) { setInfo(p => ({ ...p, [k]: v })); }
 
   return (
@@ -626,23 +815,37 @@ function StepInfo({ info, setInfo, projects, grouped, onProjectSelect }) {
         </div>
         <div className="form-row">
           <label className="form-label">Shoot Days</label>
-          <input type="number" min="1" max="30" className="input" value={info.shoot_days} onChange={e => f('shoot_days', e.target.value)} />
+          <input type="number" min="1" className="input" value={info.shoot_days} onChange={e => onShootDaysChange(e.target.value)} />
         </div>
       </div>
+
+      {daysPrompt && (
+        <div
+          className="card"
+          style={{
+            display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap',
+            padding: '10px 14px', marginBottom: '14px',
+            background: 'var(--overlay-01)', border: '1px solid var(--color-hairline)',
+          }}
+        >
+          <span style={{ fontSize: '13px', color: 'var(--color-ink-soft)', flex: 1, minWidth: '200px' }}>
+            {daysPrompt.count} line{daysPrompt.count !== 1 ? 's' : ''} still use the previous count of {daysPrompt.prev} day{daysPrompt.prev !== 1 ? 's' : ''}.
+          </span>
+          <button className="btn btn-primary btn-sm" onClick={onApplyDays}>Set to {daysPrompt.next}</button>
+          <button className="btn btn-ghost btn-sm" onClick={onDismissDays}>Dismiss</button>
+        </div>
+      )}
+
       <div className="form-row">
         <label className="form-label">Shoot Location</label>
         <input className="input" value={info.shoot_location} onChange={e => f('shoot_location', e.target.value)} placeholder="Location" />
-      </div>
-      <div className="form-row">
-        <label className="form-label">Notes</label>
-        <textarea className="input" value={info.notes} onChange={e => f('notes', e.target.value)} placeholder="Internal notes or special conditions..." rows={3} />
       </div>
     </div>
   );
 }
 
 /* ─── Step 2: Crew ─── */
-function StepCrew({ crewMembers, lines, isFlatFee, shootDays, selected, onToggle, onUpdate, onRemove, onAddCustom, subtotal }) {
+function StepCrew({ crewMembers, lines, isFlatFee, selected, onToggle, onUpdate, onRemove, onAddCustom, subtotal }) {
   const [q, setQ] = useState('');
   const query = q.trim().toLowerCase();
   const visible = query
@@ -1347,10 +1550,10 @@ function StepReview({
         </div>
       </div>
 
-      {/* Notes */}
+      {/* Notes: the one notes field, printed on the client PDF. */}
       <div className="form-row" style={{ marginTop: '20px' }}>
-        <label className="form-label">Notes (appears on PDF)</label>
-        <textarea className="input" rows={3} value={info.notes} onChange={e => setInfo(p => ({ ...p, notes: e.target.value }))} placeholder="Any additional notes for the client..." />
+        <label className="form-label">Client notes (printed on the estimate PDF, visible to the client)</label>
+        <textarea className="input" rows={3} value={info.notes} onChange={e => setInfo(p => ({ ...p, notes: e.target.value }))} placeholder="Any notes the client should see on the estimate..." />
       </div>
     </div>
   );
