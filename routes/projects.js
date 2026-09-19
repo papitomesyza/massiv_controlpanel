@@ -150,8 +150,10 @@ router.get('/', (req, res) => {
 
   if (sort === 'margin_high') {
     projects = projects.sort((a, b) => {
-      const mA = a.agreed_budget > 0 ? (a.total_received - a.total_crew_cost - a.total_expenses) / a.agreed_budget : null;
-      const mB = b.agreed_budget > 0 ? (b.total_received - b.total_crew_cost - b.total_expenses) / b.agreed_budget : null;
+      // Projected margin: agreed budget minus committed costs over agreed budget,
+      // matching the badge on the Projects page so the sort agrees with what is shown.
+      const mA = a.agreed_budget > 0 ? (a.agreed_budget - a.total_crew_cost - a.total_expenses) / a.agreed_budget : null;
+      const mB = b.agreed_budget > 0 ? (b.agreed_budget - b.total_crew_cost - b.total_expenses) / b.agreed_budget : null;
       if (mA === null && mB === null) return 0;
       if (mA === null) return 1;
       if (mB === null) return -1;

@@ -1,21 +1,62 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Plus, List, GanttChart, Lightbulb, ChevronDown, ChevronUp,
-  ArrowRight, X, CalendarDays, Edit2,
+  Search, SlidersHorizontal, Camera, Flag,
 } from 'lucide-react';
 import { api, fmt, fmtDate } from '../api';
 import { Private } from '../context/PrivacyContext';
 import ProjectWizard from '../components/ProjectWizard';
 import AddLeadModal from '../components/AddLeadModal';
-import TasksView from '../components/TasksView';
+import LeadsRail from '../components/LeadsRail';
+import ProjectTimeline from '../components/ProjectTimeline';
+import { makeDeadlinePatcher } from '../lib/patchDeadline';
 
-const STATUSES = ['development','pre-production','production','post-production','completed'];
-const PRODUCTION_GROUPS = ['Video Production', 'Photography'];
+// The four active statuses, in flow order. Completed lives on its own tab.
+const ACTIVE_STATUSES = ['development', 'pre-production', 'production', 'post-production'];
 
+// One status colour system, shared with the Dashboard hero and the timeline
+// (see index.css). The same token decodes the row dot, the filter dot and the
+// timeline bar, so all three agree by eye. Completed keeps a distinct hollow
+// treatment; overdue is a timeline-only tint with its own legend there.
+const STATUS_HUE = {
+  'development':     'var(--tl-hue-development)',
+  'pre-production':  'var(--tl-hue-pre-production)',
+  'production':      'var(--tl-hue-production)',
+  'post-production': 'var(--tl-hue-post-production)',
+};
+const STATUS_LABEL = {
+  'development':     'Development',
+  'pre-production':  'Pre-Production',
+  'production':      'Production',
+  'post-production': 'Post-Production',
+  'completed':       'Completed',
+};
+
+const SORTS = [
+  { key: 'newest',      label: 'Newest first' },
+  { key: 'oldest',      label: 'Oldest first' },
+  { key: 'budget_high', label: 'Budget: high to low' },
+  { key: 'budget_low',  label: 'Budget: low to high' },
+  { key: 'margin_high', label: 'Margin: high to low' },
+];
+
+// Projected margin: what the project keeps if it collects its agreed budget and
+// its committed costs land as booked. It is budget minus crew minus expenses over
+// budget, not received over budget, so an unpaid project does not read as a loss.
 function getMargin(p) {
   if (!p.agreed_budget || p.agreed_budget <= 0) return null;
-  return ((p.total_received - p.total_crew_cost - p.total_expenses) / p.agreed_budget) * 100;
+  return ((p.agreed_budget - p.total_crew_cost - p.total_expenses) / p.agreed_budget) * 100;
+}
+
+/* ── Hover tooltip primitive: a fact travels on hover instead of taking space. ── */
+function Tip({ content, children, className = '' }) {
+  return (
+    <span className={`tip-wrap ${className}`}>
+      {children}
+      <span className="tip-pop" role="tooltip">{content}</span>
+    </span>
+  );
 }
 
 function MarginBadge({ p }) {
@@ -25,25 +66,44 @@ function MarginBadge({ p }) {
   return <span className={`badge ${cls}`}>{Math.round(margin)}%</span>;
 }
 
-function StatusBadge({ status }) {
-  const map = {
-    'development':     'badge-development',
-    'pre-production':  'badge-pre-production',
-    'production':      'badge-production',
-    'post-production': 'badge-post-production',
-    'completed':       'badge-completed',
-  };
-  return <span className={`badge ${map[status] || 'badge-pending'}`}>{status?.replace(/-/g, ' ')}</span>;
+// The status word never prints on the card. The dot carries it; the word lives in
+// the dot's tooltip and once in the legend at the foot of the page.
+function StatusDot({ status, size = 10 }) {
+  if (status === 'completed') {
+    return (
+      <span
+        className="status-dot"
+        style={{ width: size, height: size, background: 'transparent', border: '1.5px solid var(--color-hairline-strong)' }}
+      />
+    );
+  }
+  return (
+    <span
+      className="status-dot"
+      style={{ width: size, height: size, background: STATUS_HUE[status] || 'var(--color-hairline-strong)' }}
+    />
+  );
 }
 
-function getShootChip(shootDate) {
-  if (!shootDate) return null;
+// A date the user acts on, with its urgency. Text is allowed here: this is a date.
+function dateInfo(dateStr) {
+  if (!dateStr) return null;
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  const shoot = new Date(shootDate + 'T00:00:00');
-  const diffDays = Math.round((shoot - today) / 86400000);
-  if (diffDays === 0) return { label: 'Today!', cls: 'today' };
-  if (diffDays > 0)   return { label: `in ${diffDays}d`, cls: diffDays <= 7 ? 'urgent' : '' };
-  return { label: fmtDate(shootDate), cls: '' };
+  const d = new Date(dateStr + 'T00:00:00');
+  const diff = Math.round((d - today) / 86400000);
+  let label, cls;
+  if (diff === 0)      { label = 'Today'; cls = 'today'; }
+  else if (diff > 0)   { label = `in ${diff}d`; cls = diff <= 7 ? 'urgent' : ''; }
+  else                 { label = fmtDate(dateStr); cls = ''; }
+  return { diff, label, cls };
+}
+
+function DateChip({ info, Icon, muted, title }) {
+  return (
+    <span className={`shoot-chip${info.cls ? ` ${info.cls}` : ''}${muted ? ' muted' : ''}`} title={title}>
+      <Icon size={11} /> {info.label}
+    </span>
+  );
 }
 
 export default function Projects() {
@@ -53,23 +113,27 @@ export default function Projects() {
   const [loading, setLoading]         = useState(true);
   const [activeTab, setActiveTab]     = useState('active');
   const [filterStatus, setFilterStatus] = useState('');
+  const [query, setQuery]             = useState('');
   const [filterCat, setFilterCat]     = useState('');
   const [sort, setSort]               = useState('newest');
-  const [view, setView]               = useState(() => localStorage.getItem('massiv_projects_view') || 'list');
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [view, setView]               = useState(() => {
+    const v = localStorage.getItem('massiv_projects_view');
+    return v === 'timeline' || v === 'gantt' ? 'timeline' : 'list';
+  });
   const [showWizard, setShowWizard]   = useState(false);
   const [showAddLead, setShowAddLead] = useState(false);
-  const [editingLead, setEditingLead] = useState(null);
   const [leadsOpen, setLeadsOpen]     = useState(true);
   const [wizardPrefill, setWizardPrefill] = useState(null);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
+  // Everything the page needs is small and fully in memory, so we fetch once on
+  // mount and do all filtering and sorting client side. The API query params are
+  // left intact for other callers; this page just stops using them.
   async function load() {
-    const params = new URLSearchParams();
-    if (filterCat) params.set('category_id', filterCat);
-    if (sort && sort !== 'newest') params.set('sort', sort);
     const [p, ca, l] = await Promise.all([
-      api.get(`/projects?${params}`),
+      api.get('/projects'),
       api.get('/settings/project-categories'),
       api.get('/leads'),
     ]);
@@ -83,7 +147,7 @@ export default function Projects() {
 
   useEffect(() => {
     load().then(({ leads: loadedLeads }) => {
-      // Handle FAB / dashboard URL params after data loads
+      // Handle FAB / dashboard URL params after data loads.
       const action    = searchParams.get('new');
       const newLead   = searchParams.get('newlead');
       const convertId = searchParams.get('convert');
@@ -103,7 +167,11 @@ export default function Projects() {
         setSearchParams({});
       }
     });
-  }, [filterCat, sort]);
+  }, []);
+
+  // One shared deadline patch path (see lib/patchDeadline), so dragging a bar on
+  // this page saves and re-syncs the calendar exactly as the Dashboard does.
+  const onPatchDeadline = useMemo(() => makeDeadlinePatcher(setProjects), []);
 
   function switchTab(tab) { setActiveTab(tab); setFilterStatus(''); }
   function switchView(v) { setView(v); localStorage.setItem('massiv_projects_view', v); }
@@ -126,15 +194,8 @@ export default function Projects() {
     setShowAddLead(false);
   }
 
-  function handleLeadUpdated(lead) {
-    setLeads(prev => prev.map(l => l.id === lead.id ? lead : l));
-    setEditingLead(null);
-  }
-
-  function handleLeadDismissed(id) {
-    setLeads(prev => prev.filter(l => l.id !== id));
-  }
-
+  // Convert on this page keeps the richer wizard based flow: prefill the wizard,
+  // and on success mark the lead converted and drop it.
   async function handleConvertLead(lead) {
     setWizardPrefill(lead);
     setShowWizard(true);
@@ -150,27 +211,48 @@ export default function Projects() {
     navigate(`/projects/${id}`);
   }
 
+  const displayProjects = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    let list = projects.filter(p =>
+      activeTab === 'active' ? p.status !== 'completed' : p.status === 'completed'
+    );
+    if (activeTab === 'active' && filterStatus) list = list.filter(p => p.status === filterStatus);
+    if (filterCat) list = list.filter(p => String(p.category_id) === String(filterCat));
+    if (q) list = list.filter(p =>
+      (p.title || '').toLowerCase().includes(q) || (p.client_name || '').toLowerCase().includes(q)
+    );
+
+    const sorted = [...list];
+    sorted.sort((a, b) => {
+      switch (sort) {
+        case 'oldest':      return (a.created_at || '').localeCompare(b.created_at || '');
+        case 'budget_high': return (b.agreed_budget || 0) - (a.agreed_budget || 0);
+        case 'budget_low':  return (a.agreed_budget || 0) - (b.agreed_budget || 0);
+        case 'margin_high': {
+          const mA = getMargin(a), mB = getMargin(b);
+          if (mA === null && mB === null) return 0;
+          if (mA === null) return 1;
+          if (mB === null) return -1;
+          return mB - mA;
+        }
+        default:            return (b.created_at || '').localeCompare(a.created_at || '');
+      }
+    });
+    return sorted;
+  }, [projects, activeTab, filterStatus, filterCat, query, sort]);
+
+  const moreActive = filterCat !== '' || sort !== 'newest';
+
   if (loading) return <div className="loading">Loading...</div>;
-
-  const tabProjects = activeTab === 'active'
-    ? projects.filter(p => p.status !== 'completed')
-    : projects.filter(p => p.status === 'completed');
-
-  const displayProjects = activeTab === 'active' && filterStatus
-    ? tabProjects.filter(p => p.status === filterStatus)
-    : tabProjects;
 
   return (
     <div>
       <div className="page-header">
-        <div>
-          <div className="page-title">Projects</div>
-          <div className="page-subtitle">{displayProjects.length} project{displayProjects.length !== 1 ? 's' : ''}</div>
-        </div>
+        <div className="page-title">Projects</div>
         <div className="flex-center gap-2">
           <div className="view-toggle">
-            <button className={`view-toggle-btn${view === 'list'  ? ' active' : ''}`} onClick={() => switchView('list')}  title="List view"><List size={15} /></button>
-            <button className={`view-toggle-btn${view === 'gantt' ? ' active' : ''}`} onClick={() => switchView('gantt')} title="Timeline view"><GanttChart size={15} /></button>
+            <button className={`view-toggle-btn${view === 'list'     ? ' active' : ''}`} onClick={() => switchView('list')}     title="List view"><List size={15} /></button>
+            <button className={`view-toggle-btn${view === 'timeline' ? ' active' : ''}`} onClick={() => switchView('timeline')} title="Timeline view"><GanttChart size={15} /></button>
           </div>
           <button className="btn btn-ghost" onClick={() => setShowAddLead(true)}>
             <Lightbulb size={15} style={{ color: 'var(--accent)' }} /> Add Lead
@@ -181,10 +263,7 @@ export default function Projects() {
         </div>
       </div>
 
-      {/* 1. TASKS — always visible at the top */}
-      <TasksView />
-
-      {/* 2. PROJECTS — Active / Completed toggle + filter-bar + project grid */}
+      {/* Active / Completed tabs */}
       <div style={{ display: 'flex', gap: '4px', marginBottom: '16px' }}>
         <button
           className={`btn btn-sm ${activeTab === 'active' ? 'btn-primary' : 'btn-ghost'}`}
@@ -202,43 +281,90 @@ export default function Projects() {
         </button>
       </div>
 
-      <div className="filter-bar">
+      {/* Search + status dots + a single compact control for category and sort. */}
+      <div className="est-controls">
+        <div className="est-search">
+          <Search size={15} />
+          <input
+            className="input"
+            placeholder="Search title or client"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+          />
+        </div>
+
         {activeTab === 'active' && (
-          <select className="select" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-            <option value="">All Statuses</option>
-            {STATUSES.filter(s => s !== 'completed').map(s => (
-              <option key={s} value={s}>{s.replace(/-/g,' ')}</option>
+          <div className="est-filter-dots">
+            {ACTIVE_STATUSES.map(s => (
+              <button
+                key={s}
+                className={`est-filter-dot ${filterStatus === s ? 'active' : ''}`}
+                title={STATUS_LABEL[s]}
+                aria-label={STATUS_LABEL[s]}
+                onClick={() => setFilterStatus(cur => cur === s ? '' : s)}
+              >
+                <span className="status-dot" style={{ width: 12, height: 12, background: STATUS_HUE[s] }} />
+              </button>
             ))}
-          </select>
+          </div>
         )}
-        <select className="select" value={filterCat} onChange={e => setFilterCat(e.target.value)}>
-          <option value="">All Categories</option>
-          {Object.entries(grouped).map(([g, cats]) => (
-            <optgroup key={g} label={g}>
-              {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </optgroup>
-          ))}
-        </select>
-        <select className="select" value={sort} onChange={e => setSort(e.target.value)}>
-          <option value="newest">Newest First</option>
-          <option value="oldest">Oldest First</option>
-          <option value="budget_high">Budget High → Low</option>
-          <option value="budget_low">Budget Low → High</option>
-          <option value="margin_high">Margin High → Low</option>
-        </select>
+
+        <div className="proj-filter-more">
+          <button
+            className={`est-filter-dot${moreActive ? ' active' : ''}`}
+            title="Category and sort"
+            aria-label="Category and sort"
+            onClick={() => setFiltersOpen(o => !o)}
+          >
+            <SlidersHorizontal size={15} />
+          </button>
+          {filtersOpen && (
+            <>
+              <div className="proj-filter-scrim" onClick={() => setFiltersOpen(false)} />
+              <div className="proj-filter-pop">
+                <label className="form-label">Category</label>
+                <select className="select input" value={filterCat} onChange={e => setFilterCat(e.target.value)}>
+                  <option value="">All categories</option>
+                  {Object.entries(grouped).map(([g, cats]) => (
+                    <optgroup key={g} label={g}>
+                      {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </optgroup>
+                  ))}
+                </select>
+                <label className="form-label" style={{ marginTop: '10px' }}>Sort</label>
+                <select className="select input" value={sort} onChange={e => setSort(e.target.value)}>
+                  {SORTS.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+                </select>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {displayProjects.length === 0 ? (
         <div className="card card-pad empty">No projects found</div>
-      ) : view === 'gantt' ? (
-        <GanttView projects={displayProjects} />
+      ) : view === 'timeline' ? (
+        <div className="card card-pad">
+          <ProjectTimeline projects={displayProjects} onPatchDeadline={onPatchDeadline} />
+        </div>
       ) : (
         <div className="card">
           {displayProjects.map(p => <ProjectRowCard key={p.id} p={p} />)}
         </div>
       )}
 
-      {/* 3. LEADS — always visible at the bottom */}
+      {/* Legend: the one place status words appear on this page. */}
+      {displayProjects.length > 0 && view === 'list' && (
+        <div className="est-legend">
+          {[...ACTIVE_STATUSES, 'completed'].map(s => (
+            <span key={s} className="est-legend-item">
+              <StatusDot status={s} size={10} /> {STATUS_LABEL[s]}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Leads: the collapsible section wrapper stays, its contents are the shared rail. */}
       <div className="leads-section" style={{ marginTop: '20px' }}>
         <div className="leads-section-header" onClick={() => setLeadsOpen(o => !o)}>
           <div className="flex-center gap-2">
@@ -249,22 +375,8 @@ export default function Projects() {
         </div>
 
         {leadsOpen && (
-          <div>
-            {leads.length === 0 ? (
-              <div className="leads-empty">No active leads. Click "Add Lead" to track potential projects.</div>
-            ) : (
-              <div className="leads-scroll-row">
-                {leads.map(lead => (
-                  <LeadCard
-                    key={lead.id}
-                    lead={lead}
-                    onDismiss={handleLeadDismissed}
-                    onConvert={handleConvertLead}
-                    onEdit={setEditingLead}
-                  />
-                ))}
-              </div>
-            )}
+          <div style={{ paddingTop: '10px' }}>
+            <LeadsRail leads={leads} setLeads={setLeads} onConvert={handleConvertLead} />
           </div>
         )}
       </div>
@@ -277,32 +389,37 @@ export default function Projects() {
         />
       )}
       {showAddLead && <AddLeadModal onClose={() => setShowAddLead(false)} onSaved={handleLeadSaved} />}
-      {editingLead && <AddLeadModal lead={editingLead} onClose={() => setEditingLead(null)} onSaved={handleLeadUpdated} />}
     </div>
   );
 }
 
 /* ─── Project row card ─── */
 function ProjectRowCard({ p }) {
-  const isProductionGroup = PRODUCTION_GROUPS.includes(p.group_name);
-  const shootChip    = isProductionGroup ? getShootChip(p.shoot_date) : getShootChip(p.deadline);
-  const totalPhases  = p.total_phases || 4;
+  const shoot = dateInfo(p.shoot_date);
+  const dead  = dateInfo(p.deadline);
+  // The nearer date (smaller distance from today) reads as the emphasised chip.
+  let shootMuted = false, deadMuted = false;
+  if (shoot && dead) {
+    if (Math.abs(dead.diff) < Math.abs(shoot.diff)) shootMuted = true;
+    else deadMuted = true;
+  }
+
+  const totalPhases   = p.total_phases || 4;
   const phaseProgress = totalPhases > 0 ? Math.round((p.completed_phases / totalPhases) * 100) : 0;
-  const receivedPct  = p.agreed_budget > 0
+  const receivedPct   = p.agreed_budget > 0
     ? Math.min(100, Math.round((p.total_received / p.agreed_budget) * 100)) : 0;
 
   return (
     <Link to={`/projects/${p.id}`} style={{ textDecoration: 'none', display: 'block', color: 'inherit' }}>
       <div className="project-row-card">
-        {/* Row 1: Title + status + shoot chip */}
+        {/* Row 1: Title + status dot + date chips */}
         <div className="project-row-top">
           <span className="project-row-title">{p.title}</span>
-          <StatusBadge status={p.status} />
-          {shootChip && (
-            <span className={`shoot-chip${shootChip.cls ? ` ${shootChip.cls}` : ''}`}>
-              <CalendarDays size={11} /> {shootChip.label}
-            </span>
-          )}
+          <Tip content={STATUS_LABEL[p.status] || p.status}>
+            <StatusDot status={p.status} />
+          </Tip>
+          {shoot && <DateChip info={shoot} Icon={Camera} muted={shootMuted} title={`Shoot: ${fmtDate(p.shoot_date)}`} />}
+          {dead  && <DateChip info={dead}  Icon={Flag}   muted={deadMuted}  title={`Deadline: ${fmtDate(p.deadline)}`} />}
         </div>
 
         {/* Row 2: Client · Category + margin */}
@@ -313,30 +430,28 @@ function ProjectRowCard({ p }) {
           <span style={{ marginLeft: 'auto' }}><MarginBadge p={p} /></span>
         </div>
 
-        {/* Row 3: Progress bars */}
+        {/* Row 3: Progress bars — the bars carry the proportion, no counters or figures. */}
         <div className="project-row-bars">
-          {/* Phase progress */}
+          {/* Phase progress: the bar shows the proportion, the label names the phase. */}
           <div>
             <div className="project-bar-label">
               <span>{p.current_phase || 'No active phase'}</span>
-              <span>{p.completed_phases}/{totalPhases} phases</span>
             </div>
             <div className="progress-bar">
               <div className="progress-fill" style={{ width: `${phaseProgress}%` }} />
             </div>
           </div>
 
-          {/* Budget received */}
+          {/* Budget received: the fill shows the proportion, the exact amounts on hover. */}
           {p.agreed_budget > 0 ? (
-            <div>
-              <div className="project-bar-label">
-                <span>Received</span>
-                <span>{<Private>{fmt(p.total_received)}</Private>} / {<Private>{fmt(p.agreed_budget)}</Private>}</span>
-              </div>
+            <Tip
+              className="project-bar-tip"
+              content={<span><Private>{fmt(p.total_received)}</Private> / <Private>{fmt(p.agreed_budget)}</Private> received</span>}
+            >
               <div className="mini-bar-track">
                 <div className="mini-bar-fill mini-bar-received" style={{ width: `${receivedPct}%` }} />
               </div>
-            </div>
+            </Tip>
           ) : (
             <div />
           )}
@@ -346,152 +461,8 @@ function ProjectRowCard({ p }) {
   );
 }
 
-/* ─── Lead card (Projects page collapsible strip) ─── */
-function LeadCard({ lead, onDismiss, onConvert, onEdit }) {
-  const [confirming, setConfirming] = useState(false);
-  const [dismissing, setDismissing] = useState(false);
-  const [visible, setVisible]       = useState(true);
-
-  async function dismiss() {
-    setDismissing(true);
-    try {
-      await api.put(`/leads/${lead.id}/dismiss`, {});
-      setVisible(false);
-      setTimeout(() => onDismiss(lead.id), 220);
-    } catch (_) { setDismissing(false); }
-  }
-
-  if (!visible) return <div className="lead-card lead-card-exit" />;
-
-  return (
-    <div className="lead-card lead-card-enter">
-      <div className="lead-card-category">
-        <Lightbulb size={11} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-        {lead.category_name || 'Uncategorized'}
-      </div>
-      <div className="lead-card-client">{lead.client_name || '—'}</div>
-      {lead.note && <div className="lead-card-note">{lead.note}</div>}
-      <div className="lead-card-footer">
-        <span className="lead-card-date">{fmtDate(lead.contacted_at)}</span>
-        {confirming ? (
-          <div className="lead-card-confirm">
-            <span className="lead-card-confirm-text">Dismiss?</span>
-            <button className="btn btn-danger btn-sm" style={{ fontSize: '11px', padding: '4px 10px' }} onClick={dismiss} disabled={dismissing}>Yes</button>
-            <button className="btn btn-ghost btn-sm"  style={{ fontSize: '11px', padding: '4px 10px' }} onClick={() => setConfirming(false)}>No</button>
-          </div>
-        ) : (
-          <div className="flex-center gap-1">
-            <button className="btn btn-primary btn-sm lead-btn-convert" onClick={() => onConvert(lead)}>
-              <ArrowRight size={12} /> Convert
-            </button>
-            <button className="btn btn-ghost btn-sm" onClick={() => onEdit(lead)} title="Edit lead">
-              <Edit2 size={12} />
-            </button>
-            <button className="btn btn-ghost btn-sm lead-btn-dismiss" onClick={() => setConfirming(true)}>
-              <X size={12} />
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 /* ─── Project wizard wrapper ─── */
 function ProjectWizardWithPrefill({ prefill, onClose, onCreated }) {
   if (!prefill) return <ProjectWizard onClose={onClose} onCreated={onCreated} />;
   return <ProjectWizard onClose={onClose} onCreated={onCreated} prefill={prefill} />;
-}
-
-/* ─── Gantt / timeline view ─── */
-function GanttView({ projects }) {
-  const withDates = projects.filter(p => p.shoot_date);
-  if (withDates.length < 2) {
-    return (
-      <div className="card card-pad empty">
-        Not enough data for timeline view. Set shoot dates on at least 2 projects to enable this view.
-      </div>
-    );
-  }
-
-  const allDates = projects.flatMap(p => [
-    new Date(p.created_at),
-    p.shoot_date ? new Date(p.shoot_date + 'T00:00:00') : new Date(),
-  ]);
-  const rawMin  = new Date(Math.min(...allDates));
-  const rawMax  = new Date(Math.max(...allDates));
-  const startDate = new Date(rawMin.getFullYear(), rawMin.getMonth(), 1);
-  const endDate   = new Date(rawMax.getFullYear(), rawMax.getMonth() + 2, 1);
-  const totalMs   = endDate - startDate;
-
-  function posPercent(date) {
-    return Math.max(0, Math.min(100, ((date - startDate) / totalMs) * 100));
-  }
-
-  const months = [];
-  const d = new Date(startDate);
-  while (d < endDate) {
-    months.push({ label: d.toLocaleString('default', { month: 'short', year: '2-digit' }), pos: posPercent(new Date(d)) });
-    d.setMonth(d.getMonth() + 1);
-  }
-
-  const now = new Date();
-
-  return (
-    <div className="card card-pad gantt-wrap">
-      <div style={{ position: 'relative', height: '22px', marginLeft: '180px', marginBottom: '8px' }}>
-        {months.map((m, i) => (
-          <div key={i} style={{ position: 'absolute', left: `${m.pos}%`, fontSize: '10px', color: 'var(--color-mid-gray)', whiteSpace: 'nowrap', transform: 'translateX(-50%)' }}>
-            {m.label}
-          </div>
-        ))}
-      </div>
-
-      <div style={{ position: 'relative' }}>
-        {months.map((m, i) => (
-          <div key={i} style={{
-            position: 'absolute', top: 0, bottom: 0,
-            left: `calc(180px + ${m.pos}% * (100% - 180px) / 100)`,
-            width: '1px', background: 'var(--overlay-02)', pointerEvents: 'none',
-          }} />
-        ))}
-
-        {projects.map(p => {
-          const start    = new Date(p.created_at);
-          const end      = p.shoot_date ? new Date(p.shoot_date + 'T00:00:00') : now;
-          const isOverdue = p.shoot_date && end < now && p.status !== 'completed';
-          const color    = p.status === 'completed'
-            ? 'var(--color-hairline-strong)'
-            : isOverdue
-              ? 'var(--color-ember)'
-              : 'var(--gradient-card)';
-          const opacity  = p.status === 'completed' ? 0.5 : 0.9;
-          const left     = posPercent(start);
-          const right    = posPercent(end);
-          const width    = Math.max(0.5, right - left);
-
-          return (
-            <div key={p.id} style={{ display: 'flex', alignItems: 'center', marginBottom: '8px', height: '30px' }}>
-              <div style={{ width: '180px', flexShrink: 0, paddingRight: '12px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', fontSize: '12px', color: 'var(--color-ink-soft)' }}>
-                <Link to={`/projects/${p.id}`} className="link" style={{ color: 'inherit', fontSize: '12px' }}>{p.title}</Link>
-              </div>
-              <div style={{ flex: 1, position: 'relative', height: '20px' }}>
-                <div
-                  className="gantt-bar"
-                  title={`${p.title} | ${p.client_name || 'No client'} | ${p.category_name || ''} | ${p.shoot_date ? fmtDate(p.shoot_date) : 'No shoot date'} | ${p.status}`}
-                  style={{ left: `${left}%`, width: `${width}%`, background: color, opacity }}
-                />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="flex-center gap-2" style={{ marginTop: '16px', fontSize: '11px', color: 'var(--color-mid-gray)' }}>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '8px', background: 'var(--gradient-card)', borderRadius: '6px', display: 'inline-block' }} /> Active</span>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '8px', background: 'var(--surface-input-fill)', borderRadius: '6px', display: 'inline-block' }} /> Completed</span>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '8px', background: 'var(--ember-soft-strong)', borderRadius: '6px', display: 'inline-block' }} /> Overdue</span>
-      </div>
-    </div>
-  );
 }

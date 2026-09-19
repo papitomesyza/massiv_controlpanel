@@ -4,7 +4,7 @@ import {
   LayoutDashboard, FolderKanban, Users, UserCog, Package,
   BarChart3, FileText, Settings, LogOut, CalendarDays, MapPin, Receipt,
   Plus, X, Lightbulb, LayoutGrid, Library, ChevronRight, KeyRound, Presentation,
-  Sun, Moon, Clapperboard, Eye, EyeOff,
+  Sun, Moon, Clapperboard, Eye, EyeOff, ListTodo,
 } from 'lucide-react';
 import { useAgency } from '../context/AgencyContext';
 import { useTheme } from '../context/ThemeContext';
@@ -15,6 +15,7 @@ import SetupWizard from './SetupWizard';
 const OPS_LINKS = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/projects',  icon: FolderKanban,   label: 'Projects'  },
+  { to: '/tasks',     icon: ListTodo,        label: 'Tasks'     },
   { to: '/calendar',  icon: CalendarDays,    label: 'Calendar'  },
   { to: '/map',       icon: MapPin,          label: 'Map'       },
   { to: '/finances',  icon: BarChart3,       label: 'Finances'  },
@@ -43,6 +44,7 @@ const TOOLS_LINKS = [
 const ALL_NAV_PAGES = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Home'      },
   { to: '/projects',  icon: FolderKanban,    label: 'Projects'  },
+  { to: '/tasks',     icon: ListTodo,        label: 'Tasks'     },
   { to: '/calendar',  icon: CalendarDays,    label: 'Calendar'  },
   { to: '/finances',  icon: BarChart3,       label: 'Finances'  },
   { to: '/invoices',  icon: Receipt,         label: 'Invoices'  },

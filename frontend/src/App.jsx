@@ -4,6 +4,7 @@ import Layout from './components/Layout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Projects from './pages/Projects';
+import Tasks from './pages/Tasks';
 import ProjectDetail from './pages/ProjectDetail';
 import Clients from './pages/Clients';
 import ClientDetail from './pages/ClientDetail';
@@ -83,6 +84,7 @@ export default function App() {
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="projects" element={<Projects />} />
+          <Route path="tasks" element={<Tasks />} />
           <Route path="projects/:id" element={<ProjectDetail />} />
           <Route path="clients" element={<Clients />} />
           <Route path="clients/:id" element={<ClientDetail />} />

@@ -1,11 +1,10 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Activity, TrendingUp, DollarSign, AlertCircle, UserX,
   FolderCheck, BarChart2, Users as UsersIcon,
   X, CheckCircle, Lightbulb, LayoutGrid, GripHorizontal, Eye, EyeOff,
-  Clock, Plus, Check, StickyNote,
-  Video, Camera, Scissors, Palette, Film, Tag,
+  Clock,
 } from 'lucide-react';
 import {
   ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -14,9 +13,10 @@ import {
 import { api, fmt, fmtDate } from '../api';
 import StatCard from '../components/StatCard';
 import ProjectTimeline from '../components/ProjectTimeline';
-import AddLeadModal from '../components/AddLeadModal';
+import LeadsRail from '../components/LeadsRail';
 import { Private, usePrivacy } from '../context/PrivacyContext';
 import { convertLeadToProject } from '../lib/convertLead';
+import { makeDeadlinePatcher } from '../lib/patchDeadline';
 
 function getCurrentMonth() {
   const d = new Date();
@@ -109,33 +109,10 @@ export default function Dashboard() {
     return api.get('/leads').then(setLeads);
   }, []);
 
-  // Optimistic deadline drag: update in place, PATCH through the existing
-  // project update endpoint (which re-syncs the calendar), roll back on failure.
-  const onPatchDeadline = useCallback(async (p, iso) => {
-    setProjects(list => list.map(x => x.id === p.id ? { ...x, deadline: iso } : x));
-    try {
-      await api.put(`/projects/${p.id}`, {
-        client_id: p.client_id ?? null,
-        title: p.title,
-        category_id: p.category_id ?? null,
-        status: p.status,
-        client_budget: p.client_budget ?? 0,
-        agreed_budget: p.agreed_budget ?? 0,
-        notes: p.notes ?? null,
-        shoot_date: p.shoot_date ?? null,
-        shoot_days: p.shoot_days ?? 1,
-        shoot_location: p.shoot_location ?? null,
-        location_name: p.location_name ?? null,
-        location_lat: p.location_lat ?? null,
-        location_lng: p.location_lng ?? null,
-        shoot_start_time: p.shoot_start_time ?? null,
-        shoot_end_time: p.shoot_end_time ?? null,
-        deadline: iso,
-      });
-    } catch (_) {
-      setProjects(list => list.map(x => x.id === p.id ? { ...x, deadline: p.deadline } : x));
-    }
-  }, []);
+  // Optimistic deadline drag through the one shared patch path (see
+  // lib/patchDeadline), so the Dashboard and the Projects timeline save and
+  // re-sync the calendar identically.
+  const onPatchDeadline = useMemo(() => makeDeadlinePatcher(setProjects), []);
 
   function enterEditMode() { setEditMode(true); }
   function cancelEdit() { setLayout(savedLayout); setEditMode(false); }
@@ -432,7 +409,7 @@ function WidgetContent({ id, stats, projects, expenses, chartData, leads, setLea
 
     case 'pending_leads':
       return (
-        <LeadsRail
+        <DashLeadsBand
           leads={leads}
           setLeads={setLeads}
           reloadProjects={reloadProjects}
@@ -514,40 +491,10 @@ function WidgetContent({ id, stats, projects, expenses, chartData, leads, setLea
   }
 }
 
-/* ─── Leads rail ─── */
-function categoryIcon(name) {
-  const n = (name || '').toLowerCase();
-  const size = 13;
-  if (/photo|retouch|cull/.test(n)) return <Camera size={size} />;
-  if (/video|film|commercial|documentary|event/.test(n)) return <Video size={size} />;
-  if (/edit|color|colour|vfx|audio|podcast|subtit|mix|master/.test(n)) return <Scissors size={size} />;
-  if (/brand|social|graphic|web|design/.test(n)) return <Palette size={size} />;
-  if (/anim|2d|3d|motion/.test(n)) return <Film size={size} />;
-  return <Tag size={size} />;
-}
-
-function ageDotClass(contactedAt) {
-  if (!contactedAt) return 'age-cold';
-  const d = new Date(String(contactedAt).includes('T') ? contactedAt : contactedAt + 'T00:00:00');
-  if (isNaN(d.getTime())) return 'age-cold';
-  const days = Math.floor((Date.now() - d.getTime()) / 86400000);
-  if (days < 3) return 'age-fresh';
-  if (days <= 7) return 'age-warm';
-  return 'age-cold';
-}
-
-function LeadsRail({ leads, setLeads, reloadProjects, reloadLeads }) {
-  const [showAdd, setShowAdd] = useState(false);
-  const [drawer, setDrawer] = useState(null);
-
-  const maxVal = leads.reduce((m, l) => Math.max(m, Number(l.value) || 0), 0);
-  const MINW = 150, MAXW = 300;
-  function chipWidth(v) {
-    const val = Number(v) || 0;
-    if (!val || maxVal <= 0) return MINW;
-    return Math.round(MINW + (MAXW - MINW) * (val / maxVal));
-  }
-
+/* ─── Leads band ─── */
+// The band header and the direct convert path live here; the rail itself is the
+// shared LeadsRail component, identical to the one on the Projects page.
+function DashLeadsBand({ leads, setLeads, reloadProjects, reloadLeads }) {
   async function handleConvert(lead) {
     try {
       await convertLeadToProject(lead);
@@ -567,107 +514,7 @@ function LeadsRail({ leads, setLeads, reloadProjects, reloadLeads }) {
         <Link to="/projects" className="btn btn-ghost btn-sm" style={{ fontSize: '12px' }}>View All</Link>
       </div>
 
-      <div className="leads-rail">
-        {leads.map(lead => (
-          <LeadChip
-            key={lead.id}
-            lead={lead}
-            width={chipWidth(lead.value)}
-            onOpen={() => setDrawer(lead)}
-            onConvert={() => handleConvert(lead)}
-          />
-        ))}
-
-        {/* Ghost chip: the answer to an empty rail. */}
-        <button className="lead-ghost" onClick={() => setShowAdd(true)} title="Add lead" aria-label="Add lead">
-          <Plus size={18} />
-        </button>
-
-        {leads.length === 0 && (
-          <div className="leads-rail-empty">
-            <Lightbulb size={16} style={{ color: 'var(--color-hairline-strong)' }} />
-            <span>No leads yet</span>
-          </div>
-        )}
-      </div>
-
-      {showAdd && (
-        <AddLeadModal
-          onClose={() => setShowAdd(false)}
-          onSaved={lead => { setLeads(prev => [lead, ...prev]); setShowAdd(false); }}
-        />
-      )}
-
-      {drawer && <LeadDrawer lead={drawer} onClose={() => setDrawer(null)} />}
-    </div>
-  );
-}
-
-function LeadChip({ lead, width, onOpen, onConvert }) {
-  const [confirming, setConfirming] = useState(false);
-  const initial = (lead.client_name || '?').trim().charAt(0).toUpperCase() || '?';
-  const catName = lead.category_name || 'Uncategorized';
-  const tip = [catName, lead.contacted_at ? `Contacted ${fmtDate(lead.contacted_at)}` : null, lead.note || null]
-    .filter(Boolean).join('\n');
-
-  return (
-    <div className="lead-chip" style={{ width }} title={tip}>
-      <button className="lead-chip-main" onClick={onOpen}>
-        <span className="lead-avatar">{initial}</span>
-        <span className="lead-chip-body">
-          <span className="lead-chip-name">{lead.client_name || 'No client'}</span>
-          {Number(lead.value) > 0 && (
-            <span className="lead-chip-value"><Private>{fmt(lead.value)}</Private></span>
-          )}
-        </span>
-        <span className="lead-chip-cat" title={catName}>{categoryIcon(catName)}</span>
-        <span className={`lead-age-dot ${ageDotClass(lead.contacted_at)}`} title={lead.contacted_at ? fmtDate(lead.contacted_at) : 'No date'} />
-      </button>
-
-      {confirming ? (
-        <button className="lead-convert lead-convert-go" onClick={onConvert} title="Confirm convert" aria-label="Confirm convert">
-          <Check size={14} />
-        </button>
-      ) : (
-        <button className="lead-convert" onClick={() => setConfirming(true)} title="Convert to project" aria-label="Convert to project">
-          <ArrowRightIcon />
-        </button>
-      )}
-    </div>
-  );
-}
-
-function ArrowRightIcon() {
-  // A tiny inline chevron so the convert affordance reads without a word.
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M5 12h14M13 6l6 6-6 6" />
-    </svg>
-  );
-}
-
-function LeadDrawer({ lead, onClose }) {
-  return (
-    <div className="lead-drawer-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="lead-drawer">
-        <div className="lead-drawer-head">
-          <span className="lead-drawer-title">{lead.client_name || 'Lead'}</span>
-          <button className="modal-close" onClick={onClose}><X size={18} /></button>
-        </div>
-        <div className="lead-drawer-meta">
-          <span className="lead-drawer-chip">{lead.category_name || 'Uncategorized'}</span>
-          {lead.contacted_at && <span className="lead-drawer-chip">{fmtDate(lead.contacted_at)}</span>}
-          {Number(lead.value) > 0 && <span className="lead-drawer-chip"><Private>{fmt(lead.value)}</Private></span>}
-        </div>
-        {lead.note ? (
-          <div className="lead-drawer-note">
-            <StickyNote size={14} style={{ color: 'var(--color-mid-gray)', marginBottom: 6 }} />
-            <p>{lead.note}</p>
-          </div>
-        ) : (
-          <div className="lead-drawer-note empty">No note</div>
-        )}
-      </div>
+      <LeadsRail leads={leads} setLeads={setLeads} onConvert={handleConvert} />
     </div>
   );
 }

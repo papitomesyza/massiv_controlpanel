@@ -1817,6 +1817,13 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 }
 .shoot-chip.urgent { background: var(--overlay-05); color: var(--warning); }
 .shoot-chip.today  { background: var(--ember-soft);  color: var(--color-ember); }
+/* When a project shows both a shoot date and a deadline, the nearer one keeps
+   full emphasis and the other reads quieter, so the eye lands on what is next. */
+.shoot-chip.muted  { opacity: 0.6; font-weight: 500; }
+
+/* The received bar sits inside a hover tooltip; the wrapper must fill the column
+   so the bar keeps its full width. */
+.project-bar-tip { display: block; width: 100%; }
 
 /* ===== RESPONSIVE ADDITIONS ===== */
 @media (max-width: 680px) {
@@ -3568,7 +3575,10 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
   font-size: 10px; color: var(--color-mid-gray); opacity: 0.75;
   white-space: nowrap;
 }
-.ptl-body { display: flex; }
+/* The row area scrolls vertically once a list is tall enough (the Projects page
+   can show many rows), while the axis header and legend stay put. Short lists,
+   like the Dashboard's, never reach the cap, so both pages share one component. */
+.ptl-body { display: flex; max-height: 460px; overflow-y: auto; }
 .ptl-labels { flex-shrink: 0; }
 .ptl-rowlabel {
   height: 40px; margin-bottom: 10px;
@@ -3767,6 +3777,14 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 }
 .lead-drawer-note.empty { color: var(--color-mid-gray); text-align: center; }
 .lead-drawer-note p { margin: 0; white-space: pre-wrap; }
+/* Edit and dismiss live at the foot of the drawer, not on the rail. */
+.lead-drawer-actions {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin-top: auto; padding-top: 14px; border-top: 1px solid var(--color-hairline);
+}
+.lead-drawer-confirm-text { font-size: 13px; color: var(--color-ink-soft); flex: 1; }
+.lead-drawer-dismiss { color: var(--color-ember-text); }
+.lead-drawer-dismiss:hover { background: var(--ember-soft); }
 
 
 /* ============================================================
@@ -3870,6 +3888,20 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 }
 .est-filter-dot:hover { opacity: 0.85; }
 .est-filter-dot.active { opacity: 1; border-color: var(--accent); background: var(--overlay-04); }
+
+/* Projects page: category and sort tuck behind one compact control, so the
+   default state of the page is a search box and a row of dots and nothing else. */
+.proj-filter-more { position: relative; display: flex; }
+.proj-filter-scrim { position: fixed; inset: 0; z-index: 40; }
+.proj-filter-pop {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 41;
+  width: 240px; padding: 14px;
+  background: var(--surface-card); border: 1px solid var(--border);
+  border-radius: 12px; box-shadow: 0 12px 32px var(--overlay-06);
+  display: flex; flex-direction: column;
+}
+.proj-filter-pop .form-label { margin-bottom: 4px; }
+.proj-filter-pop .select { width: 100%; }
 
 /* Card grid */
 .est-grid {
