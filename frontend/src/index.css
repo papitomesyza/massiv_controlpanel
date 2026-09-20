@@ -2819,6 +2819,109 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
   .standalone-task-notes-preview { max-width: 120px; }
 }
 
+/* ===== TASKS PAGE ROWS ===== */
+/* Proper task rows, styled on their own tokens rather than borrowing the lead
+   card classes, so restyling leads can never restyle tasks again. Each row runs
+   the full width and the list runs vertically down the page. */
+.task-group { border-bottom: 1px solid var(--border-subtle); }
+.task-group:last-child { border-bottom: none; }
+
+.task-group-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 16px 6px;
+}
+.task-group-name {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--color-mid-gray);
+}
+.task-group-count {
+  background: var(--surface-input-fill); color: var(--color-mid-gray);
+  font-size: 10px; font-weight: 700; border-radius: 18px; padding: 2px 7px;
+}
+/* Overdue takes the ember treatment used elsewhere in the app. */
+.group-overdue .task-group-name { color: var(--color-ember-text); }
+.group-overdue .task-group-count { background: var(--ember-soft); color: var(--color-ember-text); }
+
+.task-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border-subtle);
+  border-left: 3px solid transparent;
+  transition: background 0.15s ease, opacity 0.2s ease, transform 0.2s ease;
+}
+.task-group-header + .task-row { border-top: none; }
+.task-row:hover { background: var(--overlay-01); }
+/* Priority on a standalone task: a coloured left edge, no flag, no word. */
+.task-row.is-high { border-left-color: var(--color-ember); }
+.task-row.is-leaving { opacity: 0; transform: translateX(8px); }
+
+.task-check {
+  width: 20px; height: 20px; border-radius: 50%;
+  border: 2px solid var(--color-hairline-strong);
+  background: transparent; cursor: pointer; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--accent-contrast); transition: all 0.15s ease;
+}
+.task-check:hover { border-color: var(--accent); }
+.task-check.done { background: var(--accent); border-color: var(--accent); }
+
+.task-main {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.task-main.is-project { cursor: pointer; }
+.task-title {
+  font-size: 14px; color: var(--color-ink-soft); line-height: 1.45;
+  word-break: break-word;
+}
+.task-title-done { text-decoration: line-through; color: var(--color-mid-gray); }
+.task-row.is-done { opacity: 0.6; }
+
+.task-project {
+  display: inline-flex; align-items: center; gap: 5px;
+  color: var(--color-mid-gray); font-size: 12px; min-width: 0;
+}
+.task-project-icon { display: inline-flex; flex-shrink: 0; }
+.task-project-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; }
+.task-main.is-project:hover .task-project-name { color: var(--color-ink); }
+
+.task-due-chip {
+  display: inline-flex; align-items: center; flex-shrink: 0;
+  padding: 2px 9px; border-radius: 18px;
+  font-size: 11px; font-weight: 600; white-space: nowrap;
+  background: var(--overlay-04); color: var(--color-mid-gray);
+}
+.task-due-chip.overdue { background: var(--ember-soft); color: var(--color-ember-text); }
+.task-due-chip.today   { background: var(--overlay-05); color: var(--color-ink); }
+.task-due-chip.soon    { background: var(--overlay-04); color: var(--color-ink-soft); }
+.task-due-chip.later   { background: var(--overlay-03); color: var(--color-mid-gray); }
+
+.task-actions {
+  display: flex; align-items: center; gap: 4px; flex-shrink: 0;
+  opacity: 0; transition: opacity 0.15s ease;
+}
+.task-actions.is-confirm { opacity: 1; }
+.task-row:hover .task-actions { opacity: 1; }
+.task-action-btn {
+  padding: 6px !important; border-radius: 10px !important;
+  color: var(--color-mid-gray) !important;
+}
+.task-action-btn:hover { color: var(--color-ink) !important; }
+
+/* Empty state: an icon and at most three words, no sentence. */
+.task-empty {
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  padding: 64px 32px; margin-top: 16px;
+  background: var(--surface-card); border: 1px solid var(--border);
+  border-radius: var(--radius-cards);
+}
+.task-empty-text { font-size: 15px; font-weight: 600; color: var(--color-mid-gray); }
+
+@media (max-width: 600px) {
+  .task-actions { opacity: 1; }
+  .task-project-name { max-width: 120px; }
+}
+
 /* ===== PITCHES ===== */
 .pitch-card-grid {
   display: grid;

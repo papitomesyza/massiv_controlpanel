@@ -16,6 +16,86 @@ router.get('/', (req, res) => {
   res.json(tasks);
 });
 
+// GET /all: standalone tasks and project tasks in one normalised shape.
+// This is a read-only aggregate for the Tasks page. Project tasks are still
+// written through the project task endpoints, so nothing here can damage a
+// phase, a crew link or the calendar. Sorting is done here so the client never
+// re-derives an ORDER BY that could drift from the server: pending first, then
+// due date ascending (no date last), then priority (high first), then creation
+// date; completed last, most recently completed first.
+router.get('/all', (req, res) => {
+  const standalone = db.prepare('SELECT * FROM standalone_tasks').all().map(t => ({
+    source: 'standalone',
+    id: t.id,
+    title: t.title,
+    notes: t.notes,
+    due_date: t.due_date,
+    done: t.done ? 1 : 0,
+    completed_at: t.completed_at,
+    created_at: t.created_at,
+    priority: t.priority || 'normal',
+    project_id: null,
+    project_title: null,
+    category_name: null,
+    category_group: null,
+    phase_name: null,
+    assigned_crew_id: null,
+    crew_name: null,
+    is_locked: 0,
+  }));
+
+  const project = db.prepare(`
+    SELECT t.id, t.title, t.notes, t.due_date, t.status, t.created_at, t.is_locked,
+           t.project_id, t.assigned_crew_id,
+           p.title AS project_title,
+           pc.name AS category_name, pc.group_name AS category_group,
+           ph.phase_name AS phase_name,
+           cr.name AS crew_name
+    FROM tasks t
+    JOIN projects p ON p.id = t.project_id
+    LEFT JOIN project_categories pc ON pc.id = p.category_id
+    LEFT JOIN project_phases ph ON ph.id = t.phase_id
+    LEFT JOIN crew cr ON cr.id = t.assigned_crew_id
+  `).all().map(t => ({
+    source: 'project',
+    id: t.id,
+    title: t.title,
+    notes: t.notes,
+    due_date: t.due_date,
+    done: t.status === 'done' ? 1 : 0,
+    completed_at: null,
+    created_at: t.created_at,
+    priority: null,
+    project_id: t.project_id,
+    project_title: t.project_title,
+    category_name: t.category_name,
+    category_group: t.category_group,
+    phase_name: t.phase_name,
+    assigned_crew_id: t.assigned_crew_id,
+    crew_name: t.crew_name,
+    is_locked: t.is_locked ? 1 : 0,
+  }));
+
+  const priorityRank = p => (p === 'high' ? 0 : 1);
+  const all = [...standalone, ...project];
+  all.sort((a, b) => {
+    if (a.done !== b.done) return a.done - b.done;          // pending before done
+    if (a.done === 1) {
+      return String(b.completed_at || '').localeCompare(String(a.completed_at || ''));
+    }
+    if (a.due_date && !b.due_date) return -1;               // dated before undated
+    if (!a.due_date && b.due_date) return 1;
+    if (a.due_date && b.due_date && a.due_date !== b.due_date) {
+      return a.due_date.localeCompare(b.due_date);          // due date ascending
+    }
+    const pr = priorityRank(a.priority) - priorityRank(b.priority);
+    if (pr !== 0) return pr;                                // high priority first
+    return String(a.created_at || '').localeCompare(String(b.created_at || ''));
+  });
+
+  res.json(all);
+});
+
 // POST / — create
 router.post('/', (req, res) => {
   const { title, notes, due_date, priority } = req.body;
