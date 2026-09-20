@@ -313,7 +313,7 @@ function initDb() {
       end_time TEXT,
       location TEXT,
       notes TEXT,
-      color TEXT DEFAULT '#0a0a0a',
+      color TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL
     );
@@ -555,6 +555,21 @@ function initDb() {
   // Backfill: any existing expense with no status gets confirmed
   try {
     db.exec("UPDATE expenses SET status = 'confirmed' WHERE status IS NULL");
+  } catch (_) {}
+
+  // Calendar colour is now derived from event_type at render time, never stored.
+  // Null the stored hex on existing rows so old data (black shoots, orange
+  // deadlines) stops overriding the palette. The column is left in place so
+  // nothing breaks; it simply stops being used. The settings guard makes this
+  // run exactly once, so a colour written by an older build is cleared but the
+  // wipe does not repeat on every boot.
+  try {
+    const done = db.prepare("SELECT value FROM settings WHERE key = 'calendar_color_deprecated'").get();
+    if (!done) {
+      const r = db.prepare('UPDATE calendar_events SET color = NULL WHERE color IS NOT NULL').run();
+      db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('calendar_color_deprecated', '1')").run();
+      if (r.changes) console.log(`INFO: Cleared stored colour on ${r.changes} calendar event(s); colour is now derived from type.`);
+    }
   } catch (_) {}
 
   // Estimates gained a real pipeline: draft, sent, accepted, rejected. The old

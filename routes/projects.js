@@ -171,8 +171,10 @@ function syncTaskCalendarEvent(taskId) {
   ).get(taskId);
   if (!task || !task.due_date || task.status === 'done') return;
   const title = task.project_title ? `${task.project_title} — ${task.title}` : task.title;
+  // Colour is derived from event_type at render time, never stored. NULL is set
+  // explicitly so existing databases do not fall back to the old column default.
   db.prepare(
-    "INSERT INTO calendar_events (project_id, task_id, title, event_type, start_date, color) VALUES (?, ?, ?, 'task', ?, '#22D3EE')"
+    "INSERT INTO calendar_events (project_id, task_id, title, event_type, start_date, color) VALUES (?, ?, ?, 'task', ?, NULL)"
   ).run(task.project_id, taskId, title, task.due_date);
 }
 
@@ -184,15 +186,17 @@ function syncProjectCalendarEvents(projectId, title, deadline, shootDate, shootL
   ).get(projectId);
   const groupName = catRow?.group_name || null;
 
+  // Colour is derived from event_type at render time, never stored. NULL is set
+  // explicitly so existing databases do not fall back to the old column default.
   if (deadline) {
     db.prepare(
-      "INSERT INTO calendar_events (project_id, title, event_type, start_date, color) VALUES (?, ?, 'deadline', ?, '#FF902F')"
+      "INSERT INTO calendar_events (project_id, title, event_type, start_date, color) VALUES (?, ?, 'deadline', ?, NULL)"
     ).run(projectId, title, deadline);
   }
 
   if (shootDate && PRODUCTION_GROUPS.includes(groupName)) {
     db.prepare(
-      "INSERT INTO calendar_events (project_id, title, event_type, start_date, location, start_time, end_time, color) VALUES (?, ?, 'shoot', ?, ?, ?, ?, '#0a0a0a')"
+      "INSERT INTO calendar_events (project_id, title, event_type, start_date, location, start_time, end_time, color) VALUES (?, ?, 'shoot', ?, ?, ?, ?, NULL)"
     ).run(projectId, title, shootDate, shootLocation || null, shootStartTime || null, shootEndTime || null);
   }
 }

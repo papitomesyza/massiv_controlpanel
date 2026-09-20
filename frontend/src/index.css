@@ -2413,6 +2413,11 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 }
 
 /* ===== CALENDAR MOBILE ===== */
+/* Page layout: grid on the left, agenda strip on the right. On a narrow
+   viewport the agenda stacks beneath the grid. */
+.cal-layout { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 16px; align-items: start; }
+.cal-main { min-width: 0; }
+
 .calendar-grid-outer { overflow: hidden; }
 .calendar-day-headers {
   display: grid;
@@ -2433,27 +2438,131 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 4px;
 }
-.calendar-day-cell { min-height: 90px; min-width: 0; overflow: hidden; }
-.calendar-event-chip {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.calendar-day-cell {
+  min-height: 96px; min-width: 0; overflow: hidden;
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-hairline);
+  border-radius: 10px;
+  padding: 6px;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.15s ease, box-shadow 0.2s ease;
+}
+/* An event-free week shrinks so empty stretches of the month stay compact. */
+.calendar-day-cell.is-compact { min-height: 52px; }
+.calendar-day-cell.is-over { background: var(--overlay-03); }
+.calendar-day-cell.is-highlight { box-shadow: 0 0 0 2px var(--accent); }
+/* Today is marked with a filled accent day number and a stronger frame, the
+   same accent language as the Dashboard timeline today line. */
+.calendar-day-cell.is-today { border-color: var(--accent); box-shadow: inset 0 2px 0 var(--accent); }
+
+.cal-daynum { font-size: 13px; color: var(--color-ink); font-weight: 400; margin-bottom: 4px; line-height: 1; }
+.cal-daynum.is-out { color: var(--color-faint); }
+.cal-daynum.is-today {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; padding: 0 5px;
+  background: var(--accent); color: var(--accent-contrast);
+  border-radius: 10px; font-weight: 700;
+}
+
+/* Event chip: type by hue and glyph, project identity by a thin tinted left
+   edge, text only for time and title. Background is a wash of the type hue and
+   the text is the same hue, so it is readable in both themes without assuming
+   an ink colour. */
+.cal-chip {
+  display: flex; align-items: center; gap: 4px;
+  background: color-mix(in srgb, var(--chip-hue) 16%, transparent);
+  color: var(--chip-hue);
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-size: 11px;
+  margin-bottom: 2px;
+  max-width: 100%;
+}
+.cal-chip-icon { flex-shrink: 0; }
+.cal-chip-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+.cal-more {
+  font-size: 10px; color: var(--color-mid-gray); margin-top: 1px;
+  background: none; border: none; padding: 1px 2px; cursor: pointer; text-align: left;
+}
+.cal-more:hover { color: var(--color-ink); text-decoration: underline; }
+
+/* Type badge in the detail modal header: a tinted square carrying the glyph. */
+.cal-type-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 7px; flex-shrink: 0;
+  background: color-mix(in srgb, var(--chip-hue) 16%, transparent);
+  color: var(--chip-hue);
+}
+
+/* Type filter toggles: reuse the estimate/project filter dot. */
+.cal-type-filters { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+.cal-type-dot { color: var(--tint); }
+.cal-type-dot.active { opacity: 1; border-color: var(--tint); background: color-mix(in srgb, var(--tint) 12%, transparent); }
+
+/* Week view: seven day columns. */
+.cal-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.cal-week-col {
+  min-width: 0; border: 1px solid var(--color-hairline); border-radius: 10px; overflow: hidden;
+  background: var(--color-surface-alt); display: flex; flex-direction: column;
+  transition: box-shadow 0.2s ease;
+}
+.cal-week-col.is-over { background: var(--overlay-03); }
+.cal-week-col.is-highlight { box-shadow: 0 0 0 2px var(--accent); }
+.cal-week-col.is-today { border-color: var(--accent); }
+.cal-week-head {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 6px 4px; border-bottom: 1px solid var(--color-hairline);
+}
+.cal-week-head.is-today { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.cal-week-dow { font-size: 9px; font-weight: 700; text-transform: uppercase; color: var(--color-mid-gray); }
+.cal-week-body { min-height: 320px; padding: 5px; cursor: pointer; }
+.cal-week-sep { height: 1px; background: var(--color-hairline); margin: 5px 0; }
+
+/* Agenda strip: next seven days as rows, empty days kept. */
+.cal-agenda {
+  border: 1px solid var(--color-hairline); border-radius: 12px;
+  background: var(--surface-card); padding: 10px; align-self: stretch;
+}
+.cal-agenda-title { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--color-mid-gray); padding: 2px 4px 8px; }
+.cal-agenda-day {
+  display: flex; gap: 10px; width: 100%; text-align: left;
+  padding: 8px 6px; border: none; border-top: 1px solid var(--color-hairline);
+  background: none; cursor: pointer; border-radius: 6px;
+}
+.cal-agenda-day:hover { background: var(--overlay-02); }
+.cal-agenda-day.is-empty { opacity: 0.7; }
+.cal-agenda-day.is-today { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.cal-agenda-date { display: flex; flex-direction: column; align-items: center; width: 30px; flex-shrink: 0; }
+.cal-agenda-dow { font-size: 9px; font-weight: 700; text-transform: uppercase; color: var(--color-mid-gray); }
+.cal-agenda-num { font-size: 16px; font-weight: 700; color: var(--color-ink); line-height: 1.1; }
+.cal-agenda-events { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; justify-content: center; }
+.cal-agenda-none { color: var(--color-faint); font-size: 12px; }
+.cal-agenda-line { display: flex; align-items: center; gap: 5px; font-size: 12px; min-width: 0; }
+.cal-agenda-line-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-ink); }
+
+.cal-drawer-list { display: flex; flex-direction: column; gap: 4px; padding: 4px 0 12px; }
+.cal-drawer-list .cal-chip { font-size: 12px; padding: 5px 8px; }
+
+@media (max-width: 900px) {
+  .cal-layout { grid-template-columns: 1fr; }
+  .cal-agenda { order: 2; }
 }
 @media (max-width: 768px) {
-  .calendar-day-cell { min-height: 88px; }
-  /* Abbreviate day headers to 1 letter on very small screens */
+  .calendar-day-cell { min-height: 84px; }
+  .calendar-day-cell.is-compact { min-height: 48px; }
   .calendar-day-label { font-size: 9px; }
-  .calendar-event-chip {
-    white-space: normal;
-    text-overflow: unset;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
+  .cal-chip-text {
+    white-space: normal; text-overflow: unset;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
     font-size: 10px;
   }
+  .cal-week { overflow-x: auto; }
+  .cal-week-body { min-height: 220px; }
 }
 @media (max-width: 400px) {
-  .calendar-day-cell { min-height: 72px; }
+  .calendar-day-cell { min-height: 68px; }
 }
 
 /* ===== DESKTOP-ONLY / MOBILE-ONLY TABLE HELPERS ===== */

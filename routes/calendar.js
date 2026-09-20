@@ -33,11 +33,14 @@ router.get('/', (req, res) => {
 
 // POST /api/calendar
 router.post('/', (req, res) => {
-  const { project_id, title, event_type, start_date, end_date, start_time, end_time, location, notes, color } = req.body;
+  // Colour is no longer stored: it is derived from event_type at render time.
+  const { project_id, title, event_type, start_date, end_date, start_time, end_time, location, notes } = req.body;
   if (!title || !start_date) return res.status(400).json({ error: 'Title and start_date required' });
+  // color is written as NULL: existing databases still carry the old column
+  // default, so it is set explicitly rather than omitted.
   const result = db.prepare(`
     INSERT INTO calendar_events (project_id, title, event_type, start_date, end_date, start_time, end_time, location, notes, color)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
   `).run(
     project_id || null, title,
     event_type || 'shoot',
@@ -47,7 +50,6 @@ router.post('/', (req, res) => {
     end_time || null,
     location || null,
     notes || null,
-    color || '#0a0a0a',
   );
   res.json({ id: result.lastInsertRowid });
 });
@@ -94,12 +96,13 @@ router.put('/:id/move', (req, res) => {
 router.put('/:id', (req, res) => {
   const event = db.prepare('SELECT id FROM calendar_events WHERE id = ?').get(req.params.id);
   if (!event) return res.status(404).json({ error: 'Event not found' });
-  const { project_id, title, event_type, start_date, end_date, start_time, end_time, location, notes, color } = req.body;
+  // Colour is no longer stored: it is derived from event_type at render time.
+  const { project_id, title, event_type, start_date, end_date, start_time, end_time, location, notes } = req.body;
   if (!title || !start_date) return res.status(400).json({ error: 'Title and start_date required' });
   db.prepare(`
     UPDATE calendar_events SET
       project_id=?, title=?, event_type=?, start_date=?, end_date=?,
-      start_time=?, end_time=?, location=?, notes=?, color=?
+      start_time=?, end_time=?, location=?, notes=?
     WHERE id=?
   `).run(
     project_id || null, title,
@@ -110,7 +113,6 @@ router.put('/:id', (req, res) => {
     end_time || null,
     location || null,
     notes || null,
-    color || '#0a0a0a',
     req.params.id,
   );
   res.json({ ok: true });

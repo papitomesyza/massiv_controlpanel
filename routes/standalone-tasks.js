@@ -169,9 +169,11 @@ function syncStandaloneTaskCalendarEvent(taskId) {
   const task = db.prepare('SELECT * FROM standalone_tasks WHERE id = ?').get(taskId);
   if (!task) return;
   if (task.due_date && task.done === 0) {
+    // Colour is derived from event_type at render time, never stored. NULL is set
+    // explicitly so existing databases do not fall back to the old column default.
     db.prepare(`
       INSERT INTO calendar_events (standalone_task_id, event_type, start_date, title, color)
-      VALUES (?, 'standalone_task', ?, ?, '#E879F9')
+      VALUES (?, 'standalone_task', ?, ?, NULL)
     `).run(taskId, task.due_date, task.title);
   }
 }
