@@ -106,18 +106,33 @@ function DateChip({ info, Icon, muted, title }) {
 }
 
 // A small ring that fills as its date approaches, matching the win-rate ring on
-// the Estimates strip. frac 0 reads as an empty track, frac 1 as a full hue.
-function ProximityRing({ frac, color }) {
+// the Estimates strip. The ring carries the urgency, the numeral inside carries
+// the fact: a day count with a small d suffix, the word Today at zero days, and
+// a neutral dash in an empty ring when there is no upcoming shoot at all.
+function ProximityRing({ frac, color, days }) {
   const size = 46, R = 19, C = 2 * Math.PI * R;
-  const f = Math.max(0, Math.min(1, frac || 0));
+  const cx = size / 2, cy = size / 2;
+  const empty = days == null;
+  const f = empty ? 0 : Math.max(0, Math.min(1, frac || 0));
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="win-ring">
-      <circle cx={size / 2} cy={size / 2} r={R} fill="none" stroke="var(--color-hairline)" strokeWidth="4" />
-      <circle
-        cx={size / 2} cy={size / 2} r={R} fill="none" stroke={color} strokeWidth="4"
-        strokeLinecap="round" strokeDasharray={C} strokeDashoffset={C * (1 - f)}
-        transform={`rotate(-90 ${size / 2} ${size / 2})`}
-      />
+      <circle cx={cx} cy={cy} r={R} fill="none" stroke="var(--color-hairline)" strokeWidth="4" />
+      {!empty && (
+        <circle
+          cx={cx} cy={cy} r={R} fill="none" stroke={color} strokeWidth="4"
+          strokeLinecap="round" strokeDasharray={C} strokeDashoffset={C * (1 - f)}
+          transform={`rotate(-90 ${cx} ${cy})`}
+        />
+      )}
+      {empty ? (
+        <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central" className="win-ring-dash">-</text>
+      ) : days === 0 ? (
+        <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central" className="win-ring-today">Today</text>
+      ) : (
+        <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central" className="win-ring-num">
+          {days}<tspan dx="1" className="win-ring-suffix">d</tspan>
+        </text>
+      )}
     </svg>
   );
 }
@@ -158,7 +173,12 @@ function StatStrip({ projects }) {
     return { activeCount, awaitingBudget, agreedValue, outstanding, nextShoot, shootDays, shootFrac };
   }, [projects]);
 
-  const awaitingNote = strip.awaitingBudget > 0 ? (
+  // When every active project is awaiting a budget, the money figures are not
+  // zero, they are simply not priced yet. Render them as TBC and drop the note,
+  // which would only repeat what the figure now says.
+  const allTBC = strip.activeCount > 0 && strip.awaitingBudget === strip.activeCount;
+
+  const awaitingNote = (!allTBC && strip.awaitingBudget > 0) ? (
     <div className="est-pipe-note" title={`${strip.awaitingBudget} active ${strip.awaitingBudget === 1 ? 'project is' : 'projects are'} awaiting a budget (TBC), so ${strip.awaitingBudget === 1 ? 'it contributes' : 'they contribute'} nothing here`}>
       {strip.awaitingBudget} TBC
     </div>
@@ -176,18 +196,22 @@ function StatStrip({ projects }) {
       </div>
       <div className="est-pipe-cell">
         <div className="est-pipe-label">Active agreed value</div>
-        <div className="est-pipe-value"><Private>{fmt(strip.agreedValue)}</Private></div>
+        <div className="est-pipe-value">
+          {allTBC ? <span className="pipe-tbc">TBC</span> : <Private>{fmt(strip.agreedValue)}</Private>}
+        </div>
         {awaitingNote}
       </div>
       <div className="est-pipe-cell">
         <div className="est-pipe-label">Outstanding</div>
-        <div className="est-pipe-value"><Private>{fmt(strip.outstanding)}</Private></div>
+        <div className="est-pipe-value">
+          {allTBC ? <span className="pipe-tbc">TBC</span> : <Private>{fmt(strip.outstanding)}</Private>}
+        </div>
         {awaitingNote}
       </div>
       <div className="est-pipe-cell">
         <div className="est-pipe-label">Next shoot</div>
         <div className="est-pipe-ring" title={shootTip}>
-          <ProximityRing frac={strip.shootFrac} color="var(--cat-2)" />
+          <ProximityRing frac={strip.shootFrac} color="var(--cat-2)" days={strip.nextShoot ? strip.shootDays : null} />
         </div>
       </div>
     </div>
@@ -562,10 +586,10 @@ function PhaseTrack({ p, hue, onSegment }) {
 // fully paid, the track tints ember, the same overdue language as the timeline.
 function PaymentTrack({ p, overdue }) {
   const agreed = Number(p.agreed_budget) || 0;
-  // No agreed budget means the budget has not been discussed with the client
-  // yet, not that the project is worth nothing. Speak the estimate wizard's TBC
-  // language with a small muted marker, visibly unlike a real empty track.
-  if (agreed <= 0) return <div className="pay-tbc" title="Budget not agreed with the client yet (TBC)">TBC</div>;
+  // No agreed budget: the payment track does not belong in the phase stack,
+  // where it reads as a caption for the phases. The TBC state now shows as a
+  // muted chip with the money and date chips on the right of the row instead.
+  if (agreed <= 0) return null;
   const pct = Math.min(100, Math.round(((Number(p.total_received) || 0) / agreed) * 100));
   return (
     <div className={`pay-track${overdue ? ' is-overdue' : ''}`}>
@@ -637,15 +661,22 @@ function ProjectRow({ p, expanded, onToggleExpand, onNavigate, onSegment, onFilt
           </div>
         </div>
 
-        {/* Middle: the two tracks fill the space that used to be empty */}
+        {/* Middle: the two tracks sit close after the identity block */}
         <div className="prow-mid">
           <PhaseTrack p={p} hue={hue} onSegment={onSegment} />
           <PaymentTrack p={p} overdue={overdue} />
         </div>
 
-        {/* Right: dates, margin and the status dot (which filters) */}
+        {/* A flexible spacer absorbs the leftover width, so the emptiness lands
+            here between the track and the right hand chips, not before the track. */}
+        <div className="prow-spacer" aria-hidden="true" />
+
+        {/* Right: margin, TBC when unbudgeted, dates and the status dot (which filters) */}
         <div className="prow-right">
           <MarginBadge p={p} />
+          {agreed <= 0 && (
+            <span className="pay-tbc-chip" title="Budget not agreed with the client yet (TBC)">TBC</span>
+          )}
           {shoot && <DateChip info={shoot} Icon={Camera} muted={shootMuted} title={`Shoot: ${fmtDate(p.shoot_date)}`} />}
           {dead  && <DateChip info={dead}  Icon={Flag}   muted={deadMuted}  title={`Deadline: ${fmtDate(p.deadline)}`} />}
           <button

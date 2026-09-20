@@ -1791,12 +1791,17 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 .project-row {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 240px auto auto;
+  /* Identity column is a fixed width (uniform per row, so tracks align down the
+     list, and a long title truncates instead of pushing the track). The 240px
+     track sits right after it. The 1fr spacer then absorbs the leftover width,
+     so the emptiness lands between the track and the right hand chips. */
+  grid-template-columns: clamp(210px, 26%, 300px) 240px 1fr auto auto;
   align-items: center; gap: 18px;
   padding: 14px 20px;
   cursor: pointer;
   transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
+.prow-spacer { min-width: 0; }
 .project-row:hover {
   background: var(--overlay-01);
   transform: translateY(-1px);
@@ -1829,16 +1834,19 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 .prow-mid { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
 .phase-track { display: flex; gap: 4px; width: 100%; }
 .phase-seg {
-  flex: 1; height: 7px; min-width: 8px; padding: 0;
+  flex: 1; height: 9px; min-width: 10px; padding: 0;
   border-radius: 3px; cursor: pointer;
-  border: 1.5px solid var(--hue);
+  border: 1.5px solid var(--color-hairline-strong);
   background: transparent;
-  transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
 }
+/* Completed: solid in the status hue. Current: outlined in the hue with a half
+   fill, so a project mid pipeline never reads as finished at a glance.
+   Remaining: hollow with a hairline outline. */
 .phase-seg.is-done    { background: var(--hue); border-color: var(--hue); }
-.phase-seg.is-current { background: transparent; border-color: var(--hue); box-shadow: inset 0 0 0 1.5px var(--hue); opacity: 1; }
+.phase-seg.is-current { border-color: var(--hue); background: linear-gradient(90deg, var(--hue) 50%, transparent 50%); }
 .phase-seg.is-todo    { border-color: var(--color-hairline-strong); background: transparent; }
-.phase-seg:hover      { transform: scaleY(1.35); }
+.phase-seg:hover      { transform: scaleY(1.25); }
 
 .pay-track {
   height: 4px; width: 100%;
@@ -1938,6 +1946,16 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 /* When a project shows both a shoot date and a deadline, the nearer one keeps
    full emphasis and the other reads quieter, so the eye lands on what is next. */
 .shoot-chip.muted  { opacity: 0.6; font-weight: 500; }
+/* Budget not agreed yet: a muted chip that sits with the money and date chips,
+   the same geometry as the shoot chip, so it reads as payment state, not as a
+   caption for the phase track. */
+.pay-tbc-chip {
+  display: inline-flex; align-items: center;
+  padding: 2px 8px; border-radius: 18px;
+  font-size: 11px; font-weight: 600; font-style: italic; letter-spacing: 0.02em;
+  background: var(--overlay-04); color: var(--color-mid-gray);
+  white-space: nowrap; flex-shrink: 0;
+}
 
 /* ===== RESPONSIVE ADDITIONS ===== */
 @media (max-width: 680px) {
@@ -1955,6 +1973,7 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
   .prow-expand { grid-area: expand; align-self: start; }
   .prow-mid    { grid-area: mid; }
   .prow-right  { grid-area: right; justify-self: start; flex-wrap: wrap; }
+  .prow-spacer { display: none; }
   .prow-tip    { right: 16px; left: 16px; min-width: 0; }
   .prow-drawer-inner { grid-template-columns: 1fr; gap: 14px; }
 }
@@ -4000,6 +4019,13 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 .est-pipe-note { font-size: 11px; font-style: italic; font-weight: 600; color: var(--color-mid-gray); }
 .est-pipe-ring { display: flex; align-items: center; }
 .win-ring { display: block; }
+/* The numeral inside the next shoot ring carries the fact the ring cannot. */
+.win-ring-num    { fill: var(--color-ink);       font-size: 15px; font-weight: 700; }
+.win-ring-suffix { fill: var(--color-mid-gray);  font-size: 9px;  font-weight: 600; }
+.win-ring-today  { fill: var(--color-ink);       font-size: 10px; font-weight: 700; }
+.win-ring-dash   { fill: var(--color-mid-gray);  font-size: 16px; font-weight: 600; }
+/* When every active project is unpriced, the money figure reads TBC, not zero. */
+.pipe-tbc { color: var(--color-mid-gray); font-style: italic; }
 
 /* Projects stat strip: same construction as the estimates pipeline, one extra
    figure. The ring cell keeps its intrinsic width at the end. */
