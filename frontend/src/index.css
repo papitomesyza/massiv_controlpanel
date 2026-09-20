@@ -2917,6 +2917,59 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 }
 .task-empty-text { font-size: 15px; font-weight: 600; color: var(--color-mid-gray); }
 
+/* ===== TASKS PAGE TWO COLUMN SPLIT ===== */
+/* Reuses the .two-col grid the project detail page uses, so the two pages share
+   one layout language. Each column scrolls on its own so a long project list
+   never pushes the user's own tasks out of reach. */
+.tasks-split { margin-top: 4px; }
+.tasks-col {
+  min-width: 0;
+  max-height: calc(100vh - 240px);
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--overlay-04) transparent;
+}
+.tasks-col::-webkit-scrollbar { width: 5px; }
+.tasks-col::-webkit-scrollbar-track { background: transparent; }
+.tasks-col::-webkit-scrollbar-thumb { background: var(--overlay-04); border-radius: 3px; }
+
+.tasks-col-head {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--color-mid-gray);
+  padding: 0 2px 10px;
+}
+
+/* Per project collapsible section in the right column. */
+.proj-section { border-bottom: 1px solid var(--border-subtle); }
+.proj-section:last-child { border-bottom: none; }
+.proj-section-header {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 12px 16px; background: none; border: none; cursor: pointer;
+  font-family: var(--font); text-align: left;
+  transition: background 0.15s ease;
+}
+.proj-section-header:hover { background: var(--overlay-01); }
+.proj-section-icon { display: inline-flex; flex-shrink: 0; color: var(--color-mid-gray); }
+.proj-section-name {
+  flex: 1; min-width: 0; font-size: 14px; font-weight: 600; color: var(--color-ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.proj-section-ring { display: inline-flex; flex-shrink: 0; }
+.proj-ring-num { fill: var(--color-ink); font-size: 11px; font-weight: 700; }
+
+.proj-phase { padding-bottom: 4px; }
+.proj-phase-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--color-mid-gray);
+  padding: 8px 16px 2px 34px;
+}
+
+@media (max-width: 768px) {
+  /* Columns stack (My tasks first via DOM order); page scrolls, not each column. */
+  .tasks-col { max-height: none; overflow: visible; padding-right: 0; }
+}
+
 @media (max-width: 600px) {
   .task-actions { opacity: 1; }
   .task-project-name { max-width: 120px; }

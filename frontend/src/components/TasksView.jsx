@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Plus, Trash2, Edit2, Check, ChevronDown, ChevronUp, Flag, Search, ListChecks,
+  Plus, Trash2, Edit2, Check, ChevronDown, ChevronUp, Flag, Search, ListChecks, FolderOpen,
 } from 'lucide-react';
 import { api } from '../api';
 import { categoryIconEl } from '../lib/categoryIcons';
@@ -62,6 +62,7 @@ const GROUP_LABEL = {
 };
 
 const taskKey = t => `${t.source}-${t.id}`;
+const projKey = pid => `massiv_tasks_proj_${pid}`;
 
 /* ── inline edit modal (standalone only) ── */
 function EditModal({ task, onClose, onSaved, onError }) {
@@ -122,7 +123,7 @@ function EditModal({ task, onClose, onSaved, onError }) {
   );
 }
 
-/* ── completed this week ring ── */
+/* ── completed this week ring (stat strip) ── */
 // The numeral inside carries the count; the ring carries completed against the
 // total due in the current week. Same construction as the estimates win ring.
 function CompletedRing({ completed, total }) {
@@ -146,10 +147,33 @@ function CompletedRing({ completed, total }) {
   );
 }
 
+/* ── per-project progress ring (section header) ── */
+// Completed against total tasks for the project, the count readable inside,
+// matching the ring language used on the Dashboard and the other pages.
+function ProjectRing({ done, total }) {
+  const size = 34, R = 13, C = 2 * Math.PI * R;
+  const frac = total > 0 ? Math.max(0, Math.min(1, done / total)) : 0;
+  const cx = size / 2, cy = size / 2;
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="win-ring proj-ring">
+      <circle cx={cx} cy={cy} r={R} fill="none" stroke="var(--color-hairline)" strokeWidth="3" />
+      {total > 0 && (
+        <circle
+          cx={cx} cy={cy} r={R} fill="none" stroke="var(--cat-6)" strokeWidth="3"
+          strokeLinecap="round" strokeDasharray={C} strokeDashoffset={C * (1 - frac)}
+          transform={`rotate(-90 ${cx} ${cy})`}
+        />
+      )}
+      <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central" className="proj-ring-num">
+        {done}
+      </text>
+    </svg>
+  );
+}
+
 /* ── stat strip ── */
-// Opens the page with the three figures that matter today, matching the
-// construction of the Estimates and Projects strips so the pages read as
-// siblings. No subtitles: the label and the figure carry it.
+// Opens the page with the three figures that matter today, counting across both
+// task types. Same construction as the Estimates and Projects strips.
 function StatStrip({ tasks, todayStr }) {
   const strip = useMemo(() => {
     const pending = tasks.filter(t => t.done === 0);
@@ -231,12 +255,6 @@ function TaskRow({ task, todayStr, onToggle, onDelete, onEdit, onOpenProject }) 
         title={isProject ? `Open ${task.project_title}` : undefined}
       >
         <span className="task-title">{task.title}</span>
-        {isProject && (
-          <span className="task-project" style={{ '--tint': 'var(--color-mid-gray)' }}>
-            <span className="task-project-icon">{categoryIconEl(task.category_name, task.category_group, 13)}</span>
-            <span className="task-project-name">{task.project_title}</span>
-          </span>
-        )}
       </div>
 
       {task.due_date && (
@@ -266,7 +284,7 @@ function TaskRow({ task, todayStr, onToggle, onDelete, onEdit, onOpenProject }) 
   );
 }
 
-/* ── compact done row inside the collapsible completed sub-section ── */
+/* ── compact done row ── */
 function DoneRow({ task, onToggle, onDelete, onOpenProject }) {
   const [confirming, setConfirming] = useState(false);
   const isProject = task.source === 'project';
@@ -302,19 +320,69 @@ function DoneRow({ task, onToggle, onDelete, onOpenProject }) {
   );
 }
 
+/* ── one project section in the right column ── */
+function ProjectSection({ section, totals, open, onToggle, todayStr, onToggleTask, onOpenProject }) {
+  const t = totals || { total: 0, done: 0 };
+
+  // Group this project's visible tasks by phase, in real phase order. A phase
+  // with no visible task is not rendered.
+  const phases = useMemo(() => {
+    const map = new Map();
+    section.tasks.forEach(task => {
+      const key = task.phase_id == null ? 'none' : task.phase_id;
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          phase_name: task.phase_name || 'No phase',
+          phase_order: task.phase_order == null ? 9999 : task.phase_order,
+          tasks: [],
+        });
+      }
+      map.get(key).tasks.push(task);
+    });
+    return [...map.values()].sort((a, b) => a.phase_order - b.phase_order);
+  }, [section.tasks]);
+
+  return (
+    <div className="proj-section">
+      <button className="proj-section-header" onClick={onToggle} aria-expanded={open}>
+        <span className="proj-section-icon">
+          {categoryIconEl(section.category_name, section.category_group, 16)}
+        </span>
+        <span className="proj-section-name">{section.project_title}</span>
+        <span className="proj-section-ring" title={`${t.done} of ${t.total} tasks done`}>
+          <ProjectRing done={t.done} total={t.total} />
+        </span>
+        {open ? <ChevronUp size={15} color="var(--color-mid-gray)" /> : <ChevronDown size={15} color="var(--color-mid-gray)" />}
+      </button>
+
+      {open && phases.map(ph => (
+        <div key={ph.key} className="proj-phase">
+          <div className="proj-phase-label">{ph.phase_name}</div>
+          {ph.tasks.map(task => (
+            task.done
+              ? <DoneRow key={taskKey(task)} task={task} onToggle={onToggleTask} onOpenProject={onOpenProject} />
+              : <TaskRow key={taskKey(task)} task={task} todayStr={todayStr} onToggle={onToggleTask} onOpenProject={onOpenProject} />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /* ── main view ── */
 export default function TasksView() {
   const [tasks, setTasks]             = useState([]);
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState('');
   const [query, setQuery]             = useState('');
-  const [standaloneOnly, setStandaloneOnly] = useState(false);
   const [newTitle, setNewTitle]       = useState('');
   const [newDue, setNewDue]           = useState('');
   const [newPriority, setNewPriority] = useState('normal');
   const [adding, setAdding]           = useState(false);
   const [doneOpen, setDoneOpen]       = useState(false);
   const [editingTask, setEditingTask] = useState(null);
+  const [openMap, setOpenMap]         = useState({});   // project id -> user override
   const inputRef = useRef(null);
   const navigate = useNavigate();
   const todayStr = today();
@@ -327,6 +395,21 @@ export default function TasksView() {
   useEffect(() => {
     load().catch(() => setError('Could not load tasks')).finally(() => setLoading(false));
   }, []);
+
+  // Hydrate the per-project open/closed overrides from localStorage whenever the
+  // task set changes, so a user's stored choices survive a reload. Projects with
+  // no stored choice fall back to the auto default computed at render time.
+  useEffect(() => {
+    const stored = {};
+    tasks.forEach(t => {
+      if (t.source !== 'project' || t.project_id == null) return;
+      if (t.project_id in stored) return;
+      let v = null;
+      try { v = localStorage.getItem(projKey(t.project_id)); } catch (_) {}
+      if (v === '1' || v === '0') stored[t.project_id] = v === '1';
+    });
+    setOpenMap(stored);
+  }, [tasks]);
 
   function flashError(msg) {
     setError(msg);
@@ -400,150 +483,244 @@ export default function TasksView() {
     try { await load(); } catch (_) { flashError('Could not refresh tasks'); }
   }
 
-  const visible = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return tasks.filter(t => {
-      if (standaloneOnly && t.source !== 'standalone') return false;
-      if (!q) return true;
-      return (t.title || '').toLowerCase().includes(q) ||
-             (t.project_title || '').toLowerCase().includes(q);
-    });
-  }, [tasks, query, standaloneOnly]);
+  const q = query.trim().toLowerCase();
+  const searching = q.length > 0;
 
-  const pending = visible.filter(t => t.done === 0);
-  const done    = visible.filter(t => t.done === 1);
-
-  const groups = useMemo(() => {
+  // ── Left column: standalone tasks, title-matched while searching ──
+  const standalonePending = useMemo(() => {
     const map = { overdue: [], today: [], week: [], later: [], none: [] };
-    pending.forEach(t => { map[groupOf(t.due_date, todayStr)].push(t); });
+    tasks
+      .filter(t => t.source === 'standalone' && t.done === 0)
+      .filter(t => !q || (t.title || '').toLowerCase().includes(q))
+      .forEach(t => { map[groupOf(t.due_date, todayStr)].push(t); });
     return map;
-  }, [pending, todayStr]);
+  }, [tasks, q, todayStr]);
+
+  const standaloneDone = useMemo(() => tasks
+    .filter(t => t.source === 'standalone' && t.done === 1)
+    .filter(t => !q || (t.title || '').toLowerCase().includes(q)),
+  [tasks, q]);
+
+  const hasPending = GROUP_ORDER.some(k => standalonePending[k].length);
+
+  // ── Right column: project tasks grouped by project ──
+  // Totals for the ring and the auto-open rule are computed from ALL of a
+  // project's tasks, unaffected by the search filter, so a ring always reads the
+  // project's real completed against total.
+  const projectTotals = useMemo(() => {
+    const map = new Map();
+    tasks.filter(t => t.source === 'project').forEach(t => {
+      const e = map.get(t.project_id) || { total: 0, done: 0, overdue: 0, today: 0 };
+      e.total++;
+      if (t.done) e.done++;
+      else if (t.due_date) {
+        const d = dayDiff(t.due_date, todayStr);
+        if (d < 0) e.overdue++;
+        else if (d === 0) e.today++;
+      }
+      map.set(t.project_id, e);
+    });
+    return map;
+  }, [tasks, todayStr]);
+
+  const projectSections = useMemo(() => {
+    const matches = t => !q
+      || (t.title || '').toLowerCase().includes(q)
+      || (t.project_title || '').toLowerCase().includes(q)
+      || (t.phase_name || '').toLowerCase().includes(q);
+
+    const map = new Map();
+    tasks
+      .filter(t => t.source === 'project')
+      .filter(matches)
+      .forEach(t => {
+        if (!map.has(t.project_id)) {
+          map.set(t.project_id, {
+            project_id: t.project_id,
+            project_title: t.project_title,
+            category_name: t.category_name,
+            category_group: t.category_group,
+            tasks: [],
+          });
+        }
+        map.get(t.project_id).tasks.push(t);
+      });
+
+    // Overdue projects first, then those with something due today, then by name.
+    return [...map.values()].sort((a, b) => {
+      const ta = projectTotals.get(a.project_id) || {};
+      const tb = projectTotals.get(b.project_id) || {};
+      const ra = ta.overdue > 0 ? 0 : ta.today > 0 ? 1 : 2;
+      const rb = tb.overdue > 0 ? 0 : tb.today > 0 ? 1 : 2;
+      if (ra !== rb) return ra - rb;
+      return (a.project_title || '').localeCompare(b.project_title || '');
+    });
+  }, [tasks, q, projectTotals]);
+
+  function autoOpen(pid) {
+    const t = projectTotals.get(pid);
+    return !!(t && (t.overdue > 0 || t.today > 0));
+  }
+  function sectionOpen(pid) {
+    if (searching) return true;                 // a match forces the section open
+    if (pid in openMap) return openMap[pid];    // the user's stored choice
+    return autoOpen(pid);                        // otherwise the auto default
+  }
+  function toggleSection(pid) {
+    const cur = (pid in openMap) ? openMap[pid] : autoOpen(pid);
+    const next = !cur;
+    setOpenMap(m => ({ ...m, [pid]: next }));
+    try { localStorage.setItem(projKey(pid), next ? '1' : '0'); } catch (_) {}
+  }
 
   if (loading) return <div className="loading">Loading tasks...</div>;
-
-  const hasPending = pending.length > 0;
 
   return (
     <div>
       <StatStrip tasks={tasks} todayStr={todayStr} />
 
-      {/* Search and the standalone-only filter, same placement as the other pages. */}
+      {/* One search above both columns: filters both at once. */}
       <div className="est-controls">
         <div className="est-search">
           <Search size={15} />
           <input
             className="input"
-            placeholder="Search task or project"
+            placeholder="Search task, project or phase"
             value={query}
             onChange={e => setQuery(e.target.value)}
           />
         </div>
-        <button
-          className={`btn btn-sm ${standaloneOnly ? 'btn-primary' : 'btn-ghost'}`}
-          style={{ borderRadius: '18px', padding: '6px 16px', flexShrink: 0 }}
-          onClick={() => setStandaloneOnly(v => !v)}
-          title="Show only your own tasks"
-        >
-          My tasks only
-        </button>
       </div>
 
       {error && <div className="error-msg" style={{ marginBottom: '12px' }}>{error}</div>}
 
-      {/* Quick add, standalone tasks only. */}
-      <div className="standalone-add-row">
-        <div className="standalone-add-controls" style={{ flexWrap: 'nowrap' }}>
-          <input
-            ref={inputRef}
-            className="input standalone-add-input"
-            placeholder="Add a task..."
-            value={newTitle}
-            onChange={e => setNewTitle(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleAdd()}
-          />
+      <div className="two-col tasks-split">
+        {/* ── LEFT: My tasks ── */}
+        <div className="tasks-col">
+          <div className="tasks-col-head">My tasks</div>
+
+          {/* Quick add, standalone tasks only. */}
+          <div className="standalone-add-row">
+            <div className="standalone-add-controls" style={{ flexWrap: 'nowrap' }}>
+              <input
+                ref={inputRef}
+                className="input standalone-add-input"
+                placeholder="Add a task..."
+                value={newTitle}
+                onChange={e => setNewTitle(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleAdd()}
+              />
+            </div>
+            <div className="standalone-add-controls">
+              <input
+                className="input standalone-date-input"
+                type="date"
+                value={newDue}
+                onChange={e => setNewDue(e.target.value)}
+                title="Due date (optional)"
+              />
+              <button
+                className={`standalone-priority-toggle${newPriority === 'high' ? ' is-high' : ''}`}
+                onClick={() => setNewPriority(p => p === 'normal' ? 'high' : 'normal')}
+                title={newPriority === 'high' ? 'Priority: High' : 'Priority: Normal'}
+                type="button"
+              >
+                <Flag size={13} />
+              </button>
+              <button
+                className="btn btn-primary"
+                style={{ flexShrink: 0 }}
+                onClick={handleAdd}
+                disabled={!newTitle.trim() || adding}
+              >
+                <Plus size={14} /> Add
+              </button>
+            </div>
+          </div>
+
+          {hasPending ? (
+            <div className="card" style={{ marginTop: '16px' }}>
+              {GROUP_ORDER.map(key => {
+                const items = standalonePending[key];
+                if (!items.length) return null;
+                return (
+                  <div key={key} className={`task-group group-${key}`}>
+                    <div className="task-group-header">
+                      <span className="task-group-name">{GROUP_LABEL[key]}</span>
+                      <span className="task-group-count">{items.length}</span>
+                    </div>
+                    {items.map(t => (
+                      <TaskRow
+                        key={taskKey(t)}
+                        task={t}
+                        todayStr={todayStr}
+                        onToggle={handleToggle}
+                        onDelete={handleDelete}
+                        onEdit={setEditingTask}
+                        onOpenProject={openProject}
+                      />
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="task-empty">
+              <ListChecks size={36} color="var(--color-hairline-strong)" />
+              <div className="task-empty-text">{searching ? 'No matches' : 'All clear'}</div>
+            </div>
+          )}
+
+          {/* Completed sub-section: collapsible, collapsed by default. */}
+          {standaloneDone.length > 0 && (
+            <div className="card" style={{ marginTop: '16px' }}>
+              <button className="standalone-done-header" onClick={() => setDoneOpen(o => !o)}>
+                <span className="standalone-done-label">
+                  Completed
+                  <span className="standalone-done-count">{standaloneDone.length}</span>
+                </span>
+                {doneOpen ? <ChevronUp size={14} color="var(--color-mid-gray)" /> : <ChevronDown size={14} color="var(--color-mid-gray)" />}
+              </button>
+              {doneOpen && standaloneDone.map(t => (
+                <DoneRow
+                  key={taskKey(t)}
+                  task={t}
+                  onToggle={handleToggle}
+                  onDelete={handleDelete}
+                  onOpenProject={openProject}
+                />
+              ))}
+            </div>
+          )}
         </div>
-        <div className="standalone-add-controls">
-          <input
-            className="input standalone-date-input"
-            type="date"
-            value={newDue}
-            onChange={e => setNewDue(e.target.value)}
-            title="Due date (optional)"
-          />
-          <button
-            className={`standalone-priority-toggle${newPriority === 'high' ? ' is-high' : ''}`}
-            onClick={() => setNewPriority(p => p === 'normal' ? 'high' : 'normal')}
-            title={newPriority === 'high' ? 'Priority: High' : 'Priority: Normal'}
-            type="button"
-          >
-            <Flag size={13} />
-          </button>
-          <button
-            className="btn btn-primary"
-            style={{ flexShrink: 0 }}
-            onClick={handleAdd}
-            disabled={!newTitle.trim() || adding}
-          >
-            <Plus size={14} /> Add
-          </button>
+
+        {/* ── RIGHT: Project tasks ── */}
+        <div className="tasks-col">
+          <div className="tasks-col-head">Project tasks</div>
+
+          {projectSections.length > 0 ? (
+            <div className="card">
+              {projectSections.map(section => (
+                <ProjectSection
+                  key={section.project_id}
+                  section={section}
+                  totals={projectTotals.get(section.project_id)}
+                  open={sectionOpen(section.project_id)}
+                  onToggle={() => toggleSection(section.project_id)}
+                  todayStr={todayStr}
+                  onToggleTask={handleToggle}
+                  onOpenProject={openProject}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="task-empty">
+              <FolderOpen size={36} color="var(--color-hairline-strong)" />
+              <div className="task-empty-text">{searching ? 'No matches' : 'No project tasks'}</div>
+            </div>
+          )}
         </div>
       </div>
-
-      {/* Time groups. Empty groups are not rendered. */}
-      {hasPending ? (
-        <div className="card" style={{ marginTop: '16px' }}>
-          {GROUP_ORDER.map(key => {
-            const items = groups[key];
-            if (!items.length) return null;
-            return (
-              <div key={key} className={`task-group group-${key}`}>
-                <div className="task-group-header">
-                  <span className="task-group-name">{GROUP_LABEL[key]}</span>
-                  <span className="task-group-count">{items.length}</span>
-                </div>
-                {items.map(t => (
-                  <TaskRow
-                    key={taskKey(t)}
-                    task={t}
-                    todayStr={todayStr}
-                    onToggle={handleToggle}
-                    onDelete={handleDelete}
-                    onEdit={setEditingTask}
-                    onOpenProject={openProject}
-                  />
-                ))}
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="task-empty">
-          <ListChecks size={40} color="var(--color-hairline-strong)" />
-          <div className="task-empty-text">{query || standaloneOnly ? 'No matches' : 'All clear'}</div>
-        </div>
-      )}
-
-      {/* Completed sub-section: collapsible, collapsed by default. */}
-      {done.length > 0 && (
-        <div className="card" style={{ marginTop: '16px' }}>
-          <button className="standalone-done-header" onClick={() => setDoneOpen(o => !o)}>
-            <span className="standalone-done-label">
-              Completed
-              <span className="standalone-done-count">{done.length}</span>
-            </span>
-            {doneOpen ? <ChevronUp size={14} color="var(--color-mid-gray)" /> : <ChevronDown size={14} color="var(--color-mid-gray)" />}
-          </button>
-          {doneOpen && done.map(t => (
-            <DoneRow
-              key={taskKey(t)}
-              task={t}
-              onToggle={handleToggle}
-              onDelete={handleDelete}
-              onOpenProject={openProject}
-            />
-          ))}
-        </div>
-      )}
 
       {editingTask && (
         <EditModal

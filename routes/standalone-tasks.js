@@ -38,7 +38,9 @@ router.get('/all', (req, res) => {
     project_title: null,
     category_name: null,
     category_group: null,
+    phase_id: null,
     phase_name: null,
+    phase_order: null,
     assigned_crew_id: null,
     crew_name: null,
     is_locked: 0,
@@ -46,10 +48,10 @@ router.get('/all', (req, res) => {
 
   const project = db.prepare(`
     SELECT t.id, t.title, t.notes, t.due_date, t.status, t.created_at, t.is_locked,
-           t.project_id, t.assigned_crew_id,
+           t.project_id, t.assigned_crew_id, t.phase_id,
            p.title AS project_title,
            pc.name AS category_name, pc.group_name AS category_group,
-           ph.phase_name AS phase_name,
+           ph.phase_name AS phase_name, ph.order_index AS phase_order,
            cr.name AS crew_name
     FROM tasks t
     JOIN projects p ON p.id = t.project_id
@@ -70,7 +72,9 @@ router.get('/all', (req, res) => {
     project_title: t.project_title,
     category_name: t.category_name,
     category_group: t.category_group,
+    phase_id: t.phase_id,
     phase_name: t.phase_name,
+    phase_order: t.phase_order,
     assigned_crew_id: t.assigned_crew_id,
     crew_name: t.crew_name,
     is_locked: t.is_locked ? 1 : 0,
