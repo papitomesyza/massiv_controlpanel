@@ -148,16 +148,20 @@ function CompletedRing({ completed, total }) {
 }
 
 /* ── per-project progress ring (section header) ── */
-// Completed against total tasks for the project, the count readable inside,
-// matching the ring language used on the Dashboard and the other pages.
+// The arc fills with completed against total, so a barely started project reads
+// as a nearly empty ring and a finished one as a full ring, distinct at a
+// glance. The numeral inside is the outstanding count, the number still to do,
+// since that is what the user acts on. Same win ring construction used on the
+// Estimates and Projects strips.
 function ProjectRing({ done, total }) {
   const size = 34, R = 13, C = 2 * Math.PI * R;
   const frac = total > 0 ? Math.max(0, Math.min(1, done / total)) : 0;
+  const outstanding = Math.max(0, total - done);
   const cx = size / 2, cy = size / 2;
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="win-ring proj-ring">
       <circle cx={cx} cy={cy} r={R} fill="none" stroke="var(--color-hairline)" strokeWidth="3" />
-      {total > 0 && (
+      {frac > 0 && (
         <circle
           cx={cx} cy={cy} r={R} fill="none" stroke="var(--cat-6)" strokeWidth="3"
           strokeLinecap="round" strokeDasharray={C} strokeDashoffset={C * (1 - frac)}
@@ -165,7 +169,7 @@ function ProjectRing({ done, total }) {
         />
       )}
       <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central" className="proj-ring-num">
-        {done}
+        {outstanding}
       </text>
     </svg>
   );
@@ -546,8 +550,10 @@ export default function TasksView() {
         map.get(t.project_id).tasks.push(t);
       });
 
-    // Overdue projects first, then those with something due today, then by name.
-    return [...map.values()].sort((a, b) => {
+    // A project with no tasks renders no section. Sections are built from task
+    // rows, so an empty project produces none, but the guard keeps that true if
+    // the build ever changes.
+    return [...map.values()].filter(s => s.tasks.length > 0).sort((a, b) => {
       const ta = projectTotals.get(a.project_id) || {};
       const tb = projectTotals.get(b.project_id) || {};
       const ra = ta.overdue > 0 ? 0 : ta.today > 0 ? 1 : 2;

@@ -58,6 +58,7 @@ router.get('/all', (req, res) => {
     LEFT JOIN project_categories pc ON pc.id = p.category_id
     LEFT JOIN project_phases ph ON ph.id = t.phase_id
     LEFT JOIN crew cr ON cr.id = t.assigned_crew_id
+    WHERE p.status != 'completed'
   `).all().map(t => ({
     source: 'project',
     id: t.id,
