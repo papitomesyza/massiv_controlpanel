@@ -470,6 +470,10 @@ function initDb() {
     'ALTER TABLE crew ADD COLUMN service_type TEXT',
     'ALTER TABLE tasks ADD COLUMN is_locked INTEGER DEFAULT 0',
     'ALTER TABLE tasks ADD COLUMN sort_order INTEGER DEFAULT 0',
+    // When a project task was marked done, so the Tasks page can count tasks
+    // completed inside the current week the same way it does for standalone
+    // tasks. Nullable: a todo task has none, and reopening a task clears it.
+    'ALTER TABLE tasks ADD COLUMN completed_at TEXT',
     'ALTER TABLE projects ADD COLUMN duplicated_from INTEGER',
     'ALTER TABLE projects ADD COLUMN location_name TEXT',
     'ALTER TABLE projects ADD COLUMN location_lat REAL',

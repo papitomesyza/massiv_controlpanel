@@ -409,8 +409,21 @@ router.post('/:id/tasks', (req, res) => {
 
 router.put('/:id/tasks/:taskId', (req, res) => {
   const { title, assigned_crew_id, due_date, notes, status } = req.body;
+  const prior = db.prepare('SELECT status, completed_at FROM tasks WHERE id=? AND project_id=?')
+    .get(req.params.taskId, req.params.id);
   db.prepare('UPDATE tasks SET title=?, assigned_crew_id=?, due_date=?, notes=?, status=? WHERE id=? AND project_id=?')
     .run(title, assigned_crew_id || null, due_date || null, notes || null, status, req.params.taskId, req.params.id);
+  // Stamp completed_at the moment a task first becomes done, preserve an existing
+  // stamp on later edits that leave it done, and clear it when it is reopened.
+  if (status === 'done') {
+    if (!prior || prior.status !== 'done' || !prior.completed_at) {
+      db.prepare("UPDATE tasks SET completed_at=datetime('now') WHERE id=? AND project_id=?")
+        .run(req.params.taskId, req.params.id);
+    }
+  } else {
+    db.prepare('UPDATE tasks SET completed_at=NULL WHERE id=? AND project_id=?')
+      .run(req.params.taskId, req.params.id);
+  }
   syncTaskCalendarEvent(parseInt(req.params.taskId));
   res.json({ ok: true });
 });

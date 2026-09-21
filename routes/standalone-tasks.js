@@ -47,7 +47,7 @@ router.get('/all', (req, res) => {
   }));
 
   const project = db.prepare(`
-    SELECT t.id, t.title, t.notes, t.due_date, t.status, t.created_at, t.is_locked,
+    SELECT t.id, t.title, t.notes, t.due_date, t.status, t.created_at, t.completed_at, t.is_locked,
            t.project_id, t.assigned_crew_id, t.phase_id,
            p.title AS project_title,
            pc.name AS category_name, pc.group_name AS category_group,
@@ -66,7 +66,7 @@ router.get('/all', (req, res) => {
     notes: t.notes,
     due_date: t.due_date,
     done: t.status === 'done' ? 1 : 0,
-    completed_at: null,
+    completed_at: t.completed_at,
     created_at: t.created_at,
     priority: null,
     project_id: t.project_id,

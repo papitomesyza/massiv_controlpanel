@@ -3030,6 +3030,20 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 /* Reuses the .two-col grid the project detail page uses, so the two pages share
    one layout language. Each column scrolls on its own so a long project list
    never pushes the user's own tasks out of reach. */
+/* Tasks page density: the shared strip, search and column cards default to a
+   looser rhythm than this page wants, so the content starts higher and reads
+   denser here without stretching any column or padding the page out. Scoped to
+   .tasks-page so the Estimates, Projects and Calendar strips keep their own. */
+.tasks-page .est-pipeline { padding: 12px 20px; margin-bottom: 10px; }
+.tasks-page .est-pipe-cell { gap: 4px; }
+.tasks-page .est-pipe-value { font-size: 20px; }
+.tasks-page .est-controls { margin-bottom: 10px; }
+.tasks-page .tasks-col-head { padding: 0 2px 6px; }
+.tasks-page .task-group-header { padding: 9px 16px 4px; }
+.tasks-page .task-row { padding: 9px 16px; }
+.tasks-page .proj-section-header { padding: 9px 14px; }
+.tasks-page .proj-phase-label { padding: 6px 16px 2px 34px; }
+
 .tasks-split { margin-top: 4px; }
 .tasks-col {
   min-width: 0;

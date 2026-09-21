@@ -124,8 +124,9 @@ function EditModal({ task, onClose, onSaved, onError }) {
 }
 
 /* ── completed this week ring (stat strip) ── */
-// The numeral inside carries the count; the ring carries completed against the
-// total due in the current week. Same construction as the estimates win ring.
+// The numeral inside carries the count completed this week; the ring carries
+// that count against this week's actionable load (completed plus still open and
+// due by week end). Same construction as the estimates win ring.
 function CompletedRing({ completed, total }) {
   const size = 46, R = 19, C = 2 * Math.PI * R;
   const frac = total > 0 ? Math.max(0, Math.min(1, completed / total)) : 0;
@@ -157,6 +158,10 @@ function ProjectRing({ done, total }) {
   const size = 34, R = 13, C = 2 * Math.PI * R;
   const frac = total > 0 ? Math.max(0, Math.min(1, done / total)) : 0;
   const outstanding = Math.max(0, total - done);
+  // A project with tasks and nothing left to do is finished, not empty. The full
+  // arc plus a check reads as done at a glance, where a zero would read as
+  // nothing. Every other state keeps the outstanding count.
+  const finished = total > 0 && outstanding === 0;
   const cx = size / 2, cy = size / 2;
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="win-ring proj-ring">
@@ -168,9 +173,16 @@ function ProjectRing({ done, total }) {
           transform={`rotate(-90 ${cx} ${cy})`}
         />
       )}
-      <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central" className="proj-ring-num">
-        {outstanding}
-      </text>
+      {finished ? (
+        <polyline
+          points="11,17 15,21 23,12" fill="none" stroke="var(--cat-6)" strokeWidth="2.5"
+          strokeLinecap="round" strokeLinejoin="round"
+        />
+      ) : (
+        <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central" className="proj-ring-num">
+          {outstanding}
+        </text>
+      )}
     </svg>
   );
 }
@@ -184,8 +196,7 @@ function StatStrip({ tasks, todayStr }) {
     const overdue = pending.filter(t => t.due_date && dayDiff(t.due_date, todayStr) < 0).length;
     const dueToday = pending.filter(t => t.due_date && dayDiff(t.due_date, todayStr) === 0).length;
 
-    // Current week window, Monday to Sunday, in Pristina local terms. Tasks with
-    // a due date inside it form the denominator; the done ones the numerator.
+    // Current week window, Monday to Sunday, in Pristina local terms.
     const t0 = new Date(todayStr + 'T00:00:00');
     const dow = (t0.getDay() + 6) % 7;   // 0 = Monday
     const monday = new Date(t0); monday.setDate(t0.getDate() - dow);
@@ -193,9 +204,19 @@ function StatStrip({ tasks, todayStr }) {
     const iso = d => d.toLocaleDateString('en-CA');
     const wkStart = iso(monday), wkEnd = iso(sunday);
 
-    const weekTasks = tasks.filter(t => t.due_date && t.due_date >= wkStart && t.due_date <= wkEnd);
-    const weekTotal = weekTasks.length;
-    const weekDone = weekTasks.filter(t => t.done === 1).length;
+    // Numerator: tasks whose completion landed inside this week, whatever their
+    // due date and whether they ever had one. completed_at is a datetime, so its
+    // date portion is what the week window is compared against. Both task types
+    // now carry completed_at, so both count equally.
+    const inWeek = ts => { const d = (ts || '').slice(0, 10); return d >= wkStart && d <= wkEnd; };
+    const weekDone = tasks.filter(t => t.done === 1 && t.completed_at && inWeek(t.completed_at)).length;
+
+    // Denominator: this week's actionable load, so the ring reads as how much of
+    // what needed clearing is cleared. That is the tasks completed this week plus
+    // the tasks still open that are due by the end of this week, overdue ones
+    // included. A full ring means nothing due is left open.
+    const pendingDue = pending.filter(t => t.due_date && t.due_date <= wkEnd).length;
+    const weekTotal = weekDone + pendingDue;
 
     return { overdue, dueToday, weekTotal, weekDone };
   }, [tasks, todayStr]);
@@ -216,7 +237,7 @@ function StatStrip({ tasks, todayStr }) {
         <div className="est-pipe-label">Completed this week</div>
         <div
           className="est-pipe-ring"
-          title={`${strip.weekDone} of ${strip.weekTotal} tasks due this week completed`}
+          title={`${strip.weekDone} completed this week, of ${strip.weekTotal} due or done this week`}
         >
           <CompletedRing completed={strip.weekDone} total={strip.weekTotal} />
         </div>
@@ -582,7 +603,7 @@ export default function TasksView() {
   if (loading) return <div className="loading">Loading tasks...</div>;
 
   return (
-    <div>
+    <div className="tasks-page">
       <StatStrip tasks={tasks} todayStr={todayStr} />
 
       {/* One search above both columns: filters both at once. */}
@@ -645,7 +666,7 @@ export default function TasksView() {
           </div>
 
           {hasPending ? (
-            <div className="card" style={{ marginTop: '16px' }}>
+            <div className="card" style={{ marginTop: '10px' }}>
               {GROUP_ORDER.map(key => {
                 const items = standalonePending[key];
                 if (!items.length) return null;
@@ -679,7 +700,7 @@ export default function TasksView() {
 
           {/* Completed sub-section: collapsible, collapsed by default. */}
           {standaloneDone.length > 0 && (
-            <div className="card" style={{ marginTop: '16px' }}>
+            <div className="card" style={{ marginTop: '10px' }}>
               <button className="standalone-done-header" onClick={() => setDoneOpen(o => !o)}>
                 <span className="standalone-done-label">
                   Completed
