@@ -2404,18 +2404,72 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
    single column on a narrow viewport, with the list stacked beneath the map. */
 .map-split {
   display: grid; grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-rows: minmax(0, 1fr);
   gap: 16px; flex: 1; min-height: 0;
 }
 .map-split .map-container {
   border-radius: 20px; overflow: hidden; position: relative; height: 100%;
+}
+/* The list ends level with the map and scrolls inside itself when it overflows,
+   rather than sizing to its rows and leaving a tall empty panel beside a full
+   height map. The single row track above makes both columns share the height. */
+.map-split .map-list { height: 100%; }
+
+/* Move mode editing surface: a clear inset ring in the accent so it is obvious a
+   drag will change data, plus a grab cursor on the pins. */
+.map-container.is-editing { box-shadow: inset 0 0 0 2px var(--accent); }
+.map-container.is-editing .proj-pin { cursor: grab; }
+.map-container.is-editing .proj-pin:active { cursor: grabbing; }
+
+/* Move toggle: an icon button matching the group filter dots on this page. */
+.map-move-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border-radius: 10px; flex-shrink: 0;
+  background: var(--surface-card); border: 1px solid var(--color-hairline);
+  color: var(--color-mid-gray); cursor: pointer; transition: all 0.15s ease;
+}
+.map-move-btn:hover { color: var(--color-ink); }
+.map-move-btn.active { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
+
+/* Move feedback toasts, centred over the foot of the map. */
+.map-toast {
+  position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
+  z-index: 600; display: flex; align-items: center; gap: 12px;
+  padding: 8px 14px; border-radius: 12px; font-size: 13px; font-weight: 500;
+  box-shadow: 0 4px 16px var(--overlay-07); max-width: calc(100% - 24px);
+}
+.map-undo { background: var(--accent); color: var(--accent-contrast); }
+.map-undo button {
+  background: transparent; border: none; color: var(--accent-contrast);
+  font-weight: 700; cursor: pointer; text-decoration: underline;
+  font-size: 13px; padding: 0;
+}
+.map-toast-error {
+  background: var(--ember-soft); color: var(--color-ember-text);
+  border: 1px solid var(--ember-line);
 }
 
 /* Dark basemap: OpenStreetMap serves light tiles only, so the dark variant is a
    filter over the tile images. Markers, the heat canvas and controls live in
    other panes and stay untouched. Tuned so land, water and labels stay legible
    against the app's dark surfaces. */
+/* Light basemap: OpenStreetMap tiles carry saturated greens and blues that sit
+   loud next to the app's restrained neutral surfaces, so the chroma is pulled
+   down to about half. Enough colour survives that water and parkland still read
+   apart; the pins and the heat layer stay the loudest colour on the map. */
+.map-container .leaflet-tile {
+  filter: saturate(0.5);
+}
+
+/* Dark basemap: OpenStreetMap serves light tiles only, so the dark look is a
+   filter over them. The tiles are desaturated to zero BEFORE inverting, so the
+   forest greens that once inverted to green and survived a soft saturate can no
+   longer leave any colour cast. The result is a neutral grey slab: grayscale
+   kills the hue, invert flips light to dark, and brightness and contrast tune
+   the slab while keeping roads, water, labels and boundaries apart by lightness.
+   This rule follows the light rule in source order, so it wins on the dark map. */
 .map-dark .leaflet-tile {
-  filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.9) saturate(0.75);
+  filter: grayscale(1) invert(1) brightness(0.94) contrast(0.86);
 }
 
 /* Project pin: category glyph on a group-tinted fill, ringed in the status hue.
@@ -2488,9 +2542,9 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 
 @media (max-width: 900px) {
   .map-page { height: auto; }
-  .map-split { grid-template-columns: 1fr; }
+  .map-split { grid-template-columns: 1fr; grid-template-rows: auto auto; }
   .map-split .map-container { height: 55vh; min-height: 320px; }
-  .map-list { max-height: 40vh; }
+  .map-list, .map-split .map-list { height: auto; max-height: 40vh; }
   .map-mode-toggle { margin-left: 0; }
 }
 

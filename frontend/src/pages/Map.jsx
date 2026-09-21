@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { useNavigate } from 'react-router-dom';
-import { MapPin, Maximize2 } from 'lucide-react';
+import { MapPin, Maximize2, Move } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
 import 'react-leaflet-cluster/lib/assets/MarkerCluster.css';
 import 'react-leaflet-cluster/lib/assets/MarkerCluster.Default.css';
@@ -13,6 +13,7 @@ import { api, fmt } from '../api';
 import { Private } from '../context/PrivacyContext';
 import { useTheme } from '../context/ThemeContext';
 import { GROUP_TINT, categoryVisual, CategoryTile } from '../lib/categoryIcons';
+import { shortenAddress } from '../lib/address';
 
 // Fix default leaflet marker icon broken in webpack/vite environments. The
 // popup still uses the default pin shadow assets, so they stay registered.
@@ -170,6 +171,21 @@ export default function Map() {
   const [groupFilter, setGroupFilter]   = useState(persisted.groupFilter || '');
   const [mapMode, setMapMode]           = useState(persisted.mapMode || 'pins');
 
+  // Move mode lets a pin be dragged to correct a project's location. It is
+  // transient, off on every load, so the map never opens in a data editing
+  // state. On a touch device a drag cannot be told apart from a pan, so the
+  // whole feature is withheld there rather than risking a silent move.
+  const [moveMode, setMoveMode] = useState(false);
+  const isTouch = useRef(
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      && window.matchMedia('(pointer: coarse)').matches
+  ).current;
+
+  // A short lived undo for the last move, and a transient inline error.
+  const [undoState, setUndoState] = useState(null);   // { id, orig: {lat,lng,name} }
+  const [error, setError] = useState('');
+  const undoTimer = useRef(null);
+
   const [center, setCenter] = useState(persisted.center || DEFAULT_CENTER);
   const [zoom, setZoom]     = useState(persisted.zoom || DEFAULT_ZOOM);
 
@@ -300,6 +316,146 @@ export default function Map() {
     else m.fitBounds(positions, { padding: [48, 48] });
   }
 
+  // Move mode only makes sense over pins, so entering it forces pins on, and
+  // leaving pins for the heat view turns it back off.
+  function toggleMove() {
+    setMoveMode(m => {
+      const next = !m;
+      if (next) setMapMode('pins');
+      return next;
+    });
+  }
+  useEffect(() => {
+    if (mapMode !== 'pins' && moveMode) setMoveMode(false);
+  }, [mapMode, moveMode]);
+
+  function flashError(msg) {
+    setError(msg);
+    setTimeout(() => setError(''), 4000);
+  }
+
+  // Every field the project update endpoint destructures, with only the
+  // coordinates and the location name changed. That endpoint owns the calendar
+  // sync and the status history guard, so this never writes a second path.
+  function buildProjectBody(p, lat, lng, name) {
+    return {
+      client_id: p.client_id ?? null,
+      title: p.title,
+      category_id: p.category_id ?? null,
+      status: p.status,
+      client_budget: p.client_budget ?? 0,
+      agreed_budget: p.agreed_budget ?? 0,
+      notes: p.notes ?? null,
+      shoot_date: p.shoot_date ?? null,
+      shoot_days: p.shoot_days ?? 1,
+      shoot_location: p.shoot_location ?? null,
+      location_name: name ?? null,
+      location_lat: lat,
+      location_lng: lng,
+      shoot_start_time: p.shoot_start_time ?? null,
+      shoot_end_time: p.shoot_end_time ?? null,
+      deadline: p.deadline ?? null,
+    };
+  }
+
+  function setProjectLocation(id, lat, lng, name) {
+    setProjects(prev => prev.map(x =>
+      x.id === id ? { ...x, location_lat: lat, location_lng: lng, location_name: name } : x));
+  }
+
+  function snapMarker(id, lat, lng) {
+    const marker = markerRefs.current[id];
+    if (marker && marker.setLatLng) marker.setLatLng([parseFloat(lat), parseFloat(lng)]);
+  }
+
+  // On drop: reverse geocode the new point, then persist coordinates and the
+  // refreshed name in one PUT. Optimistic, with a rollback of the pin if either
+  // request fails, and a few seconds of undo on success.
+  async function handleDragEnd(p, latlng) {
+    if (isTouch) return;
+    const orig = { lat: p.location_lat, lng: p.location_lng, name: p.location_name };
+    const newLat = latlng.lat, newLng = latlng.lng;
+
+    setProjectLocation(p.id, newLat, newLng, p.location_name);
+    try {
+      let newName = orig.name;
+      const rev = await api.get(`/shotlists/geocode/reverse?lat=${newLat}&lng=${newLng}`);
+      if (rev && rev.display_name) newName = rev.display_name;
+      await api.put(`/projects/${p.id}`, buildProjectBody(p, newLat, newLng, newName));
+      setProjectLocation(p.id, newLat, newLng, newName);
+      if (undoTimer.current) clearTimeout(undoTimer.current);
+      setUndoState({ id: p.id, orig });
+      undoTimer.current = setTimeout(() => setUndoState(null), 7000);
+    } catch (_) {
+      setProjectLocation(p.id, orig.lat, orig.lng, orig.name);
+      snapMarker(p.id, orig.lat, orig.lng);
+      flashError('Could not move the pin. It has been put back.');
+    }
+  }
+
+  // Undo restores both the coordinates and the previous location name.
+  async function undoMove() {
+    const u = undoState;
+    if (!u) return;
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    setUndoState(null);
+    const p = projects.find(x => x.id === u.id);
+    if (!p) return;
+    setProjectLocation(u.id, u.orig.lat, u.orig.lng, u.orig.name);
+    snapMarker(u.id, u.orig.lat, u.orig.lng);
+    try {
+      await api.put(`/projects/${u.id}`, buildProjectBody(p, u.orig.lat, u.orig.lng, u.orig.name));
+    } catch (_) {
+      flashError('Could not undo the move.');
+    }
+  }
+
+  // One marker, used both inside the cluster and, in move mode, as a plain
+  // draggable pin. Draggability is gated on move mode and a non touch pointer.
+  function renderMarker(p) {
+    return (
+      <Marker
+        key={p.id}
+        position={[parseFloat(p.location_lat), parseFloat(p.location_lng)]}
+        icon={iconsById[p.id]}
+        draggable={moveMode && !isTouch}
+        ref={el => { if (el) markerRefs.current[p.id] = el; else delete markerRefs.current[p.id]; }}
+        eventHandlers={{
+          mouseover: () => setHoveredId(p.id),
+          mouseout: () => setHoveredId(null),
+          dragend: e => handleDragEnd(p, e.target.getLatLng()),
+        }}
+      >
+        <Popup>
+          <div style={{ minWidth: '200px', padding: '4px 0' }}>
+            <div style={{ fontWeight: 700, color: 'var(--color-ink)', marginBottom: '6px', fontSize: '14px' }}>{p.title}</div>
+            {p.client_name && <div style={{ color: 'var(--color-mid-gray)', fontSize: '12px', marginBottom: '4px' }}>{p.client_name}</div>}
+            {p.location_name && (
+              <div title={p.location_name} style={{ color: 'var(--color-mid-gray)', fontSize: '12px', marginBottom: '6px' }}>
+                {shortenAddress(p.location_name)}
+              </div>
+            )}
+            {(Number(p.agreed_budget) || 0) > 0 && (
+              <div style={{ color: 'var(--accent)', fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>
+                <Private>{fmt(p.agreed_budget)}</Private>
+              </div>
+            )}
+            <button
+              onClick={() => navigate(`/projects/${p.id}`)}
+              style={{
+                background: 'var(--gradient-card)',
+                color: 'var(--accent-contrast)', border: 'none', borderRadius: '10px',
+                padding: '5px 12px', fontSize: '12px', cursor: 'pointer', fontWeight: 600,
+              }}
+            >
+              View Project
+            </button>
+          </div>
+        </Popup>
+      </Marker>
+    );
+  }
+
   return (
     <div className="map-page">
       <div className="page-header" style={{ marginBottom: '12px' }}>
@@ -358,11 +514,25 @@ export default function Map() {
             Heatmap
           </button>
         </div>
+
+        {/* Move mode: an icon toggle, withheld on touch where a drag reads as a
+            pan. Active state shows the editing surface is live. */}
+        {!isTouch && (
+          <button
+            className={`map-move-btn${moveMode ? ' active' : ''}`}
+            onClick={toggleMove}
+            title={moveMode ? 'Done moving pins' : 'Move pins to correct a location'}
+            aria-label="Move pins"
+            aria-pressed={moveMode}
+          >
+            <Move size={16} />
+          </button>
+        )}
       </div>
 
       {/* Two column split: map keeps the main area, list beside it. */}
       <div className="map-split">
-        <div className={`map-container${theme === 'dark' ? ' map-dark' : ''}`}>
+        <div className={`map-container${theme === 'dark' ? ' map-dark' : ''}${moveMode ? ' is-editing' : ''}`}>
           {!loading && (
             <MapContainer
               center={center}
@@ -377,49 +547,21 @@ export default function Map() {
 
               <TileLayer url={TILE_URL} attribution={TILE_ATTRIB} maxZoom={19} />
 
+              {/* In move mode clustering is off so every pin, including the
+                  dense Pristina group, is individually draggable. */}
               {mapMode === 'pins' && (
-                <MarkerClusterGroup
-                  chunkedLoading
-                  zoomToBoundsOnClick
-                  showCoverageOnHover={false}
-                  iconCreateFunction={clusterIconFn}
-                >
-                  {filtered.map(p => (
-                    <Marker
-                      key={p.id}
-                      position={[parseFloat(p.location_lat), parseFloat(p.location_lng)]}
-                      icon={iconsById[p.id]}
-                      ref={el => { if (el) markerRefs.current[p.id] = el; else delete markerRefs.current[p.id]; }}
-                      eventHandlers={{
-                        mouseover: () => setHoveredId(p.id),
-                        mouseout: () => setHoveredId(null),
-                      }}
+                moveMode
+                  ? filtered.map(renderMarker)
+                  : (
+                    <MarkerClusterGroup
+                      chunkedLoading
+                      zoomToBoundsOnClick
+                      showCoverageOnHover={false}
+                      iconCreateFunction={clusterIconFn}
                     >
-                      <Popup>
-                        <div style={{ minWidth: '200px', padding: '4px 0' }}>
-                          <div style={{ fontWeight: 700, color: 'var(--color-ink)', marginBottom: '6px', fontSize: '14px' }}>{p.title}</div>
-                          {p.client_name && <div style={{ color: 'var(--color-mid-gray)', fontSize: '12px', marginBottom: '4px' }}>{p.client_name}</div>}
-                          {p.location_name && <div style={{ color: 'var(--color-mid-gray)', fontSize: '12px', marginBottom: '6px' }}>{p.location_name}</div>}
-                          {(Number(p.agreed_budget) || 0) > 0 && (
-                            <div style={{ color: 'var(--accent)', fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>
-                              <Private>{fmt(p.agreed_budget)}</Private>
-                            </div>
-                          )}
-                          <button
-                            onClick={() => navigate(`/projects/${p.id}`)}
-                            style={{
-                              background: 'var(--gradient-card)',
-                              color: 'var(--accent-contrast)', border: 'none', borderRadius: '10px',
-                              padding: '5px 12px', fontSize: '12px', cursor: 'pointer', fontWeight: 600,
-                            }}
-                          >
-                            View Project
-                          </button>
-                        </div>
-                      </Popup>
-                    </Marker>
-                  ))}
-                </MarkerClusterGroup>
+                      {filtered.map(renderMarker)}
+                    </MarkerClusterGroup>
+                  )
               )}
 
               {mapMode === 'heat' && <HeatmapLayer points={heatPoints} />}
@@ -441,6 +583,15 @@ export default function Map() {
               </div>
             </div>
           )}
+
+          {error && <div className="map-toast map-toast-error">{error}</div>}
+
+          {undoState && (
+            <div className="map-toast map-undo">
+              <span>Location moved</span>
+              <button type="button" onClick={undoMove}>Undo</button>
+            </div>
+          )}
         </div>
 
         {/* Side list of the filtered projects, nearest to the map centre first. */}
@@ -460,10 +611,10 @@ export default function Map() {
                 <CategoryTile categoryName={p.category_name} groupName={p.group_name} size={32} />
                 <span className="map-list-identity">
                   <span className="map-list-title">{p.title}</span>
-                  <span className="map-list-sub">
+                  <span className="map-list-sub" title={p.location_name || ''}>
                     {p.client_name || ''}
                     {p.client_name && p.location_name ? ', ' : ''}
-                    {p.location_name || ''}
+                    {shortenAddress(p.location_name) || ''}
                   </span>
                 </span>
               </button>

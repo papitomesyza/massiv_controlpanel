@@ -218,6 +218,50 @@ router.get('/geocode', async (req, res) => {
   }
 });
 
+// Reverse geocode: coordinates to a place name, the same Nominatim proxy shape
+// as the forward search above so the request carries the identifying User-Agent
+// a browser cannot set and the client never talks to a third party directly.
+// The map uses this once per pin drop to keep a project's location name honest
+// against its coordinates. One request per drop, never during a drag.
+router.get('/geocode/reverse', async (req, res) => {
+  try {
+    const lat = Number(req.query && req.query.lat);
+    const lng = Number(req.query && req.query.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+      return res.status(400).json({ error: 'bad_coords' });
+    }
+
+    const url = 'https://nominatim.openstreetmap.org/reverse'
+      + `?format=jsonv2&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lng)}`;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    let upstream;
+    try {
+      upstream = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          Accept: 'application/json',
+          'User-Agent': 'MASSIV-TV Control Panel (map location editor)',
+        },
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (!upstream.ok) return res.status(502).json({ error: 'reverse_unavailable' });
+    const data = await upstream.json();
+    if (!data || !data.display_name) return res.status(502).json({ error: 'reverse_unavailable' });
+
+    res.json({
+      display_name: data.display_name,
+      name: data.name || String(data.display_name).split(',')[0] || '',
+    });
+  } catch (err) {
+    res.status(502).json({ error: 'reverse_unavailable' });
+  }
+});
+
 // Shot media upload — images only, 25MB, web + thumb generated, original
 // discarded. Identical rules to the pitch uploader, shared helper, own folder.
 const upload = multer(imageUploadOptions());

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { db } = require('../db/database');
 const { documentFilename } = require('../lib/filename');
+const { shortenAddress } = require('../lib/address');
 
 function validateLineFields({ days, rate, amount, discount }) {
   if (days !== undefined && days !== null) {
@@ -528,17 +529,9 @@ router.get('/:id/pdf', (req, res) => {
     );
   }
 
-  // Client facing location. A full Google formatted address, for example
-  // "Pristina, Municipality of Pristina, District of Prishtina, 10000, Kosovo",
-  // is machine formatting a client does not need to read. For the PDF only,
-  // when it has more than two comma separated parts keep just the first and the
-  // last ("Pristina, Kosovo"); two parts or fewer print unchanged. The full
-  // address is left untouched everywhere else in the app.
-  function shortenLocation(addr) {
-    const parts = String(addr || '').split(',').map(p => p.trim()).filter(Boolean);
-    if (parts.length > 2) return `${parts[0]}, ${parts[parts.length - 1]}`;
-    return addr;
-  }
+  // Client facing location. The full Google formatted address is machine
+  // formatting a client does not need to read, so the PDF prints the shortened
+  // form (see lib/address). The full address is left stored untouched.
 
   // The PREPARED FOR block as an ordered list of flowing fields, so a long
   // value pushes the ones below it down instead of overlapping them. Wrapping
@@ -546,7 +539,7 @@ router.get('/:id/pdf', (req, res) => {
   const projRows = [
     ['CATEGORY', budget.category || '-'],
     ['CLIENT', budget.client_name || '-'],
-    ['LOCATION', shortenLocation(budget.shoot_location) || '-'],
+    ['LOCATION', shortenAddress(budget.shoot_location) || '-'],
     ['SHOOT DAYS', String(budget.shoot_days || '-')],
   ];
   const preparedFields = [
