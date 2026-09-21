@@ -12,15 +12,19 @@ import { GROUP_TINT, categoryVisual } from '../lib/categoryIcons';
 // One visual per event type. Colour is derived from the type at render, never
 // stored: each type takes one hue from the shared categorical palette in
 // index.css, and one lucide glyph, so the month reads at a glance without a
-// single type word being printed. shoot reuses the amber the Projects next-shoot
-// ring uses, so a shoot reads the same colour wherever it appears. A task and a
+// single type word being printed. The four coloured types are spread across the
+// wheel so no two read as one colour at chip size: shoot amber, deadline blue,
+// task green, meeting rose. Shoot and deadline, the two most important types,
+// sit near opposite each other (amber vs blue) so they are unmistakable even
+// from across the room. Shoot keeps the amber the Projects next-shoot ring
+// uses, so a shoot reads the same colour wherever it appears. A task and a
 // standalone task are both work items, so they share the task visual.
 const EVENT_TYPE_VISUAL = {
   shoot:           { Icon: Camera, hue: 'var(--cat-2)',          label: 'Shoot' },
-  deadline:        { Icon: Flag,   hue: 'var(--cat-7)',          label: 'Deadline' },
-  task:            { Icon: Check,  hue: 'var(--cat-3)',          label: 'Task' },
-  standalone_task: { Icon: Check,  hue: 'var(--cat-3)',          label: 'Task' },
-  meeting:         { Icon: Users,  hue: 'var(--cat-4)',          label: 'Meeting' },
+  deadline:        { Icon: Flag,   hue: 'var(--cat-1)',          label: 'Deadline' },
+  task:            { Icon: Check,  hue: 'var(--cat-6)',          label: 'Task' },
+  standalone_task: { Icon: Check,  hue: 'var(--cat-6)',          label: 'Task' },
+  meeting:         { Icon: Users,  hue: 'var(--cat-5)',          label: 'Meeting' },
   other:           { Icon: Circle, hue: 'var(--color-mid-gray)', label: 'Other' },
 };
 function eventVisual(type) {
@@ -162,7 +166,7 @@ function StatStrip({ monthEvents, allEvents }) {
     : 'No upcoming shoot';
 
   return (
-    <div className="est-pipeline">
+    <div className="est-pipeline cal-stat-strip">
       <div className="est-pipe-cell">
         <div className="est-pipe-label">Shoot days this month</div>
         <div className="est-pipe-value">{stat.shootDays}</div>
@@ -179,6 +183,22 @@ function StatStrip({ monthEvents, allEvents }) {
       </div>
     </div>
   );
+}
+
+// True below the mobile breakpoint, kept in sync with a matchMedia listener so
+// the grid switches to the density layout without a reload.
+function useIsMobile() {
+  const query = '(max-width: 768px)';
+  const [mobile, setMobile] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia(query).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const on = e => setMobile(e.matches);
+    mq.addEventListener('change', on);
+    setMobile(mq.matches);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  return mobile;
 }
 
 export default function Calendar() {
@@ -202,7 +222,9 @@ export default function Calendar() {
   const [dayDrawer, setDayDrawer] = useState(null);
   const [dragError, setDragError] = useState('');
   const [highlightDate, setHighlightDate] = useState(null);
+  const [selectedDay, setSelectedDay] = useState(null);
 
+  const isMobile = useIsMobile();
   const cellRefs = useRef({});
 
   const sensors = useSensors(
@@ -237,6 +259,22 @@ export default function Calendar() {
     loadEvents();
     api.get('/projects').then(setProjects).catch(() => {});
   }, [loadEvents]);
+
+  // The mobile day panel defaults to today when today is in the displayed month
+  // or week, otherwise to the first visible day. Navigating months resets it;
+  // tapping a day overrides it until the next navigation. Scrolling never
+  // touches these deps, so the selection persists while the user scrolls.
+  useEffect(() => {
+    if (view === 'week') {
+      const todayDS = fmtDS(new Date());
+      const inWeek = todayDS >= weekStart && todayDS <= addDaysStr(weekStart, 6);
+      setSelectedDay(inWeek ? todayDS : weekStart);
+    } else {
+      const t = new Date();
+      if (t.getFullYear() === year && t.getMonth() === month) setSelectedDay(fmtDS(t));
+      else setSelectedDay(dateStr(year, month, 1));
+    }
+  }, [view, year, month, weekStart]);
 
   // project_id -> category group name, for the chip's project-identity left edge.
   const projectGroupById = useMemo(() => {
@@ -382,6 +420,10 @@ export default function Calendar() {
     });
   }, [eventsByDate]);
 
+  // The whole seven day window empty reads as broken when shown as seven dashes,
+  // so it collapses to a single quiet state instead.
+  const agendaEmpty = agenda.every(d => d.events.length === 0);
+
   // Scroll the grid to a highlighted day and clear the highlight shortly after.
   useEffect(() => {
     if (!highlightDate) return;
@@ -400,6 +442,7 @@ export default function Calendar() {
       setMonth(d.getMonth());
     }
     setHighlightDate(ds);
+    setSelectedDay(ds); // keep the mobile day panel in step with the agenda
   }
 
   const navLabel = view === 'week'
@@ -462,54 +505,112 @@ export default function Calendar() {
         <div className="cal-layout">
           <div className="cal-main">
             {view === 'month' ? (
-              <div className="calendar-grid-outer">
-                <div className="calendar-day-headers">
-                  {DAYS.map(d => <div key={d} className="calendar-day-label">{d}</div>)}
+              isMobile ? (
+                // Mobile month: a density grid. Each cell carries only the date
+                // and a row of type coloured dots, and no chip text truncates.
+                // Tapping a day reveals its full events in the panel beneath.
+                <>
+                  <div className="calendar-grid-outer">
+                    <div className="calendar-day-headers">
+                      {DAYS.map(d => <div key={d} className="calendar-day-label">{d}</div>)}
+                    </div>
+                    <div className="cal-mgrid">
+                      {monthCells.flatMap(wk => wk.cells).map(cell => (
+                        <MobileDensityCell
+                          key={cell.ds}
+                          ds={cell.ds}
+                          cellDay={cell.cellDay}
+                          isCurrentMonth={cell.isCurrentMonth}
+                          isToday={cell.isToday}
+                          isSelected={cell.ds === selectedDay}
+                          events={cell.events}
+                          onSelect={setSelectedDay}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                  <DayEventsPanel ds={selectedDay} events={eventsByDate[selectedDay] || []} onClickEvent={ev => setDetailModal(ev)} />
+                </>
+              ) : (
+                <div className="calendar-grid-outer">
+                  <div className="calendar-day-headers">
+                    {DAYS.map(d => <div key={d} className="calendar-day-label">{d}</div>)}
+                  </div>
+                  <div className="calendar-day-grid">
+                    {monthCells.map((wk, wi) =>
+                      wk.cells.map((cell, ci) => (
+                        <DroppableDayCell
+                          key={`${wi}-${ci}`}
+                          cell={cell}
+                          compact={!wk.hasEvents}
+                          highlight={cell.ds === highlightDate}
+                          edgeTintFor={edgeTintFor}
+                          registerRef={el => { cellRefs.current[cell.ds] = el; }}
+                          onClickEmpty={() => setAddModal({ date: cell.ds })}
+                          onClickEvent={ev => setDetailModal(ev)}
+                          onOverflow={() => setDayDrawer({ ds: cell.ds, events: cell.events })}
+                        />
+                      ))
+                    )}
+                  </div>
                 </div>
-                <div className="calendar-day-grid">
-                  {monthCells.map((wk, wi) =>
-                    wk.cells.map((cell, ci) => (
-                      <DroppableDayCell
-                        key={`${wi}-${ci}`}
-                        cell={cell}
-                        compact={!wk.hasEvents}
-                        highlight={cell.ds === highlightDate}
-                        edgeTintFor={edgeTintFor}
-                        registerRef={el => { cellRefs.current[cell.ds] = el; }}
-                        onClickEmpty={() => setAddModal({ date: cell.ds })}
-                        onClickEvent={ev => setDetailModal(ev)}
-                        onOverflow={() => setDayDrawer({ ds: cell.ds, events: cell.events })}
-                      />
-                    ))
-                  )}
-                </div>
-              </div>
+              )
             ) : (
-              <div className="cal-week">
-                {weekDates.map(ds => {
-                  const d = parseDS(ds);
-                  return (
-                    <WeekDayColumn
-                      key={ds}
-                      ds={ds}
-                      isToday={isSameDay(d, today)}
-                      highlight={ds === highlightDate}
-                      events={eventsByDate[ds] || []}
-                      edgeTintFor={edgeTintFor}
-                      registerRef={el => { cellRefs.current[ds] = el; }}
-                      onClickEmpty={() => setAddModal({ date: ds })}
-                      onClickEvent={ev => setDetailModal(ev)}
-                    />
-                  );
-                })}
-              </div>
+              isMobile ? (
+                // Mobile week: the same density principle across seven days.
+                <>
+                  <div className="cal-mweek">
+                    {weekDates.map(ds => {
+                      const d = parseDS(ds);
+                      return (
+                        <MobileDensityCell
+                          key={ds}
+                          ds={ds}
+                          dow={DAYS[d.getDay() === 0 ? 6 : d.getDay() - 1]}
+                          cellDay={d.getDate()}
+                          isCurrentMonth
+                          isToday={isSameDay(d, today)}
+                          isSelected={ds === selectedDay}
+                          events={eventsByDate[ds] || []}
+                          onSelect={setSelectedDay}
+                        />
+                      );
+                    })}
+                  </div>
+                  <DayEventsPanel ds={selectedDay} events={eventsByDate[selectedDay] || []} onClickEvent={ev => setDetailModal(ev)} />
+                </>
+              ) : (
+                <div className="cal-week">
+                  {weekDates.map(ds => {
+                    const d = parseDS(ds);
+                    return (
+                      <WeekDayColumn
+                        key={ds}
+                        ds={ds}
+                        isToday={isSameDay(d, today)}
+                        highlight={ds === highlightDate}
+                        events={eventsByDate[ds] || []}
+                        edgeTintFor={edgeTintFor}
+                        registerRef={el => { cellRefs.current[ds] = el; }}
+                        onClickEmpty={() => setAddModal({ date: ds })}
+                        onClickEvent={ev => setDetailModal(ev)}
+                      />
+                    );
+                  })}
+                </div>
+              )
             )}
           </div>
 
           {/* Agenda: next seven days, empty days kept so the week's rhythm shows. */}
           <div className="cal-agenda">
             <div className="cal-agenda-title">Next 7 days</div>
-            {agenda.map(({ ds, events: dayEvents }) => {
+            {agendaEmpty ? (
+              <div className="cal-agenda-empty">
+                <CalendarDays size={18} />
+                <span>Nothing scheduled</span>
+              </div>
+            ) : agenda.map(({ ds, events: dayEvents }) => {
               const d = parseDS(ds);
               const isToday = isSameDay(d, today);
               return (
@@ -661,6 +762,62 @@ function WeekDayColumn({ ds, isToday, highlight, events, edgeTintFor, registerRe
           <DraggableEventChip key={ev.id} ev={ev} edgeTint={edgeTintFor(ev)} onClick={e => { e.stopPropagation(); onClickEvent(ev); }} />
         ))}
       </div>
+    </div>
+  );
+}
+
+// A mobile day cell: date number and a row of type coloured dots, capped at
+// three with a plus marker when more. No event text renders here, so nothing
+// truncates. Tapping selects the day for the panel beneath the grid.
+function MobileDensityCell({ ds, dow, cellDay, isCurrentMonth, isToday, isSelected, events, onSelect }) {
+  const MAX_DOTS = 3;
+  const dots = events.slice(0, MAX_DOTS);
+  const extra = events.length - MAX_DOTS;
+  return (
+    <button
+      type="button"
+      className={`cal-mcell${isToday ? ' is-today' : ''}${isSelected ? ' is-selected' : ''}${isCurrentMonth ? '' : ' is-out'}`}
+      onClick={() => onSelect(ds)}
+      aria-pressed={isSelected}
+    >
+      {dow && <span className="cal-mcell-dow">{dow}</span>}
+      <span className={`cal-mcell-num${isToday ? ' is-today' : ''}`}>{cellDay}</span>
+      <span className="cal-mcell-dots">
+        {dots.map(ev => (
+          <span key={ev.id} className="cal-mdot" style={{ background: eventVisual(ev.event_type).hue }} />
+        ))}
+        {extra > 0 && <span className="cal-mdot-more">+</span>}
+      </span>
+    </button>
+  );
+}
+
+// The selected day's events below the mobile grid, as readable rows carrying the
+// type icon, the time and the full untruncated title.
+function DayEventsPanel({ ds, events, onClickEvent }) {
+  if (!ds) return null;
+  const d = parseDS(ds);
+  const dow = DAYS[d.getDay() === 0 ? 6 : d.getDay() - 1];
+  return (
+    <div className="cal-day-panel">
+      <div className="cal-day-panel-head">{dow} {d.getDate()} {MONTH_NAMES[d.getMonth()]}</div>
+      {events.length === 0 ? (
+        <div className="cal-day-panel-empty">
+          <CalendarDays size={18} />
+          <span>Nothing scheduled</span>
+        </div>
+      ) : (
+        events.map(ev => {
+          const { Icon, hue } = eventVisual(ev.event_type);
+          return (
+            <button type="button" key={ev.id} className="cal-day-row" onClick={() => onClickEvent(ev)}>
+              <span className="cal-day-row-icon" style={{ color: hue }}><Icon size={15} /></span>
+              {ev.start_time && <span className="cal-day-row-time">{ev.start_time.slice(0, 5)}</span>}
+              <span className="cal-day-row-title">{ev.title}</span>
+            </button>
+          );
+        })
+      )}
     </div>
   );
 }

@@ -2496,10 +2496,19 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
   color: var(--chip-hue);
 }
 
-/* Type filter toggles: reuse the estimate/project filter dot. */
+/* Type filter toggles: reuse the estimate/project filter dot. The off state is
+   made unmistakable: no tint at all, a muted grey glyph struck through by a
+   diagonal rule. Only an active (shown) type carries its colour and tinted
+   frame, so a user never has to hover to tell which types are hidden. */
 .cal-type-filters { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
-.cal-type-dot { color: var(--tint); }
-.cal-type-dot.active { opacity: 1; border-color: var(--tint); background: color-mix(in srgb, var(--tint) 12%, transparent); }
+.cal-type-dot { position: relative; color: var(--color-mid-gray); }
+.cal-type-dot:not(.active) { opacity: 0.5; }
+.cal-type-dot:not(.active)::after {
+  content: ''; position: absolute; left: 6px; right: 6px; top: 50%;
+  height: 1.5px; background: var(--color-mid-gray);
+  transform: rotate(-45deg); transform-origin: center; border-radius: 2px;
+}
+.cal-type-dot.active { opacity: 1; color: var(--tint); border-color: var(--tint); background: color-mix(in srgb, var(--tint) 12%, transparent); }
 
 /* Week view: seven day columns. */
 .cal-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
@@ -2520,12 +2529,21 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 .cal-week-body { min-height: 320px; padding: 5px; cursor: pointer; }
 .cal-week-sep { height: 1px; background: var(--color-hairline); margin: 5px 0; }
 
-/* Agenda strip: next seven days as rows, empty days kept. */
+/* Agenda strip: next seven days as rows, empty days kept. It sizes to its own
+   content rather than stretching to the grid beside it, so a light week does not
+   reserve a tall empty area. */
 .cal-agenda {
   border: 1px solid var(--color-hairline); border-radius: 12px;
-  background: var(--surface-card); padding: 10px; align-self: stretch;
+  background: var(--surface-card); padding: 10px; align-self: start;
 }
 .cal-agenda-title { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--color-mid-gray); padding: 2px 4px 8px; }
+/* A wholly empty seven day window collapses to one quiet state instead of seven
+   dashes, so it reads as calm rather than broken. */
+.cal-agenda-empty {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 22px 8px 18px; color: var(--color-mid-gray);
+  font-size: 12px; font-weight: 600;
+}
 .cal-agenda-day {
   display: flex; gap: 10px; width: 100%; text-align: left;
   padding: 8px 6px; border: none; border-top: 1px solid var(--color-hairline);
@@ -2544,6 +2562,53 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 
 .cal-drawer-list { display: flex; flex-direction: column; gap: 4px; padding: 4px 0 12px; }
 .cal-drawer-list .cal-chip { font-size: 12px; padding: 5px 8px; }
+
+/* ===== MOBILE DENSITY GRID =====
+   Below the mobile breakpoint the seven column grid is too narrow for chip text,
+   so each day cell carries only the date and a row of type coloured dots. These
+   classes render only when the JS mobile layout is active, so they need no media
+   query of their own. */
+.cal-mgrid, .cal-mweek {
+  display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px;
+}
+.cal-mcell {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  min-height: 48px; padding: 6px 2px; min-width: 0;
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-hairline); border-radius: 8px;
+  cursor: pointer; transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.cal-mcell.is-out { opacity: 0.4; }
+.cal-mcell.is-today { border-color: var(--accent); box-shadow: inset 0 2px 0 var(--accent); }
+.cal-mcell.is-selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.cal-mcell-dow { font-size: 8px; font-weight: 700; text-transform: uppercase; color: var(--color-mid-gray); line-height: 1; }
+.cal-mcell-num { font-size: 13px; font-weight: 600; color: var(--color-ink); line-height: 1; }
+.cal-mcell-num.is-today { color: var(--accent); }
+.cal-mcell-dots { display: flex; align-items: center; justify-content: center; gap: 3px; min-height: 6px; }
+.cal-mdot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.cal-mdot-more { font-size: 11px; font-weight: 700; line-height: 6px; color: var(--color-mid-gray); }
+
+/* The selected day's full events, revealed beneath the mobile grid. */
+.cal-day-panel {
+  margin-top: 14px; border: 1px solid var(--color-hairline); border-radius: 12px;
+  background: var(--surface-card); padding: 6px 12px 8px;
+}
+.cal-day-panel-head {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--color-mid-gray); padding: 8px 2px;
+}
+.cal-day-row {
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+  background: none; border: none; border-top: 1px solid var(--color-hairline);
+  padding: 11px 2px; cursor: pointer;
+}
+.cal-day-row-icon { display: inline-flex; flex-shrink: 0; }
+.cal-day-row-time { font-size: 12px; font-weight: 600; color: var(--color-mid-gray); flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.cal-day-row-title { font-size: 14px; color: var(--color-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.cal-day-panel-empty {
+  display: flex; align-items: center; gap: 8px;
+  padding: 14px 2px; color: var(--color-mid-gray); font-size: 13px; font-weight: 600;
+}
 
 @media (max-width: 900px) {
   .cal-layout { grid-template-columns: 1fr; }
@@ -4442,6 +4507,15 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 @media (max-width: 640px) {
   .est-pipeline { grid-template-columns: 1fr 1fr; }
   .est-pipeline:not(.est-pipeline-4) .est-pipe-cell:nth-child(3) { grid-column: 1 / -1; flex-direction: row; align-items: center; justify-content: space-between; }
+  /* The calendar strip stacks into three even rows, each label left and its
+     figure or ring right, so nothing is stranded and the ring no longer floats. */
+  .est-pipeline.cal-stat-strip { grid-template-columns: 1fr; gap: 0; }
+  .est-pipeline.cal-stat-strip .est-pipe-cell {
+    flex-direction: row; align-items: center; justify-content: space-between;
+    gap: 12px; padding: 11px 0; border-top: 1px solid var(--color-hairline);
+  }
+  .est-pipeline.cal-stat-strip .est-pipe-cell:first-child { border-top: none; padding-top: 4px; }
+  .est-pipeline.cal-stat-strip .est-pipe-label { margin: 0; }
   /* The four-figure strip drops to a clean 2x2, ring bottom right. */
   .est-pipeline-4 { grid-template-columns: 1fr 1fr; }
   .est-pipeline-4 .est-pipe-cell:nth-child(4) { flex-direction: row; align-items: center; justify-content: space-between; }
