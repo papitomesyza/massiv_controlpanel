@@ -4619,6 +4619,13 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 .split-tip-label { flex: 1; }
 .split-tip-val { font-weight: 700; }
 
+/* Payment progress bar: amount paid against the invoice total. A track in the
+   hairline tone with a single fill whose width is the paid proportion, so a
+   part paid invoice reads at a glance. Colours are shared tokens. */
+.pay-bar-wrap { display: block; width: 100%; }
+.pay-bar { display: block; width: 100%; height: 6px; border-radius: 4px; overflow: hidden; background: var(--color-hairline); }
+.pay-bar-fill { display: block; height: 100%; border-radius: 4px; min-width: 0; transition: width 0.2s ease; }
+
 /* Legend: the one place status words live */
 .est-legend { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--color-hairline); }
 .est-legend-item { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--color-mid-gray); }

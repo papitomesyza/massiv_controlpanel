@@ -2,6 +2,33 @@ const express = require('express');
 const router = express.Router();
 const { db } = require('../db/database');
 const { syncPayment, removePayment } = require('../lib/flowSync');
+const { documentFilename } = require('../lib/filename');
+
+// Methods client_payments supports, mirroring the client payment form on the
+// project page. Bank transfer is the default.
+const PAYMENT_METHODS = ['bank_transfer', 'cash', 'other'];
+
+// Money rounded to cents, so repeated add/subtract on a balance never drifts.
+const round2 = v => Math.round((Number(v) || 0) * 100) / 100;
+
+// Today in Pristina local time. Kosovo shares the Europe/Belgrade zone
+// (CET/CEST), and en-CA formats as YYYY-MM-DD. Never UTC: before 02:00 local a
+// UTC date would still read as yesterday and drop the payment into the wrong
+// week of every monthly figure.
+function pristinaToday() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Belgrade', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+}
+
+// The stored status column stays one of draft, issued or paid so every existing
+// reader keeps working. Paid means the balance is cleared; the partially-paid
+// distinction is derived from amount_paid against amount_due, never stored here.
+function storedStatusFor(inv, amountPaid) {
+  const balance = (Number(inv.amount_due) || 0) - (Number(amountPaid) || 0);
+  if (balance <= 0.005) return 'paid';
+  return inv.invoice_number ? 'issued' : 'draft';
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -207,6 +234,35 @@ router.get('/', (req, res) => {
   res.json(rows);
 });
 
+// ─── Stats strip ──────────────────────────────────────────────────────────────
+// Answers the page's one question: how much money is owed. Outstanding is the
+// unpaid balance across issued invoices; overdue is the slice of that past its
+// due date; collected-this-month reads the real payment dates of invoice-linked
+// payments, never the invoice dates. Registered before /:id so 'stats' is not
+// swallowed as an id.
+
+router.get('/stats', (req, res) => {
+  const today = pristinaToday();
+  const issued = db.prepare(
+    "SELECT amount_due, amount_paid, due_date FROM invoices WHERE status = 'issued'"
+  ).all();
+
+  let outstanding = 0;
+  let overdue = 0;
+  for (const i of issued) {
+    const balance = (Number(i.amount_due) || 0) - (Number(i.amount_paid) || 0);
+    if (balance <= 0.005) continue;
+    outstanding += balance;
+    if (i.due_date && i.due_date < today) overdue += balance;
+  }
+
+  const collected = db.prepare(
+    "SELECT COALESCE(SUM(amount), 0) v FROM client_payments WHERE status = 'received' AND invoice_id IS NOT NULL AND strftime('%Y-%m', date) = ?"
+  ).get(today.slice(0, 7)).v;
+
+  res.json({ outstanding: round2(outstanding), overdue: round2(overdue), collected: round2(collected) });
+});
+
 // ─── Create Invoice ───────────────────────────────────────────────────────────
 
 router.post('/', (req, res) => {
@@ -354,12 +410,22 @@ router.delete('/:id', (req, res) => {
   const inv = db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id);
   if (!inv) return res.status(404).json({ error: 'Not found' });
 
+  // A recorded payment is real money in the books, and the invoice is the
+  // document behind it. Deleting the invoice while payments remain would either
+  // orphan that income (the old behaviour, which nulled invoice_id and left the
+  // money floating with no document) or silently erase received money. Neither
+  // is acceptable for money, so deletion is refused until the payments are
+  // removed deliberately through the reverse action, which reverses the books
+  // as it goes.
+  const linked = db.prepare('SELECT COUNT(*) c FROM client_payments WHERE invoice_id = ?').get(inv.id).c;
+  if (linked > 0) {
+    return res.status(400).json({
+      error: 'This invoice has recorded payments. Remove them first so no received money is left in the books without a document behind it.',
+    });
+  }
+
   // Remove tax record
   db.prepare('DELETE FROM invoice_tax_records WHERE invoice_id = ?').run(inv.id);
-
-  // Unlink any payment tied to this invoice but keep the row — received money
-  // stays recorded even after the invoice is deleted.
-  db.prepare('UPDATE client_payments SET invoice_id = NULL WHERE invoice_id = ?').run(inv.id);
 
   db.prepare('DELETE FROM invoices WHERE id = ?').run(inv.id);
   res.json({ ok: true });
@@ -392,60 +458,124 @@ router.post('/:id/issue', (req, res) => {
   res.json({ ok: true, invoice_number: invoiceNumber });
 });
 
-// ─── Mark Paid ────────────────────────────────────────────────────────────────
+// ─── Payments ─────────────────────────────────────────────────────────────────
+// A single invoice can take several payments over time. Each is a real
+// client_payments row linked by invoice_id, and the invoice's amount_paid is the
+// running sum. The payment state (unpaid, partly paid, paid) is derived from
+// that balance, never a separate stored flag. Recording a payment that clears
+// the balance is the same action as marking the invoice paid, so there is no
+// separate mark-paid control.
 
-router.post('/:id/paid', (req, res) => {
-  const inv = db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id);
+// List the payments recorded against an invoice, so the interface can show them
+// and offer to remove one. Linkage is by invoice_id only.
+router.get('/:id/payments', (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const rows = db.prepare(
+    "SELECT id, amount, date, method, status FROM client_payments WHERE invoice_id = ? ORDER BY date ASC, id ASC"
+  ).all(id);
+  res.json(rows);
+});
+
+// Record a payment. Amount defaults to the remaining balance, the date is
+// supplied by the user (defaulting to today in Pristina, set client-side), and
+// the method is chosen from the ones client_payments supports.
+router.post('/:id/payments', (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const inv = db.prepare('SELECT * FROM invoices WHERE id = ?').get(id);
   if (!inv) return res.status(404).json({ error: 'Not found' });
 
-  const prevStatus = inv.status;
-  db.prepare("UPDATE invoices SET status='paid' WHERE id=?").run(inv.id);
-
-  // Create one client_payment for the linked project, only once. Linkage is by
-  // invoice_id; the note text is kept only for human-readable display.
-  if (inv.project_id && prevStatus !== 'paid') {
-    const existing = db.prepare(
-      'SELECT id FROM client_payments WHERE invoice_id = ?'
-    ).get(inv.id);
-
-    if (!existing) {
-      const noteStr = `Invoice ${inv.invoice_number || inv.id} - ${(inv.client_name || '').trim()}`.trim();
-      const result = db.prepare(`
-        INSERT INTO client_payments (project_id, amount, date, method, notes, status, invoice_id)
-        VALUES (?, ?, ?, 'bank_transfer', ?, 'received', ?)
-      `).run(
-        inv.project_id,
-        inv.amount_due,
-        new Date().toISOString().split('T')[0],
-        noteStr,
-        inv.id,
-      );
-      syncPayment(result.lastInsertRowid);
-    } else {
-      syncPayment(existing.id);
-    }
+  // Income must always land somewhere. client_payments.project_id is NOT NULL,
+  // so an invoice with no linked project cannot record income at all. Rather
+  // than fail silently, which is the worst outcome for money, we refuse and say
+  // why, and the interface blocks the action for the same reason.
+  if (!inv.project_id) {
+    return res.status(400).json({
+      error: 'Link this invoice to a project before recording a payment: income is recorded against a project, so without one there is nowhere for the money to go.',
+    });
   }
+
+  let { amount, date, method } = req.body;
+  const balance = round2((Number(inv.amount_due) || 0) - (Number(inv.amount_paid) || 0));
+  if (balance <= 0.005) {
+    return res.status(400).json({ error: 'This invoice is already fully paid.' });
+  }
+
+  amount = (amount === undefined || amount === null || amount === '') ? balance : Number(amount);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return res.status(400).json({ error: 'Payment amount must be greater than zero.' });
+  }
+  if (amount > balance + 0.005) {
+    return res.status(400).json({ error: 'Payment is larger than the outstanding balance.' });
+  }
+  amount = round2(amount);
+
+  const payDate = (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) ? date : pristinaToday();
+  const payMethod = PAYMENT_METHODS.includes(method) ? method : 'bank_transfer';
+  const noteStr = `Invoice ${inv.invoice_number || inv.id} - ${(inv.client_name || '').trim()}`.trim();
+
+  // Insert and re-total in one transaction so the invoice balance and the
+  // payment row can never fall out of step. better-sqlite3 runs synchronously,
+  // so nothing interleaves between the read and the write.
+  const record = db.transaction(() => {
+    const result = db.prepare(`
+      INSERT INTO client_payments (project_id, amount, date, method, notes, status, invoice_id)
+      VALUES (?, ?, ?, ?, ?, 'received', ?)
+    `).run(inv.project_id, amount, payDate, payMethod, noteStr, inv.id);
+
+    const cur = db.prepare('SELECT amount_due, amount_paid, invoice_number FROM invoices WHERE id = ?').get(id);
+    const newPaid = round2((Number(cur.amount_paid) || 0) + amount);
+    const status = storedStatusFor(cur, newPaid);
+    db.prepare('UPDATE invoices SET amount_paid = ?, status = ? WHERE id = ?').run(newPaid, status, id);
+    return result.lastInsertRowid;
+  });
+  const paymentId = record();
+  syncPayment(paymentId);
+
+  res.json({ ok: true, payment_id: paymentId });
+});
+
+// Remove one recorded payment, reversing both the invoice balance and its
+// client_payments row. A payment can only be removed through the invoice it
+// actually belongs to (invoice_id match), never by matching note text.
+router.delete('/:id/payments/:paymentId', (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const paymentId = parseInt(req.params.paymentId, 10);
+  const inv = db.prepare('SELECT id FROM invoices WHERE id = ?').get(id);
+  if (!inv) return res.status(404).json({ error: 'Not found' });
+
+  const payment = db.prepare('SELECT * FROM client_payments WHERE id = ? AND invoice_id = ?').get(paymentId, id);
+  if (!payment) return res.status(404).json({ error: 'Payment not found for this invoice' });
+
+  const reverse = db.transaction(() => {
+    db.prepare('DELETE FROM client_payments WHERE id = ?').run(paymentId);
+    const cur = db.prepare('SELECT amount_due, amount_paid, invoice_number FROM invoices WHERE id = ?').get(id);
+    const newPaid = round2(Math.max(0, (Number(cur.amount_paid) || 0) - (Number(payment.amount) || 0)));
+    const status = storedStatusFor(cur, newPaid);
+    db.prepare('UPDATE invoices SET amount_paid = ?, status = ? WHERE id = ?').run(newPaid, status, id);
+  });
+  reverse();
+  removePayment(paymentId);
 
   res.json({ ok: true });
 });
 
-// ─── Mark Unpaid (revert to issued) ──────────────────────────────────────────
-
+// ─── Mark Unpaid (reverse every payment) ─────────────────────────────────────
+// Resets the invoice to owing its full amount, removing every payment linked to
+// it and reversing each in the books. Kept as an explicit action, shown in the
+// UI as an icon alongside its neighbours.
 router.post('/:id/unpaid', (req, res) => {
   const inv = db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id);
   if (!inv) return res.status(404).json({ error: 'Not found' });
 
-  const prevStatus = inv.status;
+  const payments = db.prepare('SELECT id FROM client_payments WHERE invoice_id = ?').all(inv.id);
   const targetStatus = inv.invoice_number ? 'issued' : 'draft';
-  db.prepare('UPDATE invoices SET status=? WHERE id=?').run(targetStatus, inv.id);
 
-  // Remove the payment that was created on mark-paid, matched by invoice_id only.
-  // If no payment carries this invoice_id, do nothing (no note-based fallback).
-  if (prevStatus === 'paid') {
-    const payment = db.prepare('SELECT id FROM client_payments WHERE invoice_id = ?').get(inv.id);
+  const reset = db.transaction(() => {
     db.prepare('DELETE FROM client_payments WHERE invoice_id = ?').run(inv.id);
-    if (payment) removePayment(payment.id);
-  }
+    db.prepare('UPDATE invoices SET amount_paid = 0, status = ? WHERE id = ?').run(targetStatus, inv.id);
+  });
+  reset();
+  payments.forEach(p => removePayment(p.id));
 
   res.json({ ok: true });
 });
@@ -656,12 +786,12 @@ router.get('/:id/pdf', (req, res) => {
     return `${dd}/${mm}/${date.getFullYear()}`;
   };
 
-  const safeClient = (inv.client_name || 'client').replace(/[^a-z0-9]/gi, '-').slice(0, 40);
-  const safeNum = (inv.invoice_number || 'draft').replace(/\//g, '-');
+  // Same clean shape an estimate downloads with, via the shared helper: diacritics
+  // stripped, runs of non alphanumerics collapsed to one dash, id zero padded.
+  const filename = `${documentFilename('Invoice', inv.id, inv.client_name)}.pdf`;
 
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition',
-    `attachment; filename="Invoice-${safeNum}-${safeClient}.pdf"`);
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
   const doc = new PDFDocument({ size: 'A4', margin: 0, autoFirstPage: true });
   doc.pipe(res);

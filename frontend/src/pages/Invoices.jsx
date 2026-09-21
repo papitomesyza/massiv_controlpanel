@@ -1,12 +1,13 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useLayoutEffect, useMemo } from 'react';
 import {
-  Receipt, Plus, Download, Trash2, Pencil, Send, Check,
-  CheckCircle, Settings, Package, Image as ImageIcon,
-  AlertCircle, FileText,
+  Receipt, Plus, Download, Trash2, Pencil, Send, Search, MoreVertical,
+  Wallet, RotateCcw, X, Settings, Package, Image as ImageIcon, FileText,
 } from 'lucide-react';
 import { api, fmt, fmtDate } from '../api';
+import { documentFilename } from '../lib/filename';
 import { Private } from '../context/PrivacyContext';
 import InvoiceBuilder from '../components/InvoiceBuilder';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 const TABS = [
   { key: 'list',  label: 'Invoices' },
@@ -28,20 +29,420 @@ const KOSOVO_BANKS = [
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
-function StatusBadge({ status, dueDate }) {
+// The four payment states shown as dots. Overdue is not a state of its own: it
+// is carried by the age ring turning ember, so it never needs a word. Every hue
+// is a shared categorical token from index.css.
+const INV_STATES = ['draft', 'unpaid', 'partial', 'paid'];
+const STATE_LABEL = { draft: 'Draft', unpaid: 'Unpaid', partial: 'Partly paid', paid: 'Paid' };
+const STATE_VAR = {
+  draft: 'var(--cat-1)',
+  unpaid: 'var(--cat-2)',
+  partial: 'var(--cat-4)',
+  paid: 'var(--cat-6)',
+};
+const DUE_SOON_DAYS = 14;   // the ring fills over the final fortnight when there is no issue date to span
+
+const PAY_METHODS = [
+  { value: 'bank_transfer', label: 'Bank transfer' },
+  { value: 'cash', label: 'Cash' },
+  { value: 'other', label: 'Other' },
+];
+const METHOD_LABEL = Object.fromEntries(PAY_METHODS.map(m => [m.value, m.label]));
+
+// Today in Pristina local time (Kosovo shares Europe/Belgrade), formatted as
+// YYYY-MM-DD. Never UTC, so a payment entered late at night keeps the right day.
+function pristinaToday() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Belgrade', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+}
+
+// Payment state derived from the balance, not from a stored flag.
+function paymentState(inv) {
+  const due = Number(inv.amount_due) || 0;
+  const paid = Number(inv.amount_paid) || 0;
+  if (paid > 0.005 && due - paid <= 0.005) return 'paid';
+  if (paid > 0.005) return 'partial';
+  return inv.status === 'draft' ? 'draft' : 'unpaid';
+}
+
+function isOverdue(inv) {
+  const st = paymentState(inv);
+  if (st === 'paid' || st === 'draft') return false;
+  return inv.due_date && new Date(inv.due_date + 'T23:59:59') < new Date();
+}
+
+// How full the age ring is: the invoice's life from issue date to due date, or,
+// when there is no issue date to span, the final fortnight before it is due.
+function ringFraction(inv) {
+  if (!inv.due_date) return null;
+  const due = new Date(inv.due_date + 'T23:59:59');
   const now = new Date();
-  const isOverdue = status === 'issued' && dueDate && new Date(dueDate + 'T23:59:59') < now;
-  if (isOverdue) return (
-    <span className="badge" style={{ background: 'var(--ember-soft)', color: 'var(--color-ember)' }}>Overdue</span>
+  if (now >= due) return 1;
+  const issue = inv.issue_date ? new Date(inv.issue_date + 'T00:00:00') : null;
+  if (!issue || due <= issue) {
+    const daysLeft = (due - now) / 86400000;
+    return Math.max(0, Math.min(1, 1 - daysLeft / DUE_SOON_DAYS));
+  }
+  return Math.max(0, Math.min(1, (now - issue) / (due - issue)));
+}
+
+// ── Hover tooltip ─────────────────────────────────────────────────────────────
+function Tip({ content, children, className = '' }) {
+  return (
+    <span className={`tip-wrap ${className}`}>
+      {children}
+      <span className="tip-pop" role="tooltip">{content}</span>
+    </span>
   );
-  if (status === 'paid') return (
-    <span className="badge" style={{ background: 'var(--overlay-05)', color: 'var(--color-ink)' }}>Paid</span>
+}
+
+// ── Status dot with age ring ──────────────────────────────────────────────────
+// The dot carries the payment state. An unpaid or part paid invoice also gets a
+// ring that fills as the due date nears and turns ember once it has passed, so
+// urgency reads without a single date on the card.
+function StatusDot({ inv, size = 12 }) {
+  const state = paymentState(inv);
+  const color = STATE_VAR[state] || 'var(--color-mid-gray)';
+  const showRing = state === 'unpaid' || state === 'partial';
+  const frac = showRing ? ringFraction(inv) : null;
+  if (frac === null) {
+    return <span className="status-dot" style={{ width: size, height: size, background: color }} />;
+  }
+  const ringColor = isOverdue(inv) ? 'var(--color-ember)' : color;
+  const R = size / 2 + 3;
+  const C = 2 * Math.PI * R;
+  const box = (R + 2) * 2;
+  return (
+    <span className="status-dot-ring" style={{ width: box, height: box }}>
+      <svg width={box} height={box} viewBox={`0 0 ${box} ${box}`} style={{ position: 'absolute', inset: 0 }}>
+        <circle cx={box / 2} cy={box / 2} r={R} fill="none" stroke="var(--color-hairline)" strokeWidth="2" />
+        <circle
+          cx={box / 2} cy={box / 2} r={R} fill="none" stroke={ringColor} strokeWidth="2"
+          strokeLinecap="round" strokeDasharray={C} strokeDashoffset={C * (1 - frac)}
+          transform={`rotate(-90 ${box / 2} ${box / 2})`}
+        />
+      </svg>
+      <span className="status-dot" style={{ width: size, height: size, background: color }} />
+    </span>
   );
-  if (status === 'issued') return (
-    <span className="badge" style={{ background: 'var(--overlay-04)', color: 'var(--accent)' }}>Issued</span>
+}
+
+// A static ember ring, used once in the legend to name the overdue treatment.
+function OverdueRingSample({ size = 10 }) {
+  const R = size / 2 + 3;
+  const C = 2 * Math.PI * R;
+  const box = (R + 2) * 2;
+  return (
+    <span className="status-dot-ring" style={{ width: box, height: box }}>
+      <svg width={box} height={box} viewBox={`0 0 ${box} ${box}`} style={{ position: 'absolute', inset: 0 }}>
+        <circle cx={box / 2} cy={box / 2} r={R} fill="none" stroke="var(--color-hairline)" strokeWidth="2" />
+        <circle cx={box / 2} cy={box / 2} r={R} fill="none" stroke="var(--color-ember)" strokeWidth="2"
+          strokeLinecap="round" strokeDasharray={C} strokeDashoffset={0}
+          transform={`rotate(-90 ${box / 2} ${box / 2})`} />
+      </svg>
+      <span className="status-dot" style={{ width: size, height: size, background: 'var(--cat-2)' }} />
+    </span>
+  );
+}
+
+// ── Payment progress bar ──────────────────────────────────────────────────────
+// Amount paid against the total, so a part paid invoice is visible at a glance.
+function ProgressBar({ inv }) {
+  const due = Number(inv.amount_due) || 0;
+  const paid = Number(inv.amount_paid) || 0;
+  const frac = due > 0 ? Math.max(0, Math.min(1, paid / due)) : (paid > 0 ? 1 : 0);
+  const fillColor = paymentState(inv) === 'paid' ? 'var(--cat-6)' : 'var(--cat-4)';
+  const tip = (
+    <span className="split-tip">
+      <span className="split-tip-row">
+        <span className="split-tip-swatch" style={{ background: fillColor }} />
+        <span className="split-tip-label">Paid</span>
+        <Private className="split-tip-val">{fmt(paid)}</Private>
+      </span>
+      <span className="split-tip-row">
+        <span className="split-tip-swatch" style={{ background: 'var(--color-hairline)' }} />
+        <span className="split-tip-label">Balance</span>
+        <Private className="split-tip-val">{fmt(Math.max(0, due - paid))}</Private>
+      </span>
+    </span>
   );
   return (
-    <span className="badge" style={{ background: 'var(--overlay-04)', color: 'var(--color-mid-gray)' }}>Draft</span>
+    <Tip content={tip} className="pay-bar-wrap">
+      <span className="pay-bar">
+        <span className="pay-bar-fill" style={{ width: `${frac * 100}%`, background: fillColor }} />
+      </span>
+    </Tip>
+  );
+}
+
+// ── Overflow menu ─────────────────────────────────────────────────────────────
+// One control per card, flipping upward when there is no room below. Every
+// action lives here as an icon plus a word, so mark-unpaid reads the same as its
+// neighbours rather than being a stray text button.
+function OverflowMenu({ inv, isOpen, onOpenChange, onAction }) {
+  const ref = useRef(null);
+  const menuRef = useRef(null);
+  const [dropUp, setDropUp] = useState(false);
+  const state = paymentState(inv);
+  const hasPayments = (Number(inv.amount_paid) || 0) > 0.005;
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    function onDoc(e) { if (ref.current && !ref.current.contains(e.target)) onOpenChange(null); }
+    function onKey(e) { if (e.key === 'Escape') onOpenChange(null); }
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [isOpen, onOpenChange]);
+
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    const btn = ref.current?.querySelector('.est-overflow-btn');
+    const menu = menuRef.current;
+    if (!btn || !menu) return;
+    const btnRect = btn.getBoundingClientRect();
+    const menuH = menu.offsetHeight;
+    const spaceBelow = window.innerHeight - btnRect.bottom;
+    setDropUp(spaceBelow < menuH + 12 && btnRect.top > menuH);
+  }, [isOpen]);
+
+  function pick(action) {
+    return (e) => { e.stopPropagation(); onOpenChange(null); onAction(action); };
+  }
+
+  return (
+    <div className="est-overflow" ref={ref} onClick={e => e.stopPropagation()}>
+      <button
+        className="btn-icon est-overflow-btn"
+        title="Actions"
+        aria-haspopup="true"
+        aria-expanded={isOpen}
+        onClick={e => { e.stopPropagation(); onOpenChange(isOpen ? null : inv.id); }}
+      >
+        <MoreVertical size={16} />
+      </button>
+      {isOpen && (
+        <div className={`est-menu ${dropUp ? 'drop-up' : ''}`} ref={menuRef} role="menu">
+          <button className="est-menu-item" onClick={pick('edit')}><Pencil size={14} /> Edit</button>
+          {state !== 'paid' && (
+            <button className="est-menu-item" onClick={pick('record')}><Wallet size={14} /> Record payment</button>
+          )}
+          <button className="est-menu-item" onClick={pick('pdf')}><Download size={14} /> Export PDF</button>
+          {state === 'draft' && (
+            <button className="est-menu-item" onClick={pick('issue')}><Send size={14} /> Issue</button>
+          )}
+          {hasPayments && (
+            <button className="est-menu-item" onClick={pick('unpaid')}><RotateCcw size={14} /> Mark unpaid</button>
+          )}
+          <div className="est-menu-sep" />
+          <button className="est-menu-item is-danger" onClick={pick('delete')}><Trash2 size={14} /> Delete</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Invoice card ──────────────────────────────────────────────────────────────
+function InvoiceCard({ inv, onOpen, onAction, menuOpen, onMenuChange }) {
+  const metaTip = (
+    <span>
+      <div>{`Issued: ${fmtDate(inv.issue_date) || 'not set'}`}</div>
+      <div>{`Due: ${fmtDate(inv.due_date) || 'not set'}`}</div>
+    </span>
+  );
+  return (
+    <div className={`est-card ${menuOpen ? 'is-menu-open' : ''}`} onClick={() => onOpen(inv)} role="button" tabIndex={0}
+      onKeyDown={e => { if (e.key === 'Enter') onOpen(inv); }}>
+      <div className="est-card-top">
+        <Tip content={metaTip} className="est-status">
+          <StatusDot inv={inv} />
+        </Tip>
+        <div style={{ flex: 1 }} />
+        <OverflowMenu inv={inv} isOpen={menuOpen} onOpenChange={onMenuChange} onAction={a => onAction(a, inv)} />
+      </div>
+
+      <div className="est-card-title" style={inv.invoice_number ? undefined : { color: 'var(--color-mid-gray)' }}>
+        {inv.invoice_number || 'Draft'}
+      </div>
+      <div className="est-card-client">{inv.client_name || 'No client'}</div>
+
+      <div className="est-card-total"><Private>{fmt(inv.amount_due)}</Private></div>
+
+      <ProgressBar inv={inv} />
+    </div>
+  );
+}
+
+// ── Stat strip ────────────────────────────────────────────────────────────────
+// The same construction the other pages use. Three figures, no subtitles, all
+// privacy aware. Overdue draws in ember so the eye lands on it.
+function StatStrip({ stats }) {
+  return (
+    <div className="est-pipeline">
+      <div className="est-pipe-cell">
+        <div className="est-pipe-label">Outstanding</div>
+        <div className="est-pipe-value"><Private>{fmt(stats.outstanding)}</Private></div>
+      </div>
+      <div className="est-pipe-cell">
+        <div className="est-pipe-label">Overdue</div>
+        <div className="est-pipe-value" style={{ color: (stats.overdue || 0) > 0 ? 'var(--color-ember)' : undefined }}>
+          <Private>{fmt(stats.overdue)}</Private>
+        </div>
+      </div>
+      <div className="est-pipe-cell">
+        <div className="est-pipe-label">Collected this month</div>
+        <div className="est-pipe-value"><Private>{fmt(stats.collected)}</Private></div>
+      </div>
+    </div>
+  );
+}
+
+// ── Record payment modal ──────────────────────────────────────────────────────
+// Records a payment against the invoice and lists the payments already recorded,
+// each removable. The amount defaults to the remaining balance, the date to
+// today in Pristina, the method to bank transfer.
+function RecordPaymentModal({ invoice, onClose, onChanged }) {
+  const [inv, setInv] = useState(invoice);
+  const [payments, setPayments] = useState([]);
+  const [form, setForm] = useState({ amount: '', date: pristinaToday(), method: 'bank_transfer' });
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const due = Number(inv.amount_due) || 0;
+  const paid = Number(inv.amount_paid) || 0;
+  const balance = Math.max(0, Math.round((due - paid) * 100) / 100);
+
+  async function reload() {
+    try {
+      const [full, pays] = await Promise.all([
+        api.get(`/invoices/${invoice.id}`),
+        api.get(`/invoices/${invoice.id}/payments`),
+      ]);
+      setInv(full);
+      setPayments(pays);
+      const nextBal = Math.max(0, Math.round(((Number(full.amount_due) || 0) - (Number(full.amount_paid) || 0)) * 100) / 100);
+      setForm(f => ({ ...f, amount: nextBal ? String(nextBal) : '' }));
+    } catch (e) { setError(e.message); }
+  }
+
+  useEffect(() => {
+    setForm(f => ({ ...f, amount: balance ? String(balance) : '' }));
+    reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function record() {
+    setError('');
+    const amt = Number(form.amount);
+    if (!Number.isFinite(amt) || amt <= 0) { setError('Enter an amount greater than zero.'); return; }
+    setBusy(true);
+    try {
+      await api.post(`/invoices/${invoice.id}/payments`, { amount: amt, date: form.date, method: form.method });
+      await reload();
+      onChanged();
+    } catch (e) { setError(e.message); }
+    setBusy(false);
+  }
+
+  async function remove(paymentId) {
+    setError('');
+    setBusy(true);
+    try {
+      await api.del(`/invoices/${invoice.id}/payments/${paymentId}`);
+      await reload();
+      onChanged();
+    } catch (e) { setError(e.message); }
+    setBusy(false);
+  }
+
+  const cleared = balance <= 0.005;
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal-box" style={{ width: '460px', maxWidth: '94vw' }}>
+        <div className="modal-header">
+          <div>
+            <div className="modal-title">Record payment</div>
+            <div style={{ fontSize: '12px', color: 'var(--color-mid-gray)', marginTop: '2px' }}>
+              {inv.invoice_number || 'Draft'} · {inv.client_name || 'No client'}
+            </div>
+          </div>
+          <button className="modal-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
+        </div>
+
+        <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {/* Balance readout */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: 'var(--overlay-02)', borderRadius: '10px' }}>
+            <span style={{ fontSize: '12px', color: 'var(--color-mid-gray)' }}>Remaining balance</span>
+            <span style={{ fontSize: '18px', fontWeight: 700, color: cleared ? 'var(--cat-6)' : 'var(--color-ink)' }}>
+              <Private>{fmt(balance)}</Private>
+            </span>
+          </div>
+
+          {!cleared && (
+            <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div>
+                <label style={{ fontSize: '11px', color: 'var(--color-mid-gray)', display: 'block', marginBottom: '4px' }}>Amount (EUR)</label>
+                <input className="input" type="number" min="0" step="0.01" value={form.amount}
+                  onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} />
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', color: 'var(--color-mid-gray)', display: 'block', marginBottom: '4px' }}>Date</label>
+                <input className="input" type="date" value={form.date}
+                  onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label style={{ fontSize: '11px', color: 'var(--color-mid-gray)', display: 'block', marginBottom: '4px' }}>Method</label>
+                <select className="select" style={{ width: '100%' }} value={form.method}
+                  onChange={e => setForm(f => ({ ...f, method: e.target.value }))}>
+                  {PAY_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
+              </div>
+            </div>
+          )}
+
+          {error && <div className="error-msg">{error}</div>}
+
+          {/* Recorded payments */}
+          {payments.length > 0 && (
+            <div>
+              <div style={{ fontSize: '11px', color: 'var(--color-mid-gray)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600, marginBottom: '8px' }}>
+                Recorded
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {payments.map(p => (
+                  <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 12px', background: 'var(--overlay-01)', border: '1px solid var(--color-hairline)', borderRadius: '10px' }}>
+                    <span className="status-dot" style={{ width: 8, height: 8, background: 'var(--cat-6)' }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '13px', fontWeight: 600 }}><Private>{fmt(p.amount)}</Private></div>
+                      <div style={{ fontSize: '11px', color: 'var(--color-mid-gray)' }}>
+                        {fmtDate(p.date)} · {METHOD_LABEL[p.method] || p.method}
+                      </div>
+                    </div>
+                    <button className="btn btn-ghost btn-sm" title="Remove payment" disabled={busy} onClick={() => remove(p.id)}>
+                      <Trash2 size={13} style={{ color: 'var(--color-ember)' }} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>Close</button>
+          {!cleared && (
+            <button className="btn btn-primary" onClick={record} disabled={busy}>
+              {busy ? 'Working...' : 'Record payment'}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -49,171 +450,196 @@ function StatusBadge({ status, dueDate }) {
 
 function InvoicesListTab({ onEdit, refresh }) {
   const [invoices, setInvoices] = useState([]);
+  const [stats, setStats] = useState({ outstanding: 0, overdue: 0, collected: 0 });
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('all');
+  const [query, setQuery] = useState('');
+  const [stateFilter, setStateFilter] = useState(null);
+  const [openMenuId, setOpenMenuId] = useState(null);
+  const [recordFor, setRecordFor] = useState(null);
+  const [confirm, setConfirm] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
 
   async function load() {
-    setLoading(true);
     try {
-      const data = await api.get('/invoices');
+      const [data, s] = await Promise.all([
+        api.get('/invoices'),
+        api.get('/invoices/stats').catch(() => ({ outstanding: 0, overdue: 0, collected: 0 })),
+      ]);
       setInvoices(data);
+      setStats(s);
     } catch (_) {}
     setLoading(false);
   }
 
   useEffect(() => { load(); }, [refresh]);
 
-  async function handleDelete(inv) {
-    if (!window.confirm(`Delete invoice ${inv.invoice_number || '#' + inv.id}? This cannot be undone.`)) return;
-    try { await api.del(`/invoices/${inv.id}`); load(); } catch (e) { alert(e.message); }
-  }
-
-  async function handleMarkPaid(inv) {
-    try { await api.post(`/invoices/${inv.id}/paid`, {}); load(); } catch (e) { alert(e.message); }
-  }
-
-  async function handleMarkUnpaid(inv) {
-    try { await api.post(`/invoices/${inv.id}/unpaid`, {}); load(); } catch (e) { alert(e.message); }
-  }
-
-  async function handleIssue(inv) {
-    try { await api.post(`/invoices/${inv.id}/issue`, {}); load(); } catch (e) { alert(e.message); }
-  }
-
-  async function handlePdf(inv) {
+  async function exportPdf(inv) {
     try {
-      const name = `Invoice-${(inv.invoice_number || inv.id).toString().replace(/\//g, '-')}-${(inv.client_name || '').replace(/[^a-z0-9]/gi, '-')}.pdf`;
+      // Same clean shape an estimate downloads with; the anchor's download name wins.
+      const name = `${documentFilename('Invoice', inv.id, inv.client_name)}.pdf`;
       await api.download(`/invoices/${inv.id}/pdf`, name);
-    } catch (e) { alert(e.message); }
+    } catch (e) { setError(e.message); }
   }
 
-  const filtered = invoices.filter(inv => {
-    if (filter === 'all') return true;
-    if (filter === 'draft') return inv.status === 'draft';
-    if (filter === 'issued') return inv.status === 'issued';
-    if (filter === 'paid') return inv.status === 'paid';
-    if (filter === 'overdue') {
-      const now = new Date();
-      return inv.status === 'issued' && inv.due_date && new Date(inv.due_date + 'T23:59:59') < now;
-    }
-    return true;
-  });
+  async function issue(inv) {
+    setError('');
+    try { await api.post(`/invoices/${inv.id}/issue`, {}); await load(); } catch (e) { setError(e.message); }
+  }
 
-  if (loading) return <div className="loading">Loading…</div>;
+  function handleAction(action, inv) {
+    setError('');
+    if (action === 'edit') return onEdit(inv);
+    if (action === 'pdf') return exportPdf(inv);
+    if (action === 'issue') return issue(inv);
+    if (action === 'record') {
+      if (!inv.project_id) {
+        setError('Link this invoice to a project before recording a payment: income is recorded against a project, so without one there is nowhere for the money to go. Open the invoice to add one.');
+        return;
+      }
+      return setRecordFor(inv);
+    }
+    if (action === 'unpaid') {
+      return setConfirm({
+        kind: 'unpaid', inv,
+        title: `Mark ${inv.invoice_number || 'this invoice'} unpaid?`,
+        message: 'Every payment recorded against it will be removed and the books reversed.',
+        confirmLabel: 'Mark unpaid', tone: 'danger',
+      });
+    }
+    if (action === 'delete') {
+      if ((Number(inv.amount_paid) || 0) > 0.005) {
+        setError('This invoice has recorded payments. Mark it unpaid first, so no received money is left in the books without a document behind it.');
+        return;
+      }
+      return setConfirm({
+        kind: 'delete', inv,
+        title: `Delete ${inv.invoice_number || 'this draft'}?`,
+        message: 'This cannot be undone.',
+        confirmLabel: 'Delete', tone: 'danger',
+      });
+    }
+  }
+
+  async function runConfirm() {
+    if (!confirm) return;
+    setBusy(true);
+    try {
+      if (confirm.kind === 'delete') {
+        await api.del(`/invoices/${confirm.inv.id}`);
+      } else if (confirm.kind === 'unpaid') {
+        await api.post(`/invoices/${confirm.inv.id}/unpaid`, {});
+      }
+      await load();
+      setConfirm(null);
+    } catch (e) { setError(e.message); }
+    setBusy(false);
+  }
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return invoices.filter(inv => {
+      if (stateFilter && paymentState(inv) !== stateFilter) return false;
+      if (!q) return true;
+      return (inv.invoice_number || '').toLowerCase().includes(q)
+        || (inv.client_name || '').toLowerCase().includes(q);
+    });
+  }, [invoices, query, stateFilter]);
+
+  if (loading) return <div className="loading">Loading...</div>;
 
   return (
     <div>
-      {/* Filter chips */}
-      <div style={{ display: 'flex', gap: '6px', marginBottom: '20px', flexWrap: 'wrap' }}>
-        {[
-          { key: 'all', label: 'All' },
-          { key: 'draft', label: 'Draft' },
-          { key: 'issued', label: 'Issued' },
-          { key: 'paid', label: 'Paid' },
-          { key: 'overdue', label: 'Overdue' },
-        ].map(f => (
-          <button key={f.key}
-            className={`btn btn-sm ${filter === f.key ? 'btn-primary' : 'btn-ghost'}`}
-            style={{ borderRadius: '18px', padding: '5px 16px' }}
-            onClick={() => setFilter(f.key)}
-          >
-            {f.label}
-          </button>
-        ))}
-      </div>
+      {invoices.length > 0 && <StatStrip stats={stats} />}
 
-      {filtered.length === 0 ? (
+      {invoices.length > 0 && (
+        <div className="est-controls">
+          <div className="est-search">
+            <Search size={15} />
+            <input
+              className="input"
+              placeholder="Search number or client"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+            />
+          </div>
+          <div className="est-filter-dots">
+            {INV_STATES.map(s => (
+              <button
+                key={s}
+                className={`est-filter-dot ${stateFilter === s ? 'active' : ''}`}
+                title={STATE_LABEL[s]}
+                aria-label={STATE_LABEL[s]}
+                onClick={() => setStateFilter(cur => cur === s ? null : s)}
+              >
+                <span className="status-dot" style={{ width: 12, height: 12, background: STATE_VAR[s] }} />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {error && <div className="error-msg" style={{ marginBottom: '12px' }}>{error}</div>}
+
+      {invoices.length === 0 ? (
         <div className="card card-pad" style={{ textAlign: 'center', padding: '64px 32px' }}>
           <Receipt size={40} color="var(--color-hairline-strong)" style={{ marginBottom: '16px' }} />
-          <div style={{ fontWeight: 600, fontSize: '16px', marginBottom: '8px' }}>
-            {filter === 'all' ? 'No invoices yet' : `No ${filter} invoices`}
-          </div>
+          <div style={{ fontWeight: 600, fontSize: '16px', marginBottom: '8px' }}>No invoices yet</div>
           <div style={{ color: 'var(--color-mid-gray)', fontSize: '13px' }}>
-            {filter === 'all' && 'Create your first invoice with the button above.'}
+            Create your first invoice with the button above.
           </div>
         </div>
+      ) : filtered.length === 0 ? (
+        <div className="card"><div className="empty" style={{ padding: '48px 32px' }}>No invoices match.</div></div>
       ) : (
-        <div className="card">
-          <div className="table-wrap table-responsive">
-            <table>
-              <thead>
-                <tr>
-                  <th>Number</th>
-                  <th>Client</th>
-                  <th>Issue Date</th>
-                  <th>Due Date</th>
-                  <th style={{ textAlign: 'right' }}>Amount Due</th>
-                  <th>Status</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map(inv => {
-                  const now = new Date();
-                  const isOverdue = inv.status === 'issued' && inv.due_date &&
-                    new Date(inv.due_date + 'T23:59:59') < now;
-                  return (
-                    <tr key={inv.id} style={isOverdue ? { background: 'var(--ember-soft)' } : {}}>
-                      <td data-label="Invoice">
-                        <span style={{ fontWeight: 700, color: inv.invoice_number ? 'var(--color-ink)' : 'var(--color-faint)' }}>
-                          {inv.invoice_number || `Draft #${inv.id}`}
-                        </span>
-                      </td>
-                      <td data-label="Client" className="text-sm">{inv.client_name || <span style={{ color: 'var(--color-mid-gray)' }}>—</span>}</td>
-                      <td data-label="Issued" className="text-sm text-2">{fmtDate(inv.issue_date)}</td>
-                      <td data-label="Due" className="text-sm text-2" style={{ color: isOverdue ? 'var(--color-ember)' : undefined }}>
-                        {fmtDate(inv.due_date) || '—'}
-                      </td>
-                      <td data-label="Amount" style={{ textAlign: 'right', fontWeight: 700, color: 'var(--accent)' }}>
-                        {<Private>{fmt(inv.amount_due)}</Private>}
-                      </td>
-                      <td data-label="Status">
-                        <StatusBadge status={inv.status} dueDate={inv.due_date} />
-                      </td>
-                      <td className="mobile-actions">
-                        <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                          <button className="btn btn-ghost btn-sm" title="Edit"
-                            onClick={() => onEdit(inv)}>
-                            <Pencil size={13} />
-                          </button>
-                          <button className="btn btn-ghost btn-sm" title="Export PDF"
-                            onClick={() => handlePdf(inv)}>
-                            <Download size={13} />
-                          </button>
-                          {inv.status === 'draft' && (
-                            <button className="btn btn-ghost btn-sm" title="Issue"
-                              style={{ color: 'var(--accent)' }}
-                              onClick={() => handleIssue(inv)}>
-                              <Send size={13} />
-                            </button>
-                          )}
-                          {inv.status === 'issued' && (
-                            <button className="btn btn-ghost btn-sm" title="Mark Paid"
-                              style={{ color: 'var(--color-ink)' }}
-                              onClick={() => handleMarkPaid(inv)}>
-                              <Check size={13} />
-                            </button>
-                          )}
-                          {inv.status === 'paid' && (
-                            <button className="btn btn-ghost btn-sm" title="Mark Unpaid"
-                              style={{ color: 'var(--color-mid-gray)', fontSize: '11px' }}
-                              onClick={() => handleMarkUnpaid(inv)}>
-                              Unpaid
-                            </button>
-                          )}
-                          <button className="btn btn-ghost btn-sm" title="Delete"
-                            onClick={() => handleDelete(inv)}>
-                            <Trash2 size={13} style={{ color: 'var(--color-ember)' }} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+        <div className="est-grid">
+          {filtered.map(inv => (
+            <InvoiceCard
+              key={inv.id}
+              inv={inv}
+              onOpen={onEdit}
+              onAction={handleAction}
+              menuOpen={openMenuId === inv.id}
+              onMenuChange={setOpenMenuId}
+            />
+          ))}
         </div>
+      )}
+
+      {/* Legend: the one place the status words appear. */}
+      {invoices.length > 0 && (
+        <div className="est-legend">
+          {INV_STATES.map(s => (
+            <span key={s} className="est-legend-item">
+              <span className="status-dot" style={{ width: 10, height: 10, background: STATE_VAR[s] }} />
+              {STATE_LABEL[s]}
+            </span>
+          ))}
+          <span className="est-legend-item est-legend-ring">
+            <OverdueRingSample />
+            Overdue
+          </span>
+        </div>
+      )}
+
+      {recordFor && (
+        <RecordPaymentModal
+          invoice={recordFor}
+          onClose={() => setRecordFor(null)}
+          onChanged={load}
+        />
+      )}
+
+      {confirm && (
+        <ConfirmDialog
+          title={confirm.title}
+          message={confirm.message}
+          confirmLabel={confirm.confirmLabel}
+          tone={confirm.tone}
+          busy={busy}
+          onConfirm={runConfirm}
+          onCancel={() => setConfirm(null)}
+        />
       )}
     </div>
   );
@@ -663,7 +1089,6 @@ export default function Invoices() {
       <div className="page-header" style={{ marginBottom: '20px' }}>
         <div>
           <div className="page-title">Invoices</div>
-          <div className="page-subtitle">Issue, track and export client invoices</div>
         </div>
         {activeTab === 'list' && (
           <div style={{ display: 'flex', gap: '8px' }}>

@@ -517,6 +517,12 @@ function initDb() {
     // Optional pipeline value on a lead. Nullable, never required: a lead can
     // sit in the rail with no figure attached. Used to size the lead chips.
     'ALTER TABLE leads ADD COLUMN value REAL',
+    // How much has actually been received against an invoice. Defaults to zero,
+    // so a fresh invoice owes its full amount. The payment state (unpaid,
+    // partially paid, paid) is derived from this against amount_due rather than
+    // stored, so a client paying a deposit against a larger invoice has a real
+    // place to sit instead of forcing the books to read all or nothing.
+    'ALTER TABLE invoices ADD COLUMN amount_paid REAL DEFAULT 0',
   ].forEach(sql => { try { db.exec(sql); } catch (_) {} });
 
   // collection_share_links table
@@ -607,6 +613,26 @@ function initDb() {
       const noteStr = `Invoice ${inv.invoice_number} - ${(inv.client_name || '').trim()}`.trim();
       const pay = findPayment.get(inv.project_id, noteStr);
       if (pay) linkPayment.run(inv.id, pay.id);
+    }
+  } catch (_) {}
+
+  // Backfill invoices.amount_paid for invoices already marked paid before the
+  // partial-payment model existed. Every such invoice had its full amount_due
+  // received, so amount_paid must equal amount_due, otherwise a paid invoice
+  // would read as unpaid and the historical books would break. The settings
+  // guard makes this run exactly once, so a later manual edit to amount_paid is
+  // never clobbered. This touches only the invoices table: no client_payments
+  // row is inserted, updated or deleted, so every derived revenue figure (the
+  // Dashboard, Finances and P&L all read client_payments, never this column)
+  // is left exactly as it was.
+  try {
+    const done = db.prepare("SELECT value FROM settings WHERE key = 'invoice_amount_paid_backfilled'").get();
+    if (!done) {
+      const r = db.prepare(
+        "UPDATE invoices SET amount_paid = amount_due WHERE status = 'paid' AND COALESCE(amount_paid, 0) = 0"
+      ).run();
+      db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('invoice_amount_paid_backfilled', '1')").run();
+      if (r.changes) console.log(`INFO: Backfilled amount_paid on ${r.changes} already-paid invoice(s).`);
     }
   } catch (_) {}
 

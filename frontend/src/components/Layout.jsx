@@ -76,6 +76,38 @@ function fmtShortDate(d) {
   return `${day}/${month}`;
 }
 
+// A collapsible sidebar group that sizes to its own contents instead of a
+// hardcoded pixel height, so it can never clip a link however many it holds.
+// The collapse still animates: on open it measures the natural content height,
+// animates max-height to it, then releases the cap to none so nothing is ever
+// cut off; on close it pins that measured height, then animates down to zero.
+function CollapsibleGroup({ open, children }) {
+  const ref = useRef(null);
+  const [maxHeight, setMaxHeight] = useState(open ? 'none' : '0px');
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    if (open) {
+      setMaxHeight(el.scrollHeight + 'px');
+      // After the open transition, drop the cap so later reflow can never clip.
+      const t = setTimeout(() => setMaxHeight('none'), 260);
+      return () => clearTimeout(t);
+    }
+    // Closing: max-height is 'none', which cannot animate. Pin the measured
+    // height first, then collapse to zero on the next frame.
+    setMaxHeight(el.scrollHeight + 'px');
+    const raf = requestAnimationFrame(() => requestAnimationFrame(() => setMaxHeight('0px')));
+    return () => cancelAnimationFrame(raf);
+  }, [open]);
+
+  return (
+    <div ref={ref} style={{ maxHeight, overflow: 'hidden', transition: 'max-height 0.25s ease' }}>
+      {children}
+    </div>
+  );
+}
+
 function getGroupForPath(pathname) {
   if (OPS_LINKS.some(l => pathname.startsWith(l.to))) return 'ops';
   if (DB_LINKS.some(l => pathname.startsWith(l.to))) return 'db';
@@ -188,14 +220,14 @@ export default function Layout() {
               <span>Operations</span>
               <ChevronRight size={15} style={{ transform: openGroup === 'ops' ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease', flexShrink: 0 }} />
             </button>
-            <div style={{ maxHeight: openGroup === 'ops' ? '400px' : '0', overflow: 'hidden', transition: 'max-height 0.25s ease' }}>
+            <CollapsibleGroup open={openGroup === 'ops'}>
               {OPS_LINKS.map(({ to, icon: Icon, label }) => (
                 <NavLink key={to} to={to} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
                   <div className="nav-icon"><Icon size={18} /></div>
                   {label}
                 </NavLink>
               ))}
-            </div>
+            </CollapsibleGroup>
 
             <div style={{ height: '1px', background: 'var(--overlay-03)', margin: '4px 16px' }} />
 
@@ -207,14 +239,14 @@ export default function Layout() {
               <span>Database</span>
               <ChevronRight size={15} style={{ transform: openGroup === 'db' ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease', flexShrink: 0 }} />
             </button>
-            <div style={{ maxHeight: openGroup === 'db' ? '200px' : '0', overflow: 'hidden', transition: 'max-height 0.25s ease' }}>
+            <CollapsibleGroup open={openGroup === 'db'}>
               {DB_LINKS.map(({ to, icon: Icon, label }) => (
                 <NavLink key={to} to={to} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
                   <div className="nav-icon"><Icon size={18} /></div>
                   {label}
                 </NavLink>
               ))}
-            </div>
+            </CollapsibleGroup>
 
             <div style={{ height: '1px', background: 'var(--overlay-03)', margin: '4px 16px' }} />
 
@@ -226,14 +258,14 @@ export default function Layout() {
               <span>The Mind</span>
               <ChevronRight size={15} style={{ transform: openGroup === 'mind' ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease', flexShrink: 0 }} />
             </button>
-            <div style={{ maxHeight: openGroup === 'mind' ? '300px' : '0', overflow: 'hidden', transition: 'max-height 0.25s ease' }}>
+            <CollapsibleGroup open={openGroup === 'mind'}>
               {MIND_LINKS.map(({ to, icon: Icon, label }) => (
                 <NavLink key={to} to={to} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
                   <div className="nav-icon"><Icon size={18} /></div>
                   {label}
                 </NavLink>
               ))}
-            </div>
+            </CollapsibleGroup>
 
             <div style={{ height: '1px', background: 'var(--overlay-03)', margin: '4px 16px' }} />
 
@@ -245,14 +277,14 @@ export default function Layout() {
               <span>Tools</span>
               <ChevronRight size={15} style={{ transform: openGroup === 'tools' ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease', flexShrink: 0 }} />
             </button>
-            <div style={{ maxHeight: openGroup === 'tools' ? '200px' : '0', overflow: 'hidden', transition: 'max-height 0.25s ease' }}>
+            <CollapsibleGroup open={openGroup === 'tools'}>
               {TOOLS_LINKS.map(({ to, icon: Icon, label }) => (
                 <NavLink key={to} to={to} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
                   <div className="nav-icon"><Icon size={18} /></div>
                   {label}
                 </NavLink>
               ))}
-            </div>
+            </CollapsibleGroup>
           </nav>
 
           {upcoming.length > 0 && (
