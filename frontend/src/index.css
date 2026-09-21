@@ -2386,6 +2386,114 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 .more-launcher-overlay { z-index: 450 !important; }
 .fab-wrap    { z-index: 500 !important; }
 
+/* ============================================================
+   MAP PAGE
+   ============================================================ */
+.map-page { display: flex; flex-direction: column; height: calc(100vh - 80px); }
+
+/* Controls row: status pills, group icon filters, mode toggle. */
+.map-controls {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 12px; flex-wrap: wrap; flex-shrink: 0;
+}
+.map-status-pills { display: flex; gap: 6px; }
+.map-group-dots { padding-left: 12px; margin-left: 0; border-left: 1px solid var(--color-hairline); }
+.map-mode-toggle { margin-left: auto; display: flex; gap: 4px; }
+
+/* Two column split: map takes the main area, list beside it. Collapses to a
+   single column on a narrow viewport, with the list stacked beneath the map. */
+.map-split {
+  display: grid; grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 16px; flex: 1; min-height: 0;
+}
+.map-split .map-container {
+  border-radius: 20px; overflow: hidden; position: relative; height: 100%;
+}
+
+/* Dark basemap: OpenStreetMap serves light tiles only, so the dark variant is a
+   filter over the tile images. Markers, the heat canvas and controls live in
+   other panes and stay untouched. Tuned so land, water and labels stay legible
+   against the app's dark surfaces. */
+.map-dark .leaflet-tile {
+  filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.9) saturate(0.75);
+}
+
+/* Project pin: category glyph on a group-tinted fill, ringed in the status hue.
+   The dynamic colours are set inline from JS-resolved tokens; only structure is
+   styled here. */
+.proj-pin .pin-inner {
+  width: 26px; height: 26px; border-radius: 50%;
+  border: 3px solid transparent;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  transition: transform 0.12s ease;
+}
+.proj-pin.is-hover { z-index: 1000 !important; }
+.proj-pin.is-hover .pin-inner { transform: scale(1.32); }
+
+.proj-cluster .cluster-inner {
+  width: 38px; height: 38px; border-radius: 50%;
+  border: 2px solid var(--color-hairline);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 700;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+/* Fit All: an icon button floated over the map, top right. */
+.map-fit-btn {
+  position: absolute; top: 12px; right: 12px; z-index: 500;
+  width: 34px; height: 34px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface-card); color: var(--color-ink);
+  border: 1px solid var(--color-hairline); cursor: pointer;
+  box-shadow: 0 2px 12px var(--overlay-07);
+}
+.map-fit-btn:hover { background: var(--surface-input-fill); }
+
+/* Empty state card, centred over the map area. */
+.map-empty-card {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  z-index: 500; background: var(--surface-card); border: 1px solid var(--color-hairline);
+  box-shadow: var(--shadow-overlay); border-radius: var(--radius-cards);
+  padding: 32px 40px; text-align: center; max-width: 360px;
+}
+
+/* Side list: filtered projects, nearest to the map centre first. */
+.map-list {
+  overflow-y: auto; min-height: 0;
+  background: var(--surface-card); border: 1px solid var(--color-hairline);
+  border-radius: 16px; padding: 6px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.map-list-empty { padding: 20px 12px; text-align: center; color: var(--color-mid-gray); font-size: 13px; }
+.map-list-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 12px;
+  background: transparent; border: 1px solid transparent;
+  cursor: pointer; text-align: left; width: 100%;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.map-list-row:hover, .map-list-row.is-hover {
+  background: var(--surface-input-fill); border-color: var(--color-hairline);
+}
+.map-list-identity { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+.map-list-title {
+  font-size: 13px; font-weight: 600; color: var(--color-ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.map-list-sub {
+  font-size: 11px; color: var(--color-mid-gray);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+@media (max-width: 900px) {
+  .map-page { height: auto; }
+  .map-split { grid-template-columns: 1fr; }
+  .map-split .map-container { height: 55vh; min-height: 320px; }
+  .map-list { max-height: 40vh; }
+  .map-mode-toggle { margin-left: 0; }
+}
+
 /* ===== FLOATING NAV MENU BUTTON (mobile only) ===== */
 .fab-nav-btn { display: none; }
 @media (max-width: 768px) {
