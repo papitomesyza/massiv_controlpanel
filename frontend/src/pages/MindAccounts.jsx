@@ -10,6 +10,7 @@ import {
   encryptSecret, decryptSecret, makeSentinel, verifyKey,
 } from '../lib/vault';
 import { Private } from '../context/PrivacyContext';
+import Overlay from '../components/Overlay';
 
 const CATEGORY_META = {
   project:  { label: 'Project Accounts',  icon: FolderKanban, emptyMsg: 'No project accounts yet.' },
@@ -96,59 +97,53 @@ function VaultSetupModal({ onSetup, onClose }) {
   }
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal-box" style={{ maxWidth: 460 }}>
-        <div className="modal-header">
-          <span className="modal-title">Set Up Vault</span>
-          <button className="modal-close" onClick={onClose}><X size={18} /></button>
+    <Overlay title="Set Up Vault" onClose={onClose} width={460}>
+      <div style={{ marginBottom: '16px', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+        <p style={{ margin: '0 0 12px' }}>
+          The vault encrypts passwords locally before storing them. Only the encrypted ciphertext reaches the
+          server, your passphrase never leaves your device.
+        </p>
+        <div style={{
+          background: 'var(--ember-soft)', border: '1px solid var(--ember-line)',
+          borderRadius: 'var(--radius-nested)', padding: '10px 14px', fontSize: '12px', color: 'var(--color-ember)',
+        }}>
+          <strong>Warning:</strong> If you forget your passphrase, stored passwords cannot be recovered.
+          There is no reset option.
         </div>
-        <div style={{ marginBottom: '16px', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-          <p style={{ margin: '0 0 12px' }}>
-            The vault encrypts passwords locally before storing them. Only the encrypted ciphertext reaches the
-            server — your passphrase never leaves your device.
-          </p>
-          <div style={{
-            background: 'var(--ember-soft)', border: '1px solid var(--ember-line)',
-            borderRadius: 'var(--radius-nested)', padding: '10px 14px', fontSize: '12px', color: 'var(--color-ember)',
-          }}>
-            <strong>Warning:</strong> If you forget your passphrase, stored passwords cannot be recovered.
-            There is no reset option.
-          </div>
-        </div>
-        <form onSubmit={handleSubmit}>
-          <div className="form-row">
-            <label className="form-label">Master Passphrase</label>
-            <input
-              className="input"
-              type="password"
-              value={pass}
-              onChange={e => setPass(e.target.value)}
-              placeholder="Minimum 8 characters"
-              autoFocus
-              autoComplete="new-password"
-            />
-          </div>
-          <div className="form-row">
-            <label className="form-label">Confirm Passphrase</label>
-            <input
-              className="input"
-              type="password"
-              value={confirm}
-              onChange={e => setConfirm(e.target.value)}
-              placeholder="Re-enter passphrase"
-              autoComplete="new-password"
-            />
-          </div>
-          {error && <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 12px' }}>{error}</p>}
-          <div className="modal-footer">
-            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>
-              {saving ? 'Setting up…' : 'Create Vault'}
-            </button>
-          </div>
-        </form>
       </div>
-    </div>
+      <form onSubmit={handleSubmit}>
+        <div className="form-row">
+          <label className="form-label">Master Passphrase</label>
+          <input
+            className="input"
+            type="password"
+            value={pass}
+            onChange={e => setPass(e.target.value)}
+            placeholder="Minimum 8 characters"
+            autoFocus
+            autoComplete="new-password"
+          />
+        </div>
+        <div className="form-row">
+          <label className="form-label">Confirm Passphrase</label>
+          <input
+            className="input"
+            type="password"
+            value={confirm}
+            onChange={e => setConfirm(e.target.value)}
+            placeholder="Re-enter passphrase"
+            autoComplete="new-password"
+          />
+        </div>
+        {error && <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 12px' }}>{error}</p>}
+        <div className="modal-footer">
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="submit" className="btn btn-primary" disabled={saving}>
+            {saving ? 'Setting up…' : 'Create Vault'}
+          </button>
+        </div>
+      </form>
+    </Overlay>
   );
 }
 
@@ -179,35 +174,29 @@ function VaultUnlockModal({ vaultMeta, onUnlock, onClose }) {
   }
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal-box" style={{ maxWidth: 400 }}>
-        <div className="modal-header">
-          <span className="modal-title">Unlock Vault</span>
-          <button className="modal-close" onClick={onClose}><X size={18} /></button>
+    <Overlay title="Unlock Vault" onClose={onClose} width={400}>
+      <form onSubmit={handleSubmit}>
+        <div className="form-row">
+          <label className="form-label">Master Passphrase</label>
+          <input
+            className="input"
+            type="password"
+            value={pass}
+            onChange={e => setPass(e.target.value)}
+            placeholder="Enter your passphrase"
+            autoFocus
+            autoComplete="current-password"
+          />
         </div>
-        <form onSubmit={handleSubmit}>
-          <div className="form-row">
-            <label className="form-label">Master Passphrase</label>
-            <input
-              className="input"
-              type="password"
-              value={pass}
-              onChange={e => setPass(e.target.value)}
-              placeholder="Enter your passphrase"
-              autoFocus
-              autoComplete="current-password"
-            />
-          </div>
-          {error && <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 12px' }}>{error}</p>}
-          <div className="modal-footer">
-            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={unlocking}>
-              {unlocking ? 'Unlocking…' : 'Unlock'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        {error && <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 12px' }}>{error}</p>}
+        <div className="modal-footer">
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="submit" className="btn btn-primary" disabled={unlocking}>
+            {unlocking ? 'Unlocking…' : 'Unlock'}
+          </button>
+        </div>
+      </form>
+    </Overlay>
   );
 }
 
@@ -513,200 +502,194 @@ function AccountModal({ account, vaultKey, unlocked, onSave, onClose }) {
   }
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal-box" style={{ maxWidth: 520 }}>
-        <div className="modal-header">
-          <span className="modal-title">{isEdit ? 'Edit Account' : 'New Account'}</span>
-          <button className="modal-close" onClick={onClose}><X size={18} /></button>
+    <Overlay title={isEdit ? 'Edit Account' : 'New Account'} onClose={onClose} width={520}>
+      <form onSubmit={handleSubmit}>
+        <div className="form-row">
+          <label className="form-label">Category *</label>
+          <select className="select" value={form.category} onChange={e => set('category', e.target.value)}>
+            <option value="project">Project</option>
+            <option value="studio">Studio</option>
+            <option value="personal">Personal</option>
+          </select>
         </div>
-        <form onSubmit={handleSubmit}>
-          <div className="form-row">
-            <label className="form-label">Category *</label>
-            <select className="select" value={form.category} onChange={e => set('category', e.target.value)}>
-              <option value="project">Project</option>
-              <option value="studio">Studio</option>
-              <option value="personal">Personal</option>
-            </select>
-          </div>
-          <div className="form-row">
-            <label className="form-label">Platform *</label>
-            <input
-              className="input"
-              value={form.platform}
-              onChange={e => set('platform', e.target.value)}
-              placeholder="e.g. Instagram, Adobe, Netflix"
-              autoFocus
-            />
-          </div>
-          <div className="form-row">
-            <label className="form-label">Username / Email</label>
-            <input
-              className="input"
-              value={form.username}
-              onChange={e => set('username', e.target.value)}
-              placeholder="Login email or handle"
-            />
-          </div>
-          <div className="form-row">
-            <label className="form-label">Login URL</label>
-            <input
-              className="input"
-              value={form.url}
-              onChange={e => set('url', e.target.value)}
-              placeholder="https://..."
-            />
-          </div>
-          <div className="form-row">
-            <label className="form-label">Notes</label>
-            <textarea
-              className="input"
-              value={form.notes}
-              onChange={e => set('notes', e.target.value)}
-              placeholder="Optional notes"
-              style={{ resize: 'vertical', minHeight: '60px' }}
-            />
-          </div>
+        <div className="form-row">
+          <label className="form-label">Platform *</label>
+          <input
+            className="input"
+            value={form.platform}
+            onChange={e => set('platform', e.target.value)}
+            placeholder="e.g. Instagram, Adobe, Netflix"
+            autoFocus
+          />
+        </div>
+        <div className="form-row">
+          <label className="form-label">Username / Email</label>
+          <input
+            className="input"
+            value={form.username}
+            onChange={e => set('username', e.target.value)}
+            placeholder="Login email or handle"
+          />
+        </div>
+        <div className="form-row">
+          <label className="form-label">Login URL</label>
+          <input
+            className="input"
+            value={form.url}
+            onChange={e => set('url', e.target.value)}
+            placeholder="https://..."
+          />
+        </div>
+        <div className="form-row">
+          <label className="form-label">Notes</label>
+          <textarea
+            className="input"
+            value={form.notes}
+            onChange={e => set('notes', e.target.value)}
+            placeholder="Optional notes"
+            style={{ resize: 'vertical', minHeight: '60px' }}
+          />
+        </div>
 
-          <div className="form-row">
-            <label className="form-label">Sign-in method</label>
-            <select
-              className="select"
-              value={form.auth_method}
-              onChange={e => set('auth_method', e.target.value)}
-            >
-              {AUTH_METHODS.map(m => (
-                <option key={m.value} value={m.value}>{m.label}</option>
-              ))}
-            </select>
-          </div>
+        <div className="form-row">
+          <label className="form-label">Sign-in method</label>
+          <select
+            className="select"
+            value={form.auth_method}
+            onChange={e => set('auth_method', e.target.value)}
+          >
+            {AUTH_METHODS.map(m => (
+              <option key={m.value} value={m.value}>{m.label}</option>
+            ))}
+          </select>
+        </div>
 
-          {/* Password field — only for password accounts */}
-          {form.auth_method === 'password' && <div className="form-row">
-            <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-              Password
-              {!unlocked && (
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 400 }}>
-                  — unlock vault to save a password
-                </span>
-              )}
-              {unlocked && hasExistingPassword && !clearPassword && (
-                <span style={{ fontSize: '11px', color: 'var(--accent)', fontWeight: 400 }}>
-                  — stored
-                </span>
-              )}
-            </label>
-            <div style={{ position: 'relative' }}>
-              <input
-                className="input"
-                type={showPassword ? 'text' : 'password'}
-                value={clearPassword ? '' : passwordInput}
-                onChange={e => setPasswordInput(e.target.value)}
-                placeholder={
-                  !unlocked
-                    ? 'Unlock vault first'
-                    : hasExistingPassword
-                    ? 'Leave blank to keep existing password'
-                    : 'Optional password'
-                }
-                disabled={!unlocked || clearPassword}
-                autoComplete="new-password"
-                style={{ paddingRight: unlocked && !clearPassword ? '36px' : undefined }}
-              />
-              {unlocked && !clearPassword && (
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(v => !v)}
-                  tabIndex={-1}
-                  style={{
-                    position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)',
-                    background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '2px',
-                  }}
-                >
-                  {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-                </button>
-              )}
-            </div>
-            {unlocked && hasExistingPassword && (
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={clearPassword}
-                  onChange={e => {
-                    setClearPassword(e.target.checked);
-                    if (e.target.checked) setPasswordInput('');
-                  }}
-                  style={{ accentColor: 'var(--danger)', width: 14, height: 14, flexShrink: 0 }}
-                />
-                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Clear saved password</span>
-              </label>
+        {/* Password field, only for password accounts */}
+        {form.auth_method === 'password' && <div className="form-row">
+          <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+            Password
+            {!unlocked && (
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 400 }}>
+                (unlock vault to save a password)
+              </span>
             )}
-          </div>}
-
-          {/* Payment toggle */}
-          <div className="form-row">
-            <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+            {unlocked && hasExistingPassword && !clearPassword && (
+              <span style={{ fontSize: '11px', color: 'var(--accent)', fontWeight: 400 }}>
+                (stored)
+              </span>
+            )}
+          </label>
+          <div style={{ position: 'relative' }}>
+            <input
+              className="input"
+              type={showPassword ? 'text' : 'password'}
+              value={clearPassword ? '' : passwordInput}
+              onChange={e => setPasswordInput(e.target.value)}
+              placeholder={
+                !unlocked
+                  ? 'Unlock vault first'
+                  : hasExistingPassword
+                  ? 'Leave blank to keep existing password'
+                  : 'Optional password'
+              }
+              disabled={!unlocked || clearPassword}
+              autoComplete="new-password"
+              style={{ paddingRight: unlocked && !clearPassword ? '36px' : undefined }}
+            />
+            {unlocked && !clearPassword && (
+              <button
+                type="button"
+                onClick={() => setShowPassword(v => !v)}
+                tabIndex={-1}
+                style={{
+                  position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)',
+                  background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '2px',
+                }}
+              >
+                {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+            )}
+          </div>
+          {unlocked && hasExistingPassword && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', cursor: 'pointer' }}>
               <input
                 type="checkbox"
-                checked={form.has_payment}
-                onChange={e => set('has_payment', e.target.checked)}
-                style={{ accentColor: 'var(--accent)', width: 16, height: 16, flexShrink: 0 }}
+                checked={clearPassword}
+                onChange={e => {
+                  setClearPassword(e.target.checked);
+                  if (e.target.checked) setPasswordInput('');
+                }}
+                style={{ accentColor: 'var(--danger)', width: 14, height: 14, flexShrink: 0 }}
               />
-              <span className="form-label" style={{ margin: 0 }}>Active paid subscription</span>
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Clear saved password</span>
             </label>
-          </div>
+          )}
+        </div>}
 
-          {form.has_payment && (
-            <>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <div className="form-row" style={{ flex: 1, margin: 0 }}>
-                  <label className="form-label">Cost</label>
-                  <input
-                    className="input"
-                    type="number"
-                    min="0"
-                    max="1000000"
-                    step="0.01"
-                    value={form.cost}
-                    onChange={e => set('cost', e.target.value)}
-                  />
-                </div>
-                <div className="form-row" style={{ flex: 1, margin: 0 }}>
-                  <label className="form-label">Currency</label>
-                  <select className="select" value={form.currency} onChange={e => set('currency', e.target.value)}>
-                    {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div className="form-row" style={{ marginTop: '10px' }}>
-                <label className="form-label">Billing Cycle</label>
-                <select className="select" value={form.billing_cycle} onChange={e => set('billing_cycle', e.target.value)}>
-                  {BILLING_CYCLES.map(c => (
-                    <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="form-row">
-                <label className="form-label">Renewal Date</label>
+        {/* Payment toggle */}
+        <div className="form-row">
+          <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={form.has_payment}
+              onChange={e => set('has_payment', e.target.checked)}
+              style={{ accentColor: 'var(--accent)', width: 16, height: 16, flexShrink: 0 }}
+            />
+            <span className="form-label" style={{ margin: 0 }}>Active paid subscription</span>
+          </label>
+        </div>
+
+        {form.has_payment && (
+          <>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <div className="form-row" style={{ flex: 1, margin: 0 }}>
+                <label className="form-label">Cost</label>
                 <input
                   className="input"
-                  type="date"
-                  value={form.renewal_date}
-                  onChange={e => set('renewal_date', e.target.value)}
+                  type="number"
+                  min="0"
+                  max="1000000"
+                  step="0.01"
+                  value={form.cost}
+                  onChange={e => set('cost', e.target.value)}
                 />
               </div>
-            </>
-          )}
+              <div className="form-row" style={{ flex: 1, margin: 0 }}>
+                <label className="form-label">Currency</label>
+                <select className="select" value={form.currency} onChange={e => set('currency', e.target.value)}>
+                  {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="form-row" style={{ marginTop: '10px' }}>
+              <label className="form-label">Billing Cycle</label>
+              <select className="select" value={form.billing_cycle} onChange={e => set('billing_cycle', e.target.value)}>
+                {BILLING_CYCLES.map(c => (
+                  <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
+                ))}
+              </select>
+            </div>
+            <div className="form-row">
+              <label className="form-label">Renewal Date</label>
+              <input
+                className="input"
+                type="date"
+                value={form.renewal_date}
+                onChange={e => set('renewal_date', e.target.value)}
+              />
+            </div>
+          </>
+        )}
 
-          {error && <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 12px' }}>{error}</p>}
-          <div className="modal-footer">
-            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>
-              {saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Create Account'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        {error && <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 12px' }}>{error}</p>}
+        <div className="modal-footer">
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="submit" className="btn btn-primary" disabled={saving}>
+            {saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Create Account'}
+          </button>
+        </div>
+      </form>
+    </Overlay>
   );
 }
 

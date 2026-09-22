@@ -3,7 +3,8 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Plus, Check, Trash2, Edit2, ChevronDown, ChevronRight, FileDown, ArrowLeft, Lock, X, Copy, ArrowRight, Clock, GripVertical, Link2, Link2Off, ExternalLink, Image, Download, FileText, Library } from 'lucide-react';
 import { api, fmt, fmtDate } from '../api';
 import { Private } from '../context/PrivacyContext';
-import Modal from '../components/Modal';
+import Overlay from '../components/Overlay';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { PhaseTaskStep, InlineCrewModal, LocationPicker } from '../components/ProjectWizard';
 import { getTasksForCategory } from '../data/projectTasks';
 
@@ -814,32 +815,26 @@ function PhaseCompleteModal({ projectId, project, currentPhase, nextPhase, crewL
   }
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal-box" style={{ maxWidth: '680px' }}>
-        <div className="modal-header">
-          <span className="modal-title">Starting {nextPhase.phase_name}</span>
-          <button className="modal-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <p className="text-2 text-sm" style={{ marginBottom: '16px' }}>
-          Optionally add tasks to <strong style={{ color: 'var(--color-ink)' }}>{nextPhase.phase_name}</strong> before marking <strong style={{ color: 'var(--color-ink)' }}>{currentPhase.phase_name}</strong> complete.
-        </p>
-        <PhaseTaskStep
-          phaseName={nextPhase.phase_name}
-          tasks={tasks}
-          onToggle={(idx) => setTasks(prev => prev.map((t, i) => i === idx ? { ...t, included: !t.included } : t))}
-          onCrewChange={(idx, cid) => setTasks(prev => prev.map((t, i) => i === idx ? { ...t, crew_id: cid } : t))}
-          onAddCustom={(title) => setTasks(prev => [...prev, { title, included: true, crew_id: '', isCustom: true }])}
-          onRemoveCustom={(idx) => setTasks(prev => prev.filter((_, i) => i !== idx))}
-          crewList={crewList}
-        />
-        <div className="modal-footer">
-          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={confirm} disabled={saving}>
-            {saving ? 'Saving...' : `Complete ${currentPhase.phase_name} →`}
-          </button>
-        </div>
+    <Overlay title={<>Starting {nextPhase.phase_name}</>} onClose={onClose} width={680}>
+      <p className="text-2 text-sm" style={{ marginBottom: '16px' }}>
+        Optionally add tasks to <strong style={{ color: 'var(--color-ink)' }}>{nextPhase.phase_name}</strong> before marking <strong style={{ color: 'var(--color-ink)' }}>{currentPhase.phase_name}</strong> complete.
+      </p>
+      <PhaseTaskStep
+        phaseName={nextPhase.phase_name}
+        tasks={tasks}
+        onToggle={(idx) => setTasks(prev => prev.map((t, i) => i === idx ? { ...t, included: !t.included } : t))}
+        onCrewChange={(idx, cid) => setTasks(prev => prev.map((t, i) => i === idx ? { ...t, crew_id: cid } : t))}
+        onAddCustom={(title) => setTasks(prev => [...prev, { title, included: true, crew_id: '', isCustom: true }])}
+        onRemoveCustom={(idx) => setTasks(prev => prev.filter((_, i) => i !== idx))}
+        crewList={crewList}
+      />
+      <div className="modal-footer">
+        <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" onClick={confirm} disabled={saving}>
+          {saving ? 'Saving...' : `Complete ${currentPhase.phase_name} →`}
+        </button>
       </div>
-    </div>
+    </Overlay>
   );
 }
 
@@ -886,7 +881,7 @@ function TaskModal({ modal, projectId, phases, crewList, onClose, onSaved }) {
   }
 
   return (
-    <Modal title={isEdit ? 'Edit Task' : 'Add Task'} onClose={onClose} footer={<>
+    <Overlay title={isEdit ? 'Edit Task' : 'Add Task'} onClose={onClose} footer={<>
       <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
       <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
     </>}>
@@ -931,7 +926,7 @@ function TaskModal({ modal, projectId, phases, crewList, onClose, onSaved }) {
         <textarea className="input" value={form.notes} onChange={e => f('notes', e.target.value)} placeholder="Notes..." />
       </div>
       {err && <div className="error-msg">{err}</div>}
-    </Modal>
+    </Overlay>
   );
 }
 
@@ -970,7 +965,7 @@ function PaymentModal({ payment, projectId, onClose, onSaved }) {
   }
 
   return (
-    <Modal title={isEdit ? 'Edit Payment' : 'Add Payment'} onClose={onClose} footer={<>
+    <Overlay title={isEdit ? 'Edit Payment' : 'Add Payment'} onClose={onClose} footer={<>
       <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
       <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
     </>}>
@@ -1006,7 +1001,7 @@ function PaymentModal({ payment, projectId, onClose, onSaved }) {
         <textarea className="input" value={form.notes} onChange={e => f('notes', e.target.value)} placeholder="Notes..." />
       </div>
       {err && <div className="error-msg">{err}</div>}
-    </Modal>
+    </Overlay>
   );
 }
 
@@ -1051,7 +1046,7 @@ function CrewAssignModal({ assign, projectId, crewList, onClose, onSaved, onAddC
   }
 
   return (
-    <Modal title={isEdit ? 'Edit Crew Assignment' : 'Add Crew'} onClose={onClose} footer={<>
+    <Overlay title={isEdit ? 'Edit Crew Assignment' : 'Add Crew'} onClose={onClose} footer={<>
       <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
       <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
     </>}>
@@ -1118,7 +1113,7 @@ function CrewAssignModal({ assign, projectId, crewList, onClose, onSaved, onAddC
         </>
       )}
       {err && <div className="error-msg">{err}</div>}
-    </Modal>
+    </Overlay>
   );
 }
 
@@ -1171,7 +1166,7 @@ function ExpenseModal({ expense, projectId, expCats, invoiceBlobUrls, onClose, o
   const existingImage = isEdit && expense?.invoice_image_path;
 
   return (
-    <Modal title={isEdit ? 'Edit Expense' : 'Add Expense'} onClose={onClose} footer={<>
+    <Overlay title={isEdit ? 'Edit Expense' : 'Add Expense'} onClose={onClose} footer={<>
       <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
       <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
     </>}>
@@ -1226,42 +1221,30 @@ function ExpenseModal({ expense, projectId, expCats, invoiceBlobUrls, onClose, o
         />
       </div>
       {err && <div className="error-msg">{err}</div>}
-    </Modal>
+    </Overlay>
   );
 }
 
 /* ---- Image Lightbox ---- */
 function ImageLightbox({ src, filename, onClose }) {
-  React.useEffect(() => {
-    function onKey(e) { if (e.key === 'Escape') onClose(); }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
   return (
-    <div
-      style={{ position: 'fixed', inset: 0, background: 'var(--scrim-strong)', zIndex: 2000, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
-      onClick={e => e.target === e.currentTarget && onClose()}
+    <Overlay
+      size="full"
+      title={filename}
+      onClose={onClose}
+      guard={false}
+      actions={
+        <a href={src} download={filename} className="btn btn-ghost btn-sm" style={{ textDecoration: 'none' }}>
+          <Download size={14} /> Download
+        </a>
+      }
     >
-      <button
-        onClick={onClose}
-        style={{ position: 'absolute', top: '16px', right: '16px', background: 'var(--overlay-04)', border: 'none', borderRadius: '50%', width: '36px', height: '36px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-ink)' }}
-      >
-        <X size={18} />
-      </button>
       <img
         src={src}
         alt="Invoice"
-        style={{ maxWidth: '90vw', maxHeight: '80vh', objectFit: 'contain', borderRadius: '10px' }}
+        style={{ maxWidth: '100%', maxHeight: 'calc(100vh - 140px)', objectFit: 'contain', borderRadius: '10px', margin: '0 auto' }}
       />
-      <a
-        href={src}
-        download={filename}
-        style={{ marginTop: '16px', background: 'var(--overlay-05)', color: 'var(--color-ink)', border: 'none', borderRadius: '24px', padding: '10px 20px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', textDecoration: 'none', fontSize: '14px' }}
-      >
-        <Download size={16} /> Download
-      </a>
-    </div>
+    </Overlay>
   );
 }
 
@@ -1279,7 +1262,7 @@ function RevisionModal({ projectId, onClose, onSaved }) {
   }
 
   return (
-    <Modal title="Add Revision Round" onClose={onClose} footer={<>
+    <Overlay title="Add Revision Round" onClose={onClose} footer={<>
       <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
       <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Add'}</button>
     </>}>
@@ -1291,7 +1274,7 @@ function RevisionModal({ projectId, onClose, onSaved }) {
         <label className="form-label">Notes</label>
         <textarea className="input" value={form.notes} onChange={e => f('notes', e.target.value)} placeholder="Revision notes..." />
       </div>
-    </Modal>
+    </Overlay>
   );
 }
 
@@ -1367,7 +1350,7 @@ function EditProjectModal({ project, projectId, onClose, onSaved }) {
 
   return (
     <>
-      <Modal title="Edit Project" onClose={onClose} footer={<>
+      <Overlay title="Edit Project" onClose={onClose} footer={<>
         <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
         <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
       </>}>
@@ -1455,50 +1438,52 @@ function EditProjectModal({ project, projectId, onClose, onSaved }) {
           <label className="form-label">Notes</label>
           <textarea className="input" value={form.notes} onChange={e => f('notes', e.target.value)} />
         </div>
-      </Modal>
+      </Overlay>
       {showNewClient && (
-        <div className="modal-overlay" style={{ zIndex: 1100 }} onClick={e => e.target === e.currentTarget && setShowNewClient(false)}>
-          <div className="modal-box">
-            <div className="modal-header">
-              <span className="modal-title">New Client</span>
-              <button className="modal-close" onClick={() => setShowNewClient(false)}><X size={18} /></button>
-            </div>
-            <InlineClientForm onSave={createClient} onClose={() => setShowNewClient(false)} />
-          </div>
-        </div>
+        <Overlay title="New Client" onClose={() => setShowNewClient(false)}>
+          <InlineClientForm onSave={createClient} onClose={() => setShowNewClient(false)} />
+        </Overlay>
       )}
     </>
   );
 }
 
-/* ---- Delete Project Modal ---- */
+/* ---- Delete Project ---- */
+// Deleting asks first. The server refuses while money is attached (payments,
+// crew payments, confirmed expenses or invoices) and says what is attached; that
+// reason is shown in a second dialog rather than a native alert.
 function DeleteProjectModal({ projectTitle, onClose, onConfirm }) {
   const [deleting, setDeleting] = useState(false);
+  const [refusal, setRefusal] = useState('');
 
   async function confirm() {
     setDeleting(true);
     try { await onConfirm(); }
-    catch (e) { alert(e.message); setDeleting(false); }
+    catch (e) { setRefusal(e.message); setDeleting(false); }
+  }
+
+  if (refusal) {
+    return (
+      <ConfirmDialog
+        title={`${projectTitle} cannot be deleted`}
+        message={refusal}
+        confirmLabel="OK"
+        cancelLabel={null}
+        onConfirm={onClose}
+        onCancel={onClose}
+      />
+    );
   }
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal-box" style={{ maxWidth: '480px' }}>
-        <div className="modal-header">
-          <span className="modal-title">Delete Project</span>
-          <button className="modal-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <p className="text-2 text-sm" style={{ marginBottom: '20px', lineHeight: '1.6' }}>
-          Are you sure you want to delete <strong style={{ color: 'var(--color-ink)' }}>{projectTitle}</strong>? This will permanently delete all tasks, phases, crew assignments, expenses, and payments linked to this project.
-        </p>
-        <div className="modal-footer">
-          <button className="btn btn-ghost" onClick={onClose} disabled={deleting}>Cancel</button>
-          <button className="btn btn-danger" onClick={confirm} disabled={deleting}>
-            {deleting ? 'Deleting...' : 'Confirm Delete'}
-          </button>
-        </div>
-      </div>
-    </div>
+    <ConfirmDialog
+      title={`Delete ${projectTitle}?`}
+      confirmLabel="Delete"
+      tone="danger"
+      busy={deleting}
+      onConfirm={confirm}
+      onCancel={onClose}
+    />
   );
 }
 
@@ -1528,40 +1513,34 @@ function DuplicateModal({ project, onClose, onDone }) {
   }
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal-box" style={{ maxWidth: '480px' }}>
-        <div className="modal-header">
-          <span className="modal-title">Duplicate Project</span>
-          <button className="modal-close" onClick={onClose}><X size={18} /></button>
-        </div>
-        <div className="form-row">
-          <label className="form-label">New Project Title</label>
-          <input
-            className="input"
-            value={title}
-            onChange={e => { setTitle(e.target.value); setErr(''); }}
-            autoFocus
-            onKeyDown={e => e.key === 'Enter' && save()}
-          />
-          {!isChanged && title.trim() === defaultTitle && (
-            <div className="text-xs text-2 mt-1">Change the title before saving</div>
-          )}
-          {isChanged && !isUnique && (
-            <div className="error-msg">A project with this title already exists</div>
-          )}
-        </div>
-        <div className="text-xs text-2" style={{ marginBottom: '16px', lineHeight: '1.6' }}>
-          Tasks will be copied (status reset to To Do). Crew assignments, payments, and expenses will not be copied.
-        </div>
-        {err && <div className="error-msg">{err}</div>}
-        <div className="modal-footer">
-          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={save} disabled={!canSave || saving}>
-            {saving ? 'Duplicating...' : 'Duplicate'}
-          </button>
-        </div>
+    <Overlay title="Duplicate Project" onClose={onClose} width={480}>
+      <div className="form-row">
+        <label className="form-label">New Project Title</label>
+        <input
+          className="input"
+          value={title}
+          onChange={e => { setTitle(e.target.value); setErr(''); }}
+          autoFocus
+          onKeyDown={e => e.key === 'Enter' && save()}
+        />
+        {!isChanged && title.trim() === defaultTitle && (
+          <div className="text-xs text-2 mt-1">Change the title before saving</div>
+        )}
+        {isChanged && !isUnique && (
+          <div className="error-msg">A project with this title already exists</div>
+        )}
       </div>
-    </div>
+      <div className="text-xs text-2" style={{ marginBottom: '16px', lineHeight: '1.6' }}>
+        Tasks will be copied (status reset to To Do). Crew assignments, payments, and expenses will not be copied.
+      </div>
+      {err && <div className="error-msg">{err}</div>}
+      <div className="modal-footer">
+        <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" onClick={save} disabled={!canSave || saving}>
+          {saving ? 'Duplicating...' : 'Duplicate'}
+        </button>
+      </div>
+    </Overlay>
   );
 }
 

@@ -6,21 +6,22 @@ import {
   X, CheckCircle, Lightbulb, LayoutGrid, GripHorizontal, Eye, EyeOff,
   Clock,
 } from 'lucide-react';
-import {
-  ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell,
-} from 'recharts';
 import { api, fmt, fmtDate } from '../api';
 import StatCard from '../components/StatCard';
 import ProjectTimeline from '../components/ProjectTimeline';
 import LeadsRail from '../components/LeadsRail';
-import { Private, usePrivacy } from '../context/PrivacyContext';
+import { Private } from '../context/PrivacyContext';
 import { convertLeadToProject } from '../lib/convertLead';
 import { makeDeadlinePatcher } from '../lib/patchDeadline';
+import Overlay from '../components/Overlay';
+import Donut from '../components/Donut';
+import TrendChart from '../components/TrendChart';
+import { pristinaMonth, pristinaToday } from '../lib/pristinaDate';
 
+// The current month in Pristina time, so the first hours of a month never
+// open on the previous one.
 function getCurrentMonth() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  return pristinaMonth();
 }
 
 const WIDGET_DEFS = [
@@ -286,48 +287,6 @@ export default function Dashboard() {
   );
 }
 
-/* ─── Compact currency for axis ticks ─── */
-function compactCurrency(v) {
-  const n = Number(v) || 0;
-  const abs = Math.abs(n);
-  if (abs >= 1000) return `€${(n / 1000).toFixed(abs >= 10000 ? 0 : 1)}k`;
-  return `€${Math.round(n)}`;
-}
-
-/* ─── Custom recharts tooltip: three series, privacy aware ─── */
-function ChartTooltip({ active, payload, label }) {
-  if (!active || !payload?.length) return null;
-  const NAMES = { revenue: 'Revenue', expenses: 'Expenses', profit: 'Profit' };
-  return (
-    <div style={{
-      background: 'var(--color-surface-alt)', border: '1px solid var(--color-hairline)',
-      borderRadius: '10px', padding: '10px 14px', fontSize: '12px',
-    }}>
-      <div style={{ color: 'var(--color-mid-gray)', marginBottom: '6px' }}>{label}</div>
-      {payload.map(p => (
-        <div key={p.dataKey} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
-          <span style={{ width: 8, height: 8, borderRadius: '50%', background: p.color || p.stroke, display: 'inline-block' }} />
-          <span style={{ color: 'var(--color-mid-gray)', minWidth: 60 }}>{NAMES[p.dataKey] || p.name}</span>
-          <span style={{ color: 'var(--color-ink)', fontWeight: 600 }}><Private>{fmt(p.value)}</Private></span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/* ─── Privacy aware Y axis tick ─── */
-function PrivacyYTick({ x, y, payload }) {
-  const { hidden } = usePrivacy();
-  return (
-    <text
-      x={x} y={y} dy={3} textAnchor="end" fontSize={10} fill="var(--color-mid-gray)"
-      style={{ filter: hidden ? 'blur(6px)' : 'none', transition: 'filter 0.25s ease' }}
-    >
-      {compactCurrency(payload.value)}
-    </text>
-  );
-}
-
 /* ─── Widget content ─── */
 function WidgetContent({ id, stats, projects, expenses, chartData, leads, setLeads, reloadProjects, reloadLeads, onPatchDeadline, setActiveModal }) {
   switch (id) {
@@ -350,7 +309,7 @@ function WidgetContent({ id, stats, projects, expenses, chartData, leads, setLea
             emphasis
           />
           <StatCard
-            label="Profit This Month"
+            label="Project Profit"
             value={<Private>{fmt(stats?.netProfit)}</Private>}
             danger={stats?.netProfit < 0}
             icon={<DollarSign size={16} />}
@@ -360,6 +319,9 @@ function WidgetContent({ id, stats, projects, expenses, chartData, leads, setLea
           <StatCard
             label="Pending Payments"
             value={<Private>{fmt(stats?.outstanding)}</Private>}
+            sub={stats?.outstandingNotInvoiced > 0
+              ? <><Private>{fmt(stats.outstandingNotInvoiced)}</Private> not yet invoiced</>
+              : undefined}
             danger={stats?.outstanding > 0}
             icon={<AlertCircle size={16} />}
             iconTint={stats?.outstanding > 0 ? 'danger' : 'success'}
@@ -440,7 +402,7 @@ function WidgetContent({ id, stats, projects, expenses, chartData, leads, setLea
             <div className="card card-pad empty">No expenses recorded</div>
           ) : (
             <div className="card card-pad">
-              <ExpenseDonut expenses={expenses} />
+              <Donut data={expenses} valueKey="total" nameKey="name" />
             </div>
           )}
         </div>
@@ -449,40 +411,7 @@ function WidgetContent({ id, stats, projects, expenses, chartData, leads, setLea
     case 'charts':
       return (
         <div className="card card-pad">
-          <div className="trend-legend">
-            <span className="trend-legend-item"><span className="trend-dot" style={{ background: 'var(--chart-revenue)' }} /> Revenue</span>
-            <span className="trend-legend-item"><span className="trend-dot" style={{ background: 'var(--chart-expenses)' }} /> Expenses</span>
-            <span className="trend-legend-item"><span className="trend-dot" style={{ background: 'var(--chart-profit)' }} /> Profit</span>
-          </div>
-          <ResponsiveContainer width="100%" height={220}>
-            <ComposedChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-              <defs>
-                {/* Revenue: the loudest series, a solid heavy stroke over a
-                    subtle fill so the line stays dominant. */}
-                <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%"  stopColor="var(--chart-revenue)" stopOpacity={0.20} />
-                  <stop offset="95%" stopColor="var(--chart-revenue)" stopOpacity={0.02} />
-                </linearGradient>
-                {/* Expenses: quieter, a thin stroke over a barely there fill, so
-                    it reads as a different weight even where it overlaps. */}
-                <linearGradient id="expGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%"  stopColor="var(--chart-expenses)" stopOpacity={0.12} />
-                  <stop offset="95%" stopColor="var(--chart-expenses)" stopOpacity={0.01} />
-                </linearGradient>
-              </defs>
-              {/* Soft solid gridlines instead of the old heavy dotted ones. */}
-              <CartesianGrid vertical={false} stroke="var(--color-hairline)" strokeOpacity={0.45} />
-              <XAxis dataKey="month" tick={{ fontSize: 10, fill: 'var(--color-mid-gray)' }} axisLine={false} tickLine={false} />
-              <YAxis width={44} tick={<PrivacyYTick />} axisLine={false} tickLine={false} />
-              <Tooltip content={<ChartTooltip />} />
-              {/* Colour is the primary cue; the weight and fill differences and
-                  the dashed profit line are secondary cues so the chart still
-                  reads for anyone who cannot separate the hues. */}
-              <Area type="monotone" dataKey="revenue" stroke="var(--chart-revenue)" strokeWidth={2.5} fill="url(#revGrad)" dot={false} />
-              <Area type="monotone" dataKey="expenses" stroke="var(--chart-expenses)" strokeWidth={1.25} fill="url(#expGrad)" dot={false} />
-              <Line type="monotone" dataKey="profit" stroke="var(--chart-profit)" strokeWidth={2} strokeDasharray="5 3" fill="none" dot={false} />
-            </ComposedChart>
-          </ResponsiveContainer>
+          <TrendChart data={chartData} />
         </div>
       );
 
@@ -519,86 +448,6 @@ function DashLeadsBand({ leads, setLeads, reloadProjects, reloadLeads }) {
   );
 }
 
-/* ─── Expense donut ─── */
-// The shared eight hue categorical palette (see index.css). Categories have no
-// order, so a slice and its legend dot just take the next hue, cycling if there
-// are ever more categories than hues.
-const CATEGORICAL = Array.from({ length: 8 }, (_, i) => `var(--cat-${i + 1})`);
-const catColor = i => CATEGORICAL[i % CATEGORICAL.length];
-
-function ExpenseDonut({ expenses }) {
-  const [active, setActive] = useState(null); // hovered arc / legend row index
-  const total = expenses.reduce((s, e) => s + (Number(e.total) || 0), 0);
-
-  return (
-    <div className="donut-2col">
-      <div className="donut-chart">
-        <ResponsiveContainer width="100%" height={240}>
-          <PieChart>
-            <Pie
-              data={expenses}
-              dataKey="total"
-              nameKey="name"
-              innerRadius={68}
-              outerRadius={100}
-              paddingAngle={1.5}
-              stroke="var(--surface-card)"
-              strokeWidth={2}
-              onMouseEnter={(_, i) => setActive(i)}
-              onMouseLeave={() => setActive(null)}
-            >
-              {expenses.map((e, i) => (
-                <Cell
-                  key={i}
-                  fill={catColor(i)}
-                  fillOpacity={active === null || active === i ? 1 : 0.3}
-                  style={{ transition: 'fill-opacity 0.15s ease' }}
-                />
-              ))}
-            </Pie>
-            <Tooltip content={<DonutTooltip />} />
-          </PieChart>
-        </ResponsiveContainer>
-        <div className="donut-center">
-          <span className="donut-center-label">Total</span>
-          <span className="donut-center-value"><Private>{fmt(total)}</Private></span>
-        </div>
-      </div>
-      <ul className="donut-legend">
-        {expenses.map((e, i) => (
-          <li
-            key={i}
-            className={`donut-legend-item${active === i ? ' active' : ''}`}
-            onMouseEnter={() => setActive(i)}
-            onMouseLeave={() => setActive(null)}
-          >
-            <span className="donut-dot" style={{ background: catColor(i) }} />
-            <span className="donut-legend-name">{e.name}</span>
-            {active === i && (
-              <span className="donut-legend-amt"><Private>{fmt(e.total)}</Private></span>
-            )}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function DonutTooltip({ active, payload }) {
-  if (!active || !payload?.length) return null;
-  const row = payload[0];
-  return (
-    <div style={{
-      background: 'var(--color-surface-alt)', border: '1px solid var(--color-hairline)',
-      borderRadius: '10px', padding: '8px 12px', fontSize: '12px',
-    }}>
-      <div style={{ color: 'var(--color-mid-gray)', marginBottom: '3px' }}>{row.name}</div>
-      <div style={{ color: 'var(--color-ink)', fontWeight: 600 }}><Private>{fmt(row.value)}</Private></div>
-    </div>
-  );
-}
-
-
 /* ─── Dashboard detail modals ─── */
 function DashboardModal({ type, month, projects, onClose, onReload }) {
   const [data, setData] = useState(null);
@@ -622,7 +471,7 @@ function DashboardModal({ type, month, projects, onClose, onReload }) {
       days: row.days,
       rate_per_day: row.rate_per_day,
       paid_status: 'paid',
-      payment_date: new Date().toISOString().split('T')[0],
+      payment_date: pristinaToday(),
       payment_amount: row.total_cost,
       payment_method: row.payment_method || 'bank_transfer',
       payment_notes: row.payment_notes || '',
@@ -635,168 +484,165 @@ function DashboardModal({ type, month, projects, onClose, onReload }) {
   const titles = {
     'active-projects': 'Active Projects',
     'revenue':         'Revenue This Month',
-    'profit':          'Profit This Month',
+    'profit':          'Project Profit',
     'outstanding':     'Pending Payments',
-    'upcoming':        'Upcoming, Future Shoots',
+    'upcoming':        'Upcoming',
     'unpaid-crew':     'Unpaid Crew',
   };
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal-box" style={{ maxWidth: '680px' }}>
-        <div className="modal-header">
-          <span className="modal-title">{titles[type]}</span>
-          <button className="modal-close" onClick={onClose}><X size={18} /></button>
-        </div>
+    <Overlay title={titles[type]} onClose={onClose} width={680}>
 
-        {loading ? <div className="loading">Loading…</div> : (
-          <>
-            {type === 'active-projects' && (
-              <div className="table-wrap">
-                <table>
-                  <thead><tr><th>Project</th><th>Client</th><th>Phase</th><th>Budget</th></tr></thead>
-                  <tbody>
-                    {data.map(p => (
-                      <tr key={p.id}>
-                        <td><Link to={`/projects/${p.id}`} className="link text-bold" onClick={onClose}>{p.title}</Link></td>
-                        <td className="text-2 text-sm">{p.client_name || '-'}</td>
-                        <td className="text-sm">{p.current_phase || '-'}</td>
-                        <td><Private>{fmt(p.agreed_budget)}</Private></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {data.length === 0 && <div className="empty">No active projects</div>}
-              </div>
-            )}
+      {loading ? <div className="loading">Loading…</div> : (
+        <>
+          {type === 'active-projects' && (
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>Project</th><th>Client</th><th>Phase</th><th>Budget</th></tr></thead>
+                <tbody>
+                  {data.map(p => (
+                    <tr key={p.id}>
+                      <td><Link to={`/projects/${p.id}`} className="link text-bold" onClick={onClose}>{p.title}</Link></td>
+                      <td className="text-2 text-sm">{p.client_name || '-'}</td>
+                      <td className="text-sm">{p.current_phase || '-'}</td>
+                      <td><Private>{fmt(p.agreed_budget)}</Private></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {data.length === 0 && <div className="empty">No active projects</div>}
+            </div>
+          )}
 
-            {type === 'revenue' && (
-              <div className="table-wrap">
-                <table>
-                  <thead><tr><th>Project</th><th>Client</th><th>Amount</th><th>Date</th></tr></thead>
-                  <tbody>
-                    {data.map(row => (
-                      <tr key={row.id}>
-                        <td className="text-sm">{row.project_title}</td>
-                        <td className="text-2 text-sm">{row.client_name || '-'}</td>
-                        <td className="text-bold"><Private>{fmt(row.amount)}</Private></td>
-                        <td className="text-2 text-sm">{fmtDate(row.date)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {data.length === 0 && <div className="empty">No received payments this month</div>}
-                {data.length > 0 && (
-                  <div style={{ padding: '10px 12px', fontWeight: 700, borderTop: '1px solid var(--border)', textAlign: 'right' }}>
-                    Total: <Private>{fmt(data.reduce((s, r) => s + r.amount, 0))}</Private>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {type === 'profit' && (
-              <div className="table-wrap">
-                <table>
-                  <thead><tr><th>Project</th><th>Client</th><th>Revenue</th><th>Crew</th><th>Expenses</th><th>Profit</th></tr></thead>
-                  <tbody>
-                    {data.map(row => (
-                      <tr key={row.id}>
-                        <td className="text-sm">{row.title}</td>
-                        <td className="text-2 text-sm">{row.client_name || '-'}</td>
-                        <td><Private>{fmt(row.revenue)}</Private></td>
-                        <td className="text-2"><Private>{fmt(row.crew_cost)}</Private></td>
-                        <td className="text-2"><Private>{fmt(row.expenses)}</Private></td>
-                        <td className={row.net_profit < 0 ? 'text-danger text-bold' : 'text-bold'}><Private>{fmt(row.net_profit ?? row.realized_profit)}</Private></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {data.length === 0 && <div className="empty">No revenue data this month</div>}
-              </div>
-            )}
-
-            {type === 'outstanding' && (
-              <div className="table-wrap">
-                <table>
-                  <thead><tr><th>Project</th><th>Client</th><th>Budget</th><th>Received</th><th>Outstanding</th></tr></thead>
-                  <tbody>
-                    {data.map(row => (
-                      <tr key={row.id}>
-                        <td><Link to={`/projects/${row.id}`} className="link text-bold" onClick={onClose}>{row.project_title}</Link></td>
-                        <td className="text-2 text-sm">{row.client_name || '-'}</td>
-                        <td className="text-sm"><Private>{fmt(row.agreed_budget)}</Private></td>
-                        <td className="text-2 text-sm"><Private>{fmt(row.total_received)}</Private></td>
-                        <td className="text-bold text-danger"><Private>{fmt(row.outstanding)}</Private></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {data.length === 0 && <div className="empty">No pending payments</div>}
-                {data.length > 0 && (
-                  <div style={{ padding: '10px 12px', fontWeight: 700, borderTop: '1px solid var(--border)', textAlign: 'right', color: 'var(--danger)' }}>
-                    Total Pending: <Private>{fmt(data.reduce((s, r) => s + r.outstanding, 0))}</Private>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {type === 'upcoming' && (
-              <div className="table-wrap">
-                <div style={{ padding: '8px 12px 4px', fontSize: '12px', color: 'var(--color-mid-gray)' }}>
-                  Future shoots with an unpaid balance, not yet due.
+          {type === 'revenue' && (
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>Project</th><th>Client</th><th>Amount</th><th>Date</th></tr></thead>
+                <tbody>
+                  {data.map(row => (
+                    <tr key={row.id}>
+                      <td className="text-sm">{row.project_title}</td>
+                      <td className="text-2 text-sm">{row.client_name || '-'}</td>
+                      <td className="text-bold"><Private>{fmt(row.amount)}</Private></td>
+                      <td className="text-2 text-sm">{fmtDate(row.date)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {data.length === 0 && <div className="empty">No received payments this month</div>}
+              {data.length > 0 && (
+                <div style={{ padding: '10px 12px', fontWeight: 700, borderTop: '1px solid var(--border)', textAlign: 'right' }}>
+                  Total: <Private>{fmt(data.reduce((s, r) => s + r.amount, 0))}</Private>
                 </div>
-                <table>
-                  <thead><tr><th>Project</th><th>Client</th><th>Budget</th><th>Received</th><th>Balance</th><th>Shoot Date</th></tr></thead>
-                  <tbody>
-                    {data.map(row => (
-                      <tr key={row.id}>
-                        <td><Link to={`/projects/${row.id}`} className="link text-bold" onClick={onClose}>{row.project_title}</Link></td>
-                        <td className="text-2 text-sm">{row.client_name || '-'}</td>
-                        <td className="text-sm"><Private>{fmt(row.agreed_budget)}</Private></td>
-                        <td className="text-2 text-sm"><Private>{fmt(row.total_received)}</Private></td>
-                        <td className="text-bold" style={{ color: 'var(--color-mid-gray)' }}><Private>{fmt(row.outstanding)}</Private></td>
-                        <td className="text-sm">{fmtDate(row.shoot_date)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {data.length === 0 && <div className="empty">No upcoming shoots with a balance</div>}
-                {data.length > 0 && (
-                  <div style={{ padding: '10px 12px', fontWeight: 700, borderTop: '1px solid var(--border)', textAlign: 'right', color: 'var(--color-mid-gray)' }}>
-                    Total Expected: <Private>{fmt(data.reduce((s, r) => s + r.outstanding, 0))}</Private>
-                  </div>
-                )}
-              </div>
-            )}
+              )}
+            </div>
+          )}
 
-            {type === 'unpaid-crew' && (
-              <div className="table-wrap">
-                <table>
-                  <thead><tr><th>Crew</th><th>Project</th><th>Role</th><th>Total</th><th>Paid</th><th>Remaining</th><th></th></tr></thead>
-                  <tbody>
-                    {data.map(row => (
-                      <tr key={row.id}>
-                        <td className="text-sm text-bold">{row.crew_name}</td>
-                        <td className="text-2 text-sm">{row.project_title}</td>
-                        <td className="text-2 text-sm">{row.role_on_project || '-'}</td>
-                        <td><Private>{fmt(row.total_cost)}</Private></td>
-                        <td className="text-2"><Private>{fmt(row.payment_amount)}</Private></td>
-                        <td className="text-danger"><Private>{fmt(row.remaining)}</Private></td>
-                        <td>
-                          <button className="btn btn-ghost btn-sm" style={{ fontSize: '11px' }} onClick={() => markPaid(row)}>
-                            <CheckCircle size={12} /> Mark Paid
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {data.length === 0 && <div className="empty">No unpaid crew assignments</div>}
-              </div>
-            )}
-          </>
-        )}
-      </div>
-    </div>
+          {type === 'profit' && (
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>Project</th><th>Client</th><th>Revenue</th><th>Crew</th><th>Expenses</th><th>Profit</th></tr></thead>
+                <tbody>
+                  {data.map(row => (
+                    <tr key={row.id}>
+                      <td className="text-sm">{row.title}</td>
+                      <td className="text-2 text-sm">{row.client_name || '-'}</td>
+                      <td><Private>{fmt(row.revenue)}</Private></td>
+                      <td className="text-2"><Private>{fmt(row.crew_cost)}</Private></td>
+                      <td className="text-2"><Private>{fmt(row.expenses)}</Private></td>
+                      <td className={row.net_profit < 0 ? 'text-danger text-bold' : 'text-bold'}><Private>{fmt(row.net_profit ?? row.realized_profit)}</Private></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {data.length === 0 && <div className="empty">No revenue data this month</div>}
+            </div>
+          )}
+
+          {type === 'outstanding' && (
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>Project</th><th>Client</th><th>Invoiced</th><th>Not yet invoiced</th><th>Outstanding</th></tr></thead>
+                <tbody>
+                  {data.map(row => (
+                    <tr key={row.id ?? `inv-${row.invoice_id}`}>
+                      <td>
+                        {row.id
+                          ? <Link to={`/projects/${row.id}`} className="link text-bold" onClick={onClose}>{row.project_title}</Link>
+                          : <Link to="/invoices" className="link text-bold" onClick={onClose}>{row.project_title}</Link>}
+                      </td>
+                      <td className="text-2 text-sm">{row.client_name || '-'}</td>
+                      <td className="text-sm"><Private>{fmt(row.invoiced_unpaid)}</Private></td>
+                      <td className="text-2 text-sm"><Private>{fmt(row.not_invoiced)}</Private></td>
+                      <td className="text-bold text-danger"><Private>{fmt(row.outstanding)}</Private></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {data.length === 0 && <div className="empty">No pending payments</div>}
+              {data.length > 0 && (
+                <div className="owed-split">
+                  <span>Invoiced <Private>{fmt(data.reduce((s, r) => s + r.invoiced_unpaid, 0))}</Private></span>
+                  <span>Not yet invoiced <Private>{fmt(data.reduce((s, r) => s + r.not_invoiced, 0))}</Private></span>
+                  <span className="owed-split-total">Total <Private>{fmt(data.reduce((s, r) => s + r.outstanding, 0))}</Private></span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {type === 'upcoming' && (
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>Project</th><th>Client</th><th>Budget</th><th>Received</th><th>Not yet invoiced</th><th>Shoot Date</th></tr></thead>
+                <tbody>
+                  {data.map(row => (
+                    <tr key={row.id}>
+                      <td><Link to={`/projects/${row.id}`} className="link text-bold" onClick={onClose}>{row.project_title}</Link></td>
+                      <td className="text-2 text-sm">{row.client_name || '-'}</td>
+                      <td className="text-sm"><Private>{fmt(row.agreed_budget)}</Private></td>
+                      <td className="text-2 text-sm"><Private>{fmt(row.total_received)}</Private></td>
+                      <td className="text-bold" style={{ color: 'var(--color-mid-gray)' }}><Private>{fmt(row.outstanding)}</Private></td>
+                      <td className="text-sm">{fmtDate(row.shoot_date)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {data.length === 0 && <div className="empty">No upcoming shoots with a balance</div>}
+              {data.length > 0 && (
+                <div className="owed-split">
+                  <span className="owed-split-total">Not yet invoiced <Private>{fmt(data.reduce((s, r) => s + r.outstanding, 0))}</Private></span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {type === 'unpaid-crew' && (
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>Crew</th><th>Project</th><th>Role</th><th>Total</th><th>Paid</th><th>Remaining</th><th></th></tr></thead>
+                <tbody>
+                  {data.map(row => (
+                    <tr key={row.id}>
+                      <td className="text-sm text-bold">{row.crew_name}</td>
+                      <td className="text-2 text-sm">{row.project_title}</td>
+                      <td className="text-2 text-sm">{row.role_on_project || '-'}</td>
+                      <td><Private>{fmt(row.total_cost)}</Private></td>
+                      <td className="text-2"><Private>{fmt(row.payment_amount)}</Private></td>
+                      <td className="text-danger"><Private>{fmt(row.remaining)}</Private></td>
+                      <td>
+                        <button className="btn btn-ghost btn-sm" style={{ fontSize: '11px' }} onClick={() => markPaid(row)}>
+                          <CheckCircle size={12} /> Mark Paid
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {data.length === 0 && <div className="empty">No unpaid crew assignments</div>}
+            </div>
+          )}
+        </>
+      )}
+    </Overlay>
   );
 }

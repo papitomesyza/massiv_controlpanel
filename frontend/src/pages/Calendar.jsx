@@ -8,6 +8,7 @@ import { DndContext, useDraggable, useDroppable, PointerSensor, TouchSensor, use
 import { CSS } from '@dnd-kit/utilities';
 import { api } from '../api';
 import { GROUP_TINT, categoryVisual } from '../lib/categoryIcons';
+import Overlay from '../components/Overlay';
 
 // One visual per event type. Colour is derived from the type at render, never
 // stored: each type takes one hue from the shared categorical palette in
@@ -825,21 +826,15 @@ function DayEventsPanel({ ds, events, onClickEvent }) {
 function DayDrawer({ ds, events, edgeTintFor, onClose, onClickEvent }) {
   const d = parseDS(ds);
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal-box" style={{ maxWidth: '420px' }}>
-        <div className="modal-header">
-          <span className="modal-title">{DAYS[d.getDay() === 0 ? 6 : d.getDay() - 1]} {d.getDate()} {MONTH_NAMES[d.getMonth()]} {d.getFullYear()}</span>
-          <button className="modal-close" onClick={onClose}><X size={18} /></button>
-        </div>
-        <div className="cal-drawer-list">
-          {events.map(ev => (
-            <div key={ev.id} onClick={() => onClickEvent(ev)} style={{ cursor: 'pointer' }}>
-              <EventChipInner ev={ev} edgeTint={edgeTintFor(ev)} />
-            </div>
-          ))}
-        </div>
+    <Overlay title={<>{DAYS[d.getDay() === 0 ? 6 : d.getDay() - 1]} {d.getDate()} {MONTH_NAMES[d.getMonth()]} {d.getFullYear()}</>} onClose={onClose} width={420} guard={false}>
+      <div className="cal-drawer-list">
+        {events.map(ev => (
+          <div key={ev.id} onClick={() => onClickEvent(ev)} style={{ cursor: 'pointer' }}>
+            <EventChipInner ev={ev} edgeTint={edgeTintFor(ev)} />
+          </div>
+        ))}
       </div>
-    </div>
+    </Overlay>
   );
 }
 
@@ -861,66 +856,57 @@ function EventDetailModal({ event, onClose, onEdit, onDelete }) {
   }
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal-box" style={{ maxWidth: '480px' }}>
-        <div className="modal-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span className="cal-type-badge" style={{ '--chip-hue': hue }}><Icon size={14} /></span>
-            <span className="modal-title">{event.title}</span>
-          </div>
-          <button className="modal-close" onClick={onClose}><X size={18} /></button>
+    <Overlay title={event.title} onClose={onClose} width={480}>
+      <div style={{ padding: '0 0 16px' }}>
+        <div className="fin-row" style={{ padding: '8px 0' }}>
+          <span className="text-2">Type</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: hue }}>
+            <Icon size={13} /> {label}
+          </span>
         </div>
-        <div style={{ padding: '0 0 16px' }}>
+        <div className="fin-row" style={{ padding: '8px 0' }}>
+          <span className="text-2">Date</span>
+          <span>
+            {fmtShortDate(event.start_date)}
+            {event.end_date && event.end_date !== event.start_date ? ` to ${fmtShortDate(event.end_date)}` : ''}
+          </span>
+        </div>
+        {(event.start_time || event.end_time) && (
           <div className="fin-row" style={{ padding: '8px 0' }}>
-            <span className="text-2">Type</span>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: hue }}>
-              <Icon size={13} /> {label}
-            </span>
+            <span className="text-2">Time</span>
+            <span>{event.start_time || ''}{event.end_time ? ` to ${event.end_time}` : ''}</span>
           </div>
+        )}
+        {event.location && (
           <div className="fin-row" style={{ padding: '8px 0' }}>
-            <span className="text-2">Date</span>
-            <span>
-              {fmtShortDate(event.start_date)}
-              {event.end_date && event.end_date !== event.start_date ? ` to ${fmtShortDate(event.end_date)}` : ''}
-            </span>
+            <span className="text-2">Location</span>
+            <span>{event.location}</span>
           </div>
-          {(event.start_time || event.end_time) && (
-            <div className="fin-row" style={{ padding: '8px 0' }}>
-              <span className="text-2">Time</span>
-              <span>{event.start_time || ''}{event.end_time ? ` to ${event.end_time}` : ''}</span>
-            </div>
-          )}
-          {event.location && (
-            <div className="fin-row" style={{ padding: '8px 0' }}>
-              <span className="text-2">Location</span>
-              <span>{event.location}</span>
-            </div>
-          )}
-          {event.project_title && (
-            <div className="fin-row" style={{ padding: '8px 0' }}>
-              <span className="text-2">Project</span>
-              <span>{event.project_title}</span>
-            </div>
-          )}
-          {event.notes && (
-            <div style={{ marginTop: '12px', padding: '10px 12px', background: 'var(--overlay-02)', borderRadius: '10px', fontSize: '13px', color: 'var(--color-mid-gray)' }}>
-              {event.notes}
-            </div>
-          )}
-        </div>
-        <div className="modal-footer">
-          {!isTask && (
-            <button className="btn btn-danger btn-sm" onClick={handleDelete} disabled={deleting}>
-              <Trash2 size={13} /> {deleting ? 'Deleting...' : 'Delete'}
-            </button>
-          )}
-          <div style={{ flex: 1 }} />
-          <button className="btn btn-ghost" onClick={onClose}>Close</button>
-          {event.project_id && <button className="btn btn-ghost" onClick={openProject}>Open Project</button>}
-          {!isTask && <button className="btn btn-primary" onClick={onEdit}><Edit2 size={13} /> Edit</button>}
-        </div>
+        )}
+        {event.project_title && (
+          <div className="fin-row" style={{ padding: '8px 0' }}>
+            <span className="text-2">Project</span>
+            <span>{event.project_title}</span>
+          </div>
+        )}
+        {event.notes && (
+          <div style={{ marginTop: '12px', padding: '10px 12px', background: 'var(--overlay-02)', borderRadius: '10px', fontSize: '13px', color: 'var(--color-mid-gray)' }}>
+            {event.notes}
+          </div>
+        )}
       </div>
-    </div>
+      <div className="modal-footer">
+        {!isTask && (
+          <button className="btn btn-danger btn-sm" onClick={handleDelete} disabled={deleting}>
+            <Trash2 size={13} /> {deleting ? 'Deleting...' : 'Delete'}
+          </button>
+        )}
+        <div style={{ flex: 1 }} />
+        <button className="btn btn-ghost" onClick={onClose}>Close</button>
+        {event.project_id && <button className="btn btn-ghost" onClick={openProject}>Open Project</button>}
+        {!isTask && <button className="btn btn-primary" onClick={onEdit}><Edit2 size={13} /> Edit</button>}
+      </div>
+    </Overlay>
   );
 }
 
@@ -977,78 +963,72 @@ function EventModal({ mode, event, initialDate, projects, onClose, onSaved }) {
   }
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal-box" style={{ maxWidth: '520px' }}>
-        <div className="modal-header">
-          <span className="modal-title">{isEdit ? 'Edit Event' : 'Add Event'}</span>
-          <button className="modal-close" onClick={onClose}><X size={18} /></button>
-        </div>
+    <Overlay title={isEdit ? 'Edit Event' : 'Add Event'} onClose={onClose} width={520}>
 
+      <div className="form-row">
+        <label className="form-label">Title *</label>
+        <input className="input" value={form.title} onChange={e => f('title', e.target.value)} placeholder="Event title" autoFocus />
+      </div>
+
+      <div className="form-grid">
         <div className="form-row">
-          <label className="form-label">Title *</label>
-          <input className="input" value={form.title} onChange={e => f('title', e.target.value)} placeholder="Event title" autoFocus />
+          <label className="form-label">Link to Project</label>
+          <select className="select" value={form.project_id} onChange={e => f('project_id', e.target.value)}>
+            <option value="">No project</option>
+            {projects.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
+          </select>
         </div>
-
-        <div className="form-grid">
-          <div className="form-row">
-            <label className="form-label">Link to Project</label>
-            <select className="select" value={form.project_id} onChange={e => f('project_id', e.target.value)}>
-              <option value="">No project</option>
-              {projects.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
-            </select>
-          </div>
-          <div className="form-row">
-            <label className="form-label">Event Type</label>
-            <select className="select" value={form.event_type} onChange={e => f('event_type', e.target.value)}>
-              <option value="shoot">Shoot</option>
-              <option value="meeting">Meeting</option>
-              <option value="deadline">Deadline</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="form-grid">
-          <div className="form-row">
-            <label className="form-label">Start Date *</label>
-            <input type="date" className="input" value={form.start_date} onChange={e => f('start_date', e.target.value)} />
-          </div>
-          <div className="form-row">
-            <label className="form-label">End Date</label>
-            <input type="date" className="input" value={form.end_date} onChange={e => f('end_date', e.target.value)} />
-          </div>
-        </div>
-
-        <div className="form-grid">
-          <div className="form-row">
-            <label className="form-label">Start Time</label>
-            <input type="time" className="input" value={form.start_time} onChange={e => f('start_time', e.target.value)} />
-          </div>
-          <div className="form-row">
-            <label className="form-label">End Time</label>
-            <input type="time" className="input" value={form.end_time} onChange={e => f('end_time', e.target.value)} />
-          </div>
-        </div>
-
         <div className="form-row">
-          <label className="form-label">Location</label>
-          <input className="input" value={form.location} onChange={e => f('location', e.target.value)} placeholder="Location" />
-        </div>
-
-        <div className="form-row">
-          <label className="form-label">Notes</label>
-          <textarea className="input" rows={3} value={form.notes} onChange={e => f('notes', e.target.value)} placeholder="Notes..." />
-        </div>
-
-        {err && <div className="error-msg">{err}</div>}
-
-        <div className="modal-footer">
-          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={save} disabled={saving}>
-            {saving ? 'Saving...' : isEdit ? 'Save Changes' : 'Add Event'}
-          </button>
+          <label className="form-label">Event Type</label>
+          <select className="select" value={form.event_type} onChange={e => f('event_type', e.target.value)}>
+            <option value="shoot">Shoot</option>
+            <option value="meeting">Meeting</option>
+            <option value="deadline">Deadline</option>
+            <option value="other">Other</option>
+          </select>
         </div>
       </div>
-    </div>
+
+      <div className="form-grid">
+        <div className="form-row">
+          <label className="form-label">Start Date *</label>
+          <input type="date" className="input" value={form.start_date} onChange={e => f('start_date', e.target.value)} />
+        </div>
+        <div className="form-row">
+          <label className="form-label">End Date</label>
+          <input type="date" className="input" value={form.end_date} onChange={e => f('end_date', e.target.value)} />
+        </div>
+      </div>
+
+      <div className="form-grid">
+        <div className="form-row">
+          <label className="form-label">Start Time</label>
+          <input type="time" className="input" value={form.start_time} onChange={e => f('start_time', e.target.value)} />
+        </div>
+        <div className="form-row">
+          <label className="form-label">End Time</label>
+          <input type="time" className="input" value={form.end_time} onChange={e => f('end_time', e.target.value)} />
+        </div>
+      </div>
+
+      <div className="form-row">
+        <label className="form-label">Location</label>
+        <input className="input" value={form.location} onChange={e => f('location', e.target.value)} placeholder="Location" />
+      </div>
+
+      <div className="form-row">
+        <label className="form-label">Notes</label>
+        <textarea className="input" rows={3} value={form.notes} onChange={e => f('notes', e.target.value)} placeholder="Notes..." />
+      </div>
+
+      {err && <div className="error-msg">{err}</div>}
+
+      <div className="modal-footer">
+        <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" onClick={save} disabled={saving}>
+          {saving ? 'Saving...' : isEdit ? 'Save Changes' : 'Add Event'}
+        </button>
+      </div>
+    </Overlay>
   );
 }

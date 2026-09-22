@@ -11,7 +11,7 @@ import {
 } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import Modal from '../components/Modal';
+import Overlay from '../components/Overlay';
 import LocationPicker from '../components/LocationPicker';
 import OpusPolish, { useAiPolishAvailable } from '../components/OpusPolish';
 import { api, fmtDate } from '../api';
@@ -165,7 +165,7 @@ function LibraryModal({ shotlistId, library, onClose, onPick }) {
   }
 
   return (
-    <Modal title="Choose from the library" onClose={onClose}>
+    <Overlay title="Choose from the library" onClose={onClose} dirty={chosen.length > 0}>
       {library.length === 0 ? (
         <p className="shotlist-hint" style={{ marginTop: 0 }}>
           Nothing uploaded to this shot list yet. Upload from here or from the Library panel and it
@@ -202,7 +202,7 @@ function LibraryModal({ shotlistId, library, onClose, onPick }) {
           {busy ? 'Adding…' : `Use ${chosen.length || ''}`.trim()}
         </button>
       </div>
-    </Modal>
+    </Overlay>
   );
 }
 
@@ -1021,7 +1021,7 @@ function DayModal({ shotlistId, day, sceneCount, canDelete, onClose, onSaved }) 
   }
 
   return (
-    <Modal title={`${dayLabel(day)} settings`} onClose={onClose}>
+    <Overlay title={`${dayLabel(day)} settings`} onClose={onClose}>
       <div style={{ display: 'flex', gap: '10px' }}>
         <div className="form-row" style={{ width: 90 }}>
           <label className="form-label">Day number</label>
@@ -1068,7 +1068,7 @@ function DayModal({ shotlistId, day, sceneCount, canDelete, onClose, onSaved }) 
           {saving ? 'Saving…' : 'Save day'}
         </button>
       </div>
-    </Modal>
+    </Overlay>
   );
 }
 
@@ -1152,7 +1152,7 @@ function MoveModal({ shotlistId, move, onClose, onSaved }) {
   }
 
   return (
-    <Modal title={`Company move to ${move.to_name || 'the next location'}`} onClose={onClose}>
+    <Overlay title={`Company move to ${move.to_name || 'the next location'}`} onClose={onClose}>
       <p className="shotlist-hint" style={{ marginTop: 0 }}>
         {move.from_name || 'The previous location'} → {move.to_name || 'the next location'}
         {move.travel_km ? ` · ${move.travel_km} km apart` : ''}
@@ -1221,7 +1221,7 @@ function MoveModal({ shotlistId, move, onClose, onSaved }) {
           {saving ? 'Saving…' : 'Save move'}
         </button>
       </div>
-    </Modal>
+    </Overlay>
   );
 }
 
@@ -1838,7 +1838,7 @@ function CharactersPanel({ shotlistId, shotlist, base, characters, library, onCh
       <CastingShare shotlistId={shotlistId} shotlist={shotlist} base={base} onChanged={onReload} />
 
       {editing && (
-        <Modal title={editing.id ? 'Edit character' : 'Add character'} onClose={() => setEditing(null)}>
+        <Overlay title={editing.id ? 'Edit character' : 'Add character'} onClose={() => setEditing(null)}>
           <div style={{ display: 'flex', gap: '10px' }}>
             <div className="form-row" style={{ flex: 1 }}>
               <label className="form-label">Character *</label>
@@ -1935,7 +1935,7 @@ function CharactersPanel({ shotlistId, shotlist, base, characters, library, onCh
             <button className="btn btn-ghost" onClick={() => setEditing(null)}>Cancel</button>
             <button className="btn btn-primary" onClick={save}>Save character</button>
           </div>
-        </Modal>
+        </Overlay>
       )}
     </div>
   );
@@ -2012,7 +2012,7 @@ function LocationsPanel({ shotlistId, locations, onChanged }) {
       </div>
 
       {editing && (
-        <Modal title={editing.id ? 'Edit location' : 'Add location'} onClose={() => setEditing(null)}>
+        <Overlay title={editing.id ? 'Edit location' : 'Add location'} onClose={() => setEditing(null)}>
           <div className="form-row">
             <label className="form-label">Label *</label>
             <input className="input" value={editing.name || ''} onChange={e => setEditing({ ...editing, name: e.target.value })} placeholder="e.g. Rugova Canyon" />
@@ -2030,7 +2030,7 @@ function LocationsPanel({ shotlistId, locations, onChanged }) {
             <button className="btn btn-ghost" onClick={() => setEditing(null)}>Cancel</button>
             <button className="btn btn-primary" onClick={save}>Save location</button>
           </div>
-        </Modal>
+        </Overlay>
       )}
     </div>
   );
@@ -2748,7 +2748,7 @@ export default function ShotlistEditor() {
       )}
 
       {showSettings && (
-        <Modal title="Shot list settings" onClose={() => setShowSettings(false)}>
+        <Overlay title="Shot list settings" onClose={() => setShowSettings(false)}>
           <div className="form-row">
             <label className="form-label">Project</label>
             <select
@@ -2804,7 +2804,7 @@ export default function ShotlistEditor() {
           <div className="modal-footer">
             <button className="btn btn-primary" onClick={() => setShowSettings(false)}>Done</button>
           </div>
-        </Modal>
+        </Overlay>
       )}
 
       {showPasscode && (
@@ -2817,7 +2817,7 @@ export default function ShotlistEditor() {
       )}
 
       {showActivity && (
-        <Modal title="Activity" onClose={() => setShowActivity(false)}>
+        <Overlay title="Activity" onClose={() => setShowActivity(false)}>
           {activity.length === 0 ? (
             <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Nothing recorded yet.</p>
           ) : (
@@ -2835,7 +2835,7 @@ export default function ShotlistEditor() {
             <button className="btn btn-ghost" onClick={resetStatuses}>Reset all statuses</button>
             <button className="btn btn-primary" onClick={() => setShowActivity(false)}>Close</button>
           </div>
-        </Modal>
+        </Overlay>
       )}
     </div>
   );
@@ -2872,7 +2872,7 @@ function PasscodeModal({ shotlistId, hasPasscode, onClose, onSaved }) {
   }
 
   return (
-    <Modal title={hasPasscode ? 'Change crew passcode' : 'Set crew passcode'} onClose={onClose}>
+    <Overlay title={hasPasscode ? 'Change crew passcode' : 'Set crew passcode'} onClose={onClose}>
       <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '12px' }}>
         Anyone with the link can read the shot list. Only someone with this passcode can tick shots off
         and write set design — on the scene, or as a note on one shot. Nothing else on the page can be
@@ -2897,6 +2897,6 @@ function PasscodeModal({ shotlistId, hasPasscode, onClose, onSaved }) {
           {saving ? 'Saving…' : 'Save passcode'}
         </button>
       </div>
-    </Modal>
+    </Overlay>
   );
 }

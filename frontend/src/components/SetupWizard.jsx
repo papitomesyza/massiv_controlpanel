@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { X, Check, ArrowRight } from 'lucide-react';
+import { Check } from 'lucide-react';
 import { api } from '../api';
+import Overlay from './Overlay';
 
 const IDENTITY_OPTIONS = [
   {
@@ -98,16 +99,34 @@ export default function SetupWizard({ onComplete, onSkip, onDismissPermanently }
   }
 
   return (
-    <div className="setup-wizard-overlay">
-      <div className="setup-wizard-box">
-        {/* Header */}
-        <div className="setup-wizard-header">
-          <div>
-            <div className="setup-wizard-title">Workspace Setup</div>
-            <div className="setup-wizard-subtitle">Step {step} of 3 — personalizes your workflow</div>
-          </div>
-          <button className="modal-close" onClick={onSkip} title="Skip for now"><X size={18} /></button>
-        </div>
+    <Overlay
+      size="full"
+      title="Workspace Setup"
+      onClose={onSkip}
+      width={560}
+      dirty={!!identity || focus.length > 0}
+      trackInput={false}
+      discardTitle="Skip setup for now?"
+      actions={<>
+        {step === 1 ? (
+          <button className="btn btn-ghost btn-sm" onClick={handleDismissPermanently}>
+            Don't ask again
+          </button>
+        ) : (
+          <button className="btn btn-ghost btn-sm" onClick={() => { setErr(''); setStep(s => s - 1); }}>
+            Back
+          </button>
+        )}
+        {step < 3 ? (
+          <button className="btn btn-primary btn-sm" onClick={goNext}>Next</button>
+        ) : (
+          <button className="btn btn-primary btn-sm" onClick={finish} disabled={saving}>
+            {saving ? 'Saving...' : 'Finish'}
+          </button>
+        )}
+      </>}
+    >
+      <div className="card setup-wizard-card">
 
         {/* Step indicators */}
         <div className="setup-wizard-steps">
@@ -190,33 +209,7 @@ export default function SetupWizard({ onComplete, onSkip, onDismissPermanently }
         </div>
 
         {err && <div className="error-msg" style={{ padding: '0 24px 8px' }}>{err}</div>}
-
-        {/* Footer */}
-        <div className="setup-wizard-footer">
-          {step === 1 ? (
-            <button className="btn btn-ghost btn-sm" style={{ fontSize: '12px' }} onClick={handleDismissPermanently}>
-              Don't ask again
-            </button>
-          ) : (
-            <button className="btn btn-ghost" onClick={() => { setErr(''); setStep(s => s - 1); }}>
-              Back
-            </button>
-          )}
-          <div style={{ flex: 1 }} />
-          <button className="btn btn-ghost btn-sm" style={{ marginRight: '8px', fontSize: '12px', color: 'var(--color-mid-gray)' }} onClick={onSkip}>
-            Skip for now
-          </button>
-          {step < 3 ? (
-            <button className="btn btn-primary" onClick={goNext}>
-              Next <ArrowRight size={14} style={{ marginLeft: '2px' }} />
-            </button>
-          ) : (
-            <button className="btn btn-primary" onClick={finish} disabled={saving}>
-              {saving ? 'Saving...' : 'Finish'}
-            </button>
-          )}
-        </div>
       </div>
-    </div>
+    </Overlay>
   );
 }

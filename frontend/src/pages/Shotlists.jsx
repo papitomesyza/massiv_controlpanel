@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ListVideo, Plus, Link2, Check, Trash2, ArrowLeft } from 'lucide-react';
 import { api, fmtDate } from '../api';
-import Modal from '../components/Modal';
+import Overlay from '../components/Overlay';
 
 const STATUS_BADGE = {
   draft: 'badge badge-pending',
@@ -45,7 +45,7 @@ function NewShotlistModal({ projects, onClose, onCreated }) {
   }
 
   return (
-    <Modal title="New shot list" onClose={onClose}>
+    <Overlay title="New shot list" onClose={onClose}>
       <form onSubmit={submit}>
         <div className="form-row">
           <label className="form-label">Title *</label>
@@ -74,7 +74,7 @@ function NewShotlistModal({ projects, onClose, onCreated }) {
           <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Creating…' : 'Create'}</button>
         </div>
       </form>
-    </Modal>
+    </Overlay>
   );
 }
 

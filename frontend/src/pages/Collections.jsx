@@ -5,7 +5,7 @@ import {
   Archive, ArchiveRestore, Search, Link2, FileText, GripVertical,
   Instagram, Music2, Star, Share2, Copy, Check,
 } from 'lucide-react';
-import Modal from '../components/Modal';
+import Overlay from '../components/Overlay';
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors,
 } from '@dnd-kit/core';
@@ -233,29 +233,23 @@ function EditModal({ collection, onSave, onClose }) {
   }
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal-box" style={{ maxWidth: 480 }}>
-        <div className="modal-header">
-          <span className="modal-title">Edit Collection</span>
-          <button className="modal-close" onClick={onClose}><X size={18} /></button>
+    <Overlay title="Edit Collection" onClose={onClose} width={480}>
+      <form onSubmit={handleSubmit}>
+        <div className="form-row">
+          <label className="form-label">Name *</label>
+          <input className="input" value={name} onChange={e => setName(e.target.value)} autoFocus />
         </div>
-        <form onSubmit={handleSubmit}>
-          <div className="form-row">
-            <label className="form-label">Name *</label>
-            <input className="input" value={name} onChange={e => setName(e.target.value)} autoFocus />
-          </div>
-          <div className="form-row">
-            <label className="form-label">Description</label>
-            <input className="input" value={description} onChange={e => setDescription(e.target.value)} placeholder="Optional description" />
-          </div>
-          {error && <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 12px' }}>{error}</p>}
-          <div className="modal-footer">
-            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save Changes'}</button>
-          </div>
-        </form>
-      </div>
-    </div>
+        <div className="form-row">
+          <label className="form-label">Description</label>
+          <input className="input" value={description} onChange={e => setDescription(e.target.value)} placeholder="Optional description" />
+        </div>
+        {error && <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 12px' }}>{error}</p>}
+        <div className="modal-footer">
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save Changes'}</button>
+        </div>
+      </form>
+    </Overlay>
   );
 }
 
@@ -345,105 +339,99 @@ function NewCollectionModal({ projects, onClose, onCreated }) {
   ];
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal-box" style={{ maxWidth: 480 }}>
-        <div className="modal-header">
-          <span className="modal-title">New Collection</span>
-          <button className="modal-close" onClick={onClose}><X size={18} /></button>
-        </div>
+    <Overlay title="New Collection" onClose={onClose} width={480}>
 
-        {step === 'type' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '0 0 6px' }}>
-              What kind of collection?
-            </p>
-            {typeOptions.map(opt => (
-              <button
-                key={opt.key}
-                style={typeCardBase}
-                onClick={() => pickType(opt.key)}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = 'var(--overlay-02)'; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-default)'; e.currentTarget.style.background = 'var(--bg-secondary)'; }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '13px' }}>
-                  <div style={{ width: 38, height: 38, borderRadius: 10, background: 'var(--overlay-04)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    {opt.icon}
-                  </div>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: 3 }}>{opt.title}</div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{opt.sub}</div>
-                  </div>
+      {step === 'type' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '0 0 6px' }}>
+            What kind of collection?
+          </p>
+          {typeOptions.map(opt => (
+            <button
+              key={opt.key}
+              style={typeCardBase}
+              onClick={() => pickType(opt.key)}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = 'var(--overlay-02)'; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-default)'; e.currentTarget.style.background = 'var(--bg-secondary)'; }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '13px' }}>
+                <div style={{ width: 38, height: 38, borderRadius: 10, background: 'var(--overlay-04)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  {opt.icon}
                 </div>
-              </button>
-            ))}
-            <div className="modal-footer">
-              <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-            </div>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: 3 }}>{opt.title}</div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{opt.sub}</div>
+                </div>
+              </div>
+            </button>
+          ))}
+          <div className="modal-footer">
+            <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
           </div>
-        )}
+        </div>
+      )}
 
-        {step === 'project' && (
-          <form onSubmit={handleCreateProject}>
-            <div className="form-row">
-              <label className="form-label">Project *</label>
-              <select className="select" value={selectedProjectId} onChange={e => onProjectChange(e.target.value)} autoFocus>
-                <option value="">— select a project —</option>
-                {projects.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
-              </select>
-            </div>
-            <div className="form-row">
-              <label className="form-label">Collection Name *</label>
-              <input className="input" value={projName} onChange={e => setProjName(e.target.value)} placeholder="Defaults to project title" />
-            </div>
-            <div className="form-row">
-              <label className="form-label">Description</label>
-              <input className="input" value={projDesc} onChange={e => setProjDesc(e.target.value)} placeholder="Optional description" />
-            </div>
-            {error && <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 10px' }}>{error}</p>}
-            <div className="modal-footer">
-              <button type="button" className="btn btn-ghost" onClick={() => { setStep('type'); setError(''); }}>Back</button>
-              <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Creating…' : 'Create'}</button>
-            </div>
-          </form>
-        )}
+      {step === 'project' && (
+        <form onSubmit={handleCreateProject}>
+          <div className="form-row">
+            <label className="form-label">Project *</label>
+            <select className="select" value={selectedProjectId} onChange={e => onProjectChange(e.target.value)} autoFocus>
+              <option value="">Select a project</option>
+              {projects.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
+            </select>
+          </div>
+          <div className="form-row">
+            <label className="form-label">Collection Name *</label>
+            <input className="input" value={projName} onChange={e => setProjName(e.target.value)} placeholder="Defaults to project title" />
+          </div>
+          <div className="form-row">
+            <label className="form-label">Description</label>
+            <input className="input" value={projDesc} onChange={e => setProjDesc(e.target.value)} placeholder="Optional description" />
+          </div>
+          {error && <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 10px' }}>{error}</p>}
+          <div className="modal-footer">
+            <button type="button" className="btn btn-ghost" onClick={() => { setStep('type'); setError(''); }}>Back</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Creating…' : 'Create'}</button>
+          </div>
+        </form>
+      )}
 
-        {step === 'studio' && (
-          <form onSubmit={handleCreateStudio}>
-            <div className="form-row">
-              <label className="form-label">Name *</label>
-              <input className="input" value={studioName} onChange={e => setStudioName(e.target.value)} placeholder="e.g. Music Video References" autoFocus />
-            </div>
-            <div className="form-row">
-              <label className="form-label">Description</label>
-              <input className="input" value={studioDesc} onChange={e => setStudioDesc(e.target.value)} placeholder="Optional description" />
-            </div>
-            {error && <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 10px' }}>{error}</p>}
-            <div className="modal-footer">
-              <button type="button" className="btn btn-ghost" onClick={() => { setStep('type'); setError(''); }}>Back</button>
-              <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Creating…' : 'Create'}</button>
-            </div>
-          </form>
-        )}
+      {step === 'studio' && (
+        <form onSubmit={handleCreateStudio}>
+          <div className="form-row">
+            <label className="form-label">Name *</label>
+            <input className="input" value={studioName} onChange={e => setStudioName(e.target.value)} placeholder="e.g. Music Video References" autoFocus />
+          </div>
+          <div className="form-row">
+            <label className="form-label">Description</label>
+            <input className="input" value={studioDesc} onChange={e => setStudioDesc(e.target.value)} placeholder="Optional description" />
+          </div>
+          {error && <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 10px' }}>{error}</p>}
+          <div className="modal-footer">
+            <button type="button" className="btn btn-ghost" onClick={() => { setStep('type'); setError(''); }}>Back</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Creating…' : 'Create'}</button>
+          </div>
+        </form>
+      )}
 
-        {step === 'personal' && (
-          <form onSubmit={handleCreatePersonal}>
-            <div className="form-row">
-              <label className="form-label">Name *</label>
-              <input className="input" value={personalName} onChange={e => setPersonalName(e.target.value)} placeholder="e.g. Business Ideas" autoFocus />
-            </div>
-            <div className="form-row">
-              <label className="form-label">Description</label>
-              <input className="input" value={personalDesc} onChange={e => setPersonalDesc(e.target.value)} placeholder="Optional description" />
-            </div>
-            {error && <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 10px' }}>{error}</p>}
-            <div className="modal-footer">
-              <button type="button" className="btn btn-ghost" onClick={() => { setStep('type'); setError(''); }}>Back</button>
-              <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Creating…' : 'Create'}</button>
-            </div>
-          </form>
-        )}
-      </div>
-    </div>
+      {step === 'personal' && (
+        <form onSubmit={handleCreatePersonal}>
+          <div className="form-row">
+            <label className="form-label">Name *</label>
+            <input className="input" value={personalName} onChange={e => setPersonalName(e.target.value)} placeholder="e.g. Business Ideas" autoFocus />
+          </div>
+          <div className="form-row">
+            <label className="form-label">Description</label>
+            <input className="input" value={personalDesc} onChange={e => setPersonalDesc(e.target.value)} placeholder="Optional description" />
+          </div>
+          {error && <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 10px' }}>{error}</p>}
+          <div className="modal-footer">
+            <button type="button" className="btn btn-ghost" onClick={() => { setStep('type'); setError(''); }}>Back</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Creating…' : 'Create'}</button>
+          </div>
+        </form>
+      )}
+    </Overlay>
   );
 }
 
@@ -633,7 +621,7 @@ function MindShareModal({ onClose }) {
   );
 
   return (
-    <Modal title="Share Collections Page" onClose={onClose}>
+    <Overlay title="Share Collections Page" onClose={onClose} guard={false}>
       {loading ? (
         <p style={{ color: 'var(--text-muted)', fontSize: '13px', padding: '8px 0' }}>Loading…</p>
       ) : (
@@ -714,7 +702,7 @@ function MindShareModal({ onClose }) {
           )}
         </div>
       )}
-    </Modal>
+    </Overlay>
   );
 }
 

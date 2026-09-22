@@ -3,6 +3,8 @@ const router = express.Router();
 const { db } = require('../db/database');
 const { syncPayment, removePayment } = require('../lib/flowSync');
 const { documentFilename } = require('../lib/filename');
+const { pristinaToday, addDays } = require('../lib/pristinaDate');
+const { owedSummary } = require('../lib/financeFigures');
 
 // Methods client_payments supports, mirroring the client payment form on the
 // project page. Bank transfer is the default.
@@ -10,16 +12,6 @@ const PAYMENT_METHODS = ['bank_transfer', 'cash', 'other'];
 
 // Money rounded to cents, so repeated add/subtract on a balance never drifts.
 const round2 = v => Math.round((Number(v) || 0) * 100) / 100;
-
-// Today in Pristina local time. Kosovo shares the Europe/Belgrade zone
-// (CET/CEST), and en-CA formats as YYYY-MM-DD. Never UTC: before 02:00 local a
-// UTC date would still read as yesterday and drop the payment into the wrong
-// week of every monthly figure.
-function pristinaToday() {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Europe/Belgrade', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).format(new Date());
-}
 
 // The stored status column stays one of draft, issued or paid so every existing
 // reader keeps working. Paid means the balance is cleared; the partially-paid
@@ -243,18 +235,11 @@ router.get('/', (req, res) => {
 
 router.get('/stats', (req, res) => {
   const today = pristinaToday();
-  const issued = db.prepare(
-    "SELECT amount_due, amount_paid, due_date FROM invoices WHERE status = 'issued'"
-  ).all();
-
-  let outstanding = 0;
-  let overdue = 0;
-  for (const i of issued) {
-    const balance = (Number(i.amount_due) || 0) - (Number(i.amount_paid) || 0);
-    if (balance <= 0.005) continue;
-    outstanding += balance;
-    if (i.due_date && i.due_date < today) overdue += balance;
-  }
+  // Outstanding and overdue come from the shared owed helper, the same figures
+  // the Dashboard and the receivables are built from.
+  const owed = owedSummary({}, today);
+  const outstanding = owed.invoicedUnpaid;
+  const overdue = owed.overdue;
 
   const collected = db.prepare(
     "SELECT COALESCE(SUM(amount), 0) v FROM client_payments WHERE status = 'received' AND invoice_id IS NOT NULL AND strftime('%Y-%m', date) = ?"
@@ -290,7 +275,7 @@ router.post('/', (req, res) => {
     tax_rate: taxRate,
   });
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = pristinaToday();
   const result = db.prepare(`
     INSERT INTO invoices (
       project_id, estimate_id, client_id,
@@ -624,9 +609,10 @@ router.post('/from-estimate/:budgetId', (req, res) => {
     };
   });
 
-  const today = new Date().toISOString().split('T')[0];
-  const due = new Date();
-  due.setDate(due.getDate() + 30);
+  // Issue and due dates are Pristina calendar dates, so an invoice created
+  // before 02:00 local never carries yesterday's date.
+  const today = pristinaToday();
+  const dueDate = addDays(today, 30);
 
   const taxRate = parseFloat(getSetting('tax_rate', '18'));
   const taxOn = getSetting('tax_enabled', '0') === '1' ? 1 : 0;
@@ -647,7 +633,7 @@ router.post('/from-estimate/:budgetId', (req, res) => {
   `).run(
     budget.proj_id || null, budget.id, clientId,
     clientName, '', '',
-    today, due.toISOString().split('T')[0],
+    today, dueDate,
     (budget.title || '').trim(),
     'EUR',
     getSetting('invoice_language', 'sq'),

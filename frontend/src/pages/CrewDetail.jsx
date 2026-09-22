@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Edit2, Archive, Building2, MessageCircle, DollarSign, Plus, Trash2, CheckCircle, Receipt, X } from 'lucide-react';
 import { api, fmt, fmtDate } from '../api';
-import Modal from '../components/Modal';
+import Overlay from '../components/Overlay';
 import StatCard from '../components/StatCard';
 import { Private } from '../context/PrivacyContext';
 
@@ -287,7 +287,7 @@ function DebtModal({ debt, crewId, onClose, onSaved }) {
   }
 
   return (
-    <Modal title={isEdit ? 'Edit Transaction' : 'Add Transaction'} onClose={onClose} footer={<>
+    <Overlay title={isEdit ? 'Edit Transaction' : 'Add Transaction'} onClose={onClose} footer={<>
       <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
       <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
     </>}>
@@ -323,7 +323,7 @@ function DebtModal({ debt, crewId, onClose, onSaved }) {
         <textarea className="input" value={form.notes} onChange={e => f('notes', e.target.value)} placeholder="Notes..." />
       </div>
       {err && <div className="error-msg">{err}</div>}
-    </Modal>
+    </Overlay>
   );
 }
 
@@ -348,7 +348,7 @@ function EditCrewModal({ member, crewId, roles, onClose, onSaved }) {
   }
 
   return (
-    <Modal title="Edit Crew Member" onClose={onClose} footer={<>
+    <Overlay title="Edit Crew Member" onClose={onClose} footer={<>
       <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
       <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
     </>}>
@@ -406,6 +406,6 @@ function EditCrewModal({ member, crewId, roles, onClose, onSaved }) {
         <label className="form-label">Notes</label>
         <textarea className="input" value={form.notes} onChange={e => f('notes', e.target.value)} />
       </div>
-    </Modal>
+    </Overlay>
   );
 }

@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { Plus, Edit2, Archive, RotateCcw, Trash2, MapPin, Package, ChevronDown, ChevronRight, Phone, X } from 'lucide-react';
 import { api } from '../api';
 import { Private } from '../context/PrivacyContext';
+import Overlay from '../components/Overlay';
 
 const TYPE_SUGGESTIONS = ['Rental House', 'Freelancer', 'Studio', 'Post House', 'Other'];
 
@@ -482,56 +483,50 @@ function ProviderModal({ provider, onSave, onClose }) {
   }
 
   return (
-    <div className="modal-overlay">
-      <div className="modal" style={{ maxWidth: '480px' }}>
-        <div className="modal-header">
-          <span>{provider ? 'Edit Provider' : 'Add Provider'}</span>
-          <button className="modal-close" onClick={onClose}><X size={18} /></button>
+    <Overlay title={provider ? 'Edit Provider' : 'Add Provider'} onClose={onClose} width={480}>
+      <div className="modal-body">
+        <div className="form-row">
+          <label className="form-label">Name *</label>
+          <input className="input" value={form.name} onChange={e => f('name', e.target.value)} autoFocus placeholder="e.g. Camera House Berlin" />
         </div>
-        <div className="modal-body">
-          <div className="form-row">
-            <label className="form-label">Name *</label>
-            <input className="input" value={form.name} onChange={e => f('name', e.target.value)} autoFocus placeholder="e.g. Camera House Berlin" />
-          </div>
-          <div className="form-row">
-            <label className="form-label">Type</label>
-            <input
-              className="input"
-              value={form.type}
-              onChange={e => f('type', e.target.value)}
-              list="provider-type-list"
-              placeholder="Rental House"
-            />
-            <datalist id="provider-type-list">
-              {TYPE_SUGGESTIONS.map(t => <option key={t} value={t} />)}
-            </datalist>
-          </div>
-          <div className="form-grid">
-            <div className="form-row">
-              <label className="form-label">Phone</label>
-              <input className="input" value={form.phone} onChange={e => f('phone', e.target.value)} placeholder="+49 123 456789" />
-            </div>
-            <div className="form-row">
-              <label className="form-label">Email</label>
-              <input className="input" type="email" value={form.email} onChange={e => f('email', e.target.value)} placeholder="contact@example.com" />
-            </div>
-          </div>
-          <div className="form-row">
-            <label className="form-label">Location</label>
-            <input className="input" value={form.location} onChange={e => f('location', e.target.value)} placeholder="City, Country" />
-          </div>
-          <div className="form-row">
-            <label className="form-label">Notes</label>
-            <textarea className="input" rows={2} value={form.notes} onChange={e => f('notes', e.target.value)} placeholder="Optional notes..." />
-          </div>
-          {err && <div className="error-msg">{err}</div>}
+        <div className="form-row">
+          <label className="form-label">Type</label>
+          <input
+            className="input"
+            value={form.type}
+            onChange={e => f('type', e.target.value)}
+            list="provider-type-list"
+            placeholder="Rental House"
+          />
+          <datalist id="provider-type-list">
+            {TYPE_SUGGESTIONS.map(t => <option key={t} value={t} />)}
+          </datalist>
         </div>
-        <div className="modal-footer">
-          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
+        <div className="form-grid">
+          <div className="form-row">
+            <label className="form-label">Phone</label>
+            <input className="input" value={form.phone} onChange={e => f('phone', e.target.value)} placeholder="+49 123 456789" />
+          </div>
+          <div className="form-row">
+            <label className="form-label">Email</label>
+            <input className="input" type="email" value={form.email} onChange={e => f('email', e.target.value)} placeholder="contact@example.com" />
+          </div>
         </div>
+        <div className="form-row">
+          <label className="form-label">Location</label>
+          <input className="input" value={form.location} onChange={e => f('location', e.target.value)} placeholder="City, Country" />
+        </div>
+        <div className="form-row">
+          <label className="form-label">Notes</label>
+          <textarea className="input" rows={2} value={form.notes} onChange={e => f('notes', e.target.value)} placeholder="Optional notes..." />
+        </div>
+        {err && <div className="error-msg">{err}</div>}
       </div>
-    </div>
+      <div className="modal-footer">
+        <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
+      </div>
+    </Overlay>
   );
 }
 
@@ -582,88 +577,82 @@ function AddItemModal({ allItems, existingItemIds, onAdd, onCreate, onClose }) {
   }
 
   return (
-    <div className="modal-overlay">
-      <div className="modal" style={{ maxWidth: '420px' }}>
-        <div className="modal-header">
-          <span>Add Item to Provider</span>
-          <button className="modal-close" onClick={onClose}><X size={18} /></button>
-        </div>
-        <div className="modal-body">
-          <div className="form-row" style={{ position: 'relative' }}>
-            <label className="form-label">Item *</label>
-            <input
-              className="input"
-              value={query}
-              autoFocus
-              placeholder="Search or type new item name..."
-              onChange={e => { setQuery(e.target.value); setSelectedItem(null); setCreateNew(false); setDropdownOpen(true); }}
-              onFocus={() => setDropdownOpen(true)}
-              onBlur={() => setTimeout(() => setDropdownOpen(false), 150)}
-            />
-            {dropdownOpen && (filtered.length > 0 || showCreateOption) && (
-              <div style={{
-                position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 200,
-                background: 'var(--color-surface-alt)', border: '1px solid var(--border)', borderRadius: '10px',
-                boxShadow: '0 8px 24px var(--scrim)', marginTop: '4px', overflow: 'hidden',
-              }}>
-                {filtered.map(item => (
-                  <div
-                    key={item.id}
-                    onMouseDown={() => pick(item)}
-                    style={{ padding: '9px 14px', cursor: 'pointer', fontSize: '13px', borderBottom: '1px solid var(--color-hairline)', display: 'flex', alignItems: 'center', gap: '8px' }}
-                  >
-                    <span style={{ flex: 1 }}>{item.name}</span>
-                    {item.category && <span style={{ color: 'var(--color-mid-gray)', fontSize: '11px' }}>{item.category}</span>}
-                  </div>
-                ))}
-                {showCreateOption && (
-                  <div
-                    onMouseDown={pickCreateNew}
-                    style={{ padding: '9px 14px', cursor: 'pointer', fontSize: '13px', color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '6px' }}
-                  >
-                    <Plus size={13} />
-                    Create new: "{query.trim()}"
-                  </div>
-                )}
-              </div>
-            )}
-            {(selectedItem || createNew) && (
-              <div style={{ marginTop: '4px', fontSize: '11px', color: createNew ? 'var(--accent)' : 'var(--color-ink)' }}>
-                {createNew ? `Will create new item "${query.trim()}"` : 'Existing item selected'}
-              </div>
-            )}
-          </div>
-
-          {createNew && (
-            <div className="form-row">
-              <label className="form-label">Category</label>
-              <input className="input" value={newCategory} onChange={e => setNewCategory(e.target.value)} placeholder="e.g. Camera, Lighting, Audio" />
+    <Overlay title="Add Item to Provider" onClose={onClose} width={420}>
+      <div className="modal-body">
+        <div className="form-row" style={{ position: 'relative' }}>
+          <label className="form-label">Item *</label>
+          <input
+            className="input"
+            value={query}
+            autoFocus
+            placeholder="Search or type new item name..."
+            onChange={e => { setQuery(e.target.value); setSelectedItem(null); setCreateNew(false); setDropdownOpen(true); }}
+            onFocus={() => setDropdownOpen(true)}
+            onBlur={() => setTimeout(() => setDropdownOpen(false), 150)}
+          />
+          {dropdownOpen && (filtered.length > 0 || showCreateOption) && (
+            <div style={{
+              position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 200,
+              background: 'var(--color-surface-alt)', border: '1px solid var(--border)', borderRadius: '10px',
+              boxShadow: '0 8px 24px var(--scrim)', marginTop: '4px', overflow: 'hidden',
+            }}>
+              {filtered.map(item => (
+                <div
+                  key={item.id}
+                  onMouseDown={() => pick(item)}
+                  style={{ padding: '9px 14px', cursor: 'pointer', fontSize: '13px', borderBottom: '1px solid var(--color-hairline)', display: 'flex', alignItems: 'center', gap: '8px' }}
+                >
+                  <span style={{ flex: 1 }}>{item.name}</span>
+                  {item.category && <span style={{ color: 'var(--color-mid-gray)', fontSize: '11px' }}>{item.category}</span>}
+                </div>
+              ))}
+              {showCreateOption && (
+                <div
+                  onMouseDown={pickCreateNew}
+                  style={{ padding: '9px 14px', cursor: 'pointer', fontSize: '13px', color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <Plus size={13} />
+                  Create new: "{query.trim()}"
+                </div>
+              )}
             </div>
           )}
-
-          <div className="form-row">
-            <label className="form-label">Daily Rate €</label>
-            <input type="number" className="input" value={dailyRate} min="0" onChange={e => setDailyRate(e.target.value)} placeholder="0" />
-          </div>
-
-          <div className="form-row">
-            <label className="form-label">Notes</label>
-            <input className="input" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional notes..." />
-          </div>
-
-          {err && <div className="error-msg">{err}</div>}
+          {(selectedItem || createNew) && (
+            <div style={{ marginTop: '4px', fontSize: '11px', color: createNew ? 'var(--accent)' : 'var(--color-ink)' }}>
+              {createNew ? `Will create new item "${query.trim()}"` : 'Existing item selected'}
+            </div>
+          )}
         </div>
-        <div className="modal-footer">
-          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button
-            className="btn btn-primary"
-            onClick={handleSave}
-            disabled={saving || (!selectedItem && !createNew)}
-          >
-            {saving ? 'Adding...' : 'Add Item'}
-          </button>
+
+        {createNew && (
+          <div className="form-row">
+            <label className="form-label">Category</label>
+            <input className="input" value={newCategory} onChange={e => setNewCategory(e.target.value)} placeholder="e.g. Camera, Lighting, Audio" />
+          </div>
+        )}
+
+        <div className="form-row">
+          <label className="form-label">Daily Rate €</label>
+          <input type="number" className="input" value={dailyRate} min="0" onChange={e => setDailyRate(e.target.value)} placeholder="0" />
         </div>
+
+        <div className="form-row">
+          <label className="form-label">Notes</label>
+          <input className="input" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional notes..." />
+        </div>
+
+        {err && <div className="error-msg">{err}</div>}
       </div>
-    </div>
+      <div className="modal-footer">
+        <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+        <button
+          className="btn btn-primary"
+          onClick={handleSave}
+          disabled={saving || (!selectedItem && !createNew)}
+        >
+          {saving ? 'Adding...' : 'Add Item'}
+        </button>
+      </div>
+    </Overlay>
   );
 }

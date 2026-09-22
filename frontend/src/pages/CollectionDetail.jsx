@@ -12,7 +12,7 @@ import {
 } from '@dnd-kit/core';
 import { SortableContext, useSortable, rectSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import Modal from '../components/Modal';
+import Overlay from '../components/Overlay';
 import { api } from '../api';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -517,54 +517,48 @@ function EditCardModal({ card, onSave, onClose }) {
   }
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal-box" style={{ maxWidth: 460 }}>
-        <div className="modal-header">
-          <span className="modal-title">Edit {card.type === 'note' ? 'Note' : 'Link'}</span>
-          <button className="modal-close" onClick={onClose}><X size={18} /></button>
-        </div>
-        <form onSubmit={handleSubmit}>
-          {card.type === 'link' && (
-            <div className="form-row">
-              <label className="form-label">URL *</label>
-              <input className="input" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://…" autoFocus />
-              <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                Changing the URL re-fetches the thumbnail.
-              </p>
-            </div>
-          )}
+    <Overlay title={<>Edit {card.type === 'note' ? 'Note' : 'Link'}</>} onClose={onClose} width={460}>
+      <form onSubmit={handleSubmit}>
+        {card.type === 'link' && (
           <div className="form-row">
-            <label className="form-label">Title {card.type === 'note' ? '(optional)' : '(optional override)'}</label>
-            <input
-              className="input"
-              value={title}
-              onChange={e => setTitle(e.target.value)}
-              placeholder={card.type === 'note' ? 'Optional title' : 'Leave blank to use fetched title'}
-              autoFocus={card.type === 'note'}
-            />
-          </div>
-          {card.type === 'note' && (
-            <div className="form-row">
-              <label className="form-label">Note *</label>
-              <textarea className="input" value={noteText} onChange={e => setNoteText(e.target.value)} rows={5} style={{ resize: 'vertical', minHeight: '80px' }} />
-            </div>
-          )}
-          <div className="form-row">
-            <label className="form-label">Tags <span style={{ color: 'var(--text-muted)', textTransform: 'none', fontWeight: 400 }}>(comma-separated)</span></label>
-            <input className="input" value={tags} onChange={e => setTags(e.target.value)} placeholder="design, color, 3D" />
-          </div>
-          {error && (
-            <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 12px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <AlertCircle size={13} /> {error}
+            <label className="form-label">URL *</label>
+            <input className="input" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://…" autoFocus />
+            <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+              Changing the URL re-fetches the thumbnail.
             </p>
-          )}
-          <div className="modal-footer">
-            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
           </div>
-        </form>
-      </div>
-    </div>
+        )}
+        <div className="form-row">
+          <label className="form-label">Title {card.type === 'note' ? '(optional)' : '(optional override)'}</label>
+          <input
+            className="input"
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            placeholder={card.type === 'note' ? 'Optional title' : 'Leave blank to use fetched title'}
+            autoFocus={card.type === 'note'}
+          />
+        </div>
+        {card.type === 'note' && (
+          <div className="form-row">
+            <label className="form-label">Note *</label>
+            <textarea className="input" value={noteText} onChange={e => setNoteText(e.target.value)} rows={5} style={{ resize: 'vertical', minHeight: '80px' }} />
+          </div>
+        )}
+        <div className="form-row">
+          <label className="form-label">Tags <span style={{ color: 'var(--text-muted)', textTransform: 'none', fontWeight: 400 }}>(comma-separated)</span></label>
+          <input className="input" value={tags} onChange={e => setTags(e.target.value)} placeholder="design, color, 3D" />
+        </div>
+        {error && (
+          <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 12px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <AlertCircle size={13} /> {error}
+          </p>
+        )}
+        <div className="modal-footer">
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+        </div>
+      </form>
+    </Overlay>
   );
 }
 
@@ -617,7 +611,7 @@ function ShareModal({ collectionId, onClose }) {
   }
 
   return (
-    <Modal title="Share Collection" onClose={onClose}>
+    <Overlay title="Share Collection" onClose={onClose} guard={false}>
       {loading ? (
         <p style={{ color: 'var(--text-muted)', fontSize: '13px', padding: '8px 0' }}>Generating link…</p>
       ) : !token ? (
@@ -669,7 +663,7 @@ function ShareModal({ collectionId, onClose }) {
           </div>
         </div>
       )}
-    </Modal>
+    </Overlay>
   );
 }
 

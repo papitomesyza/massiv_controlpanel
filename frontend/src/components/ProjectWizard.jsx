@@ -3,6 +3,7 @@ import { X, Plus, Check, Search, SkipForward } from 'lucide-react';
 import { api } from '../api';
 import { Private } from '../context/PrivacyContext';
 import { getTasksForCategory } from '../data/projectTasks';
+import Overlay from './Overlay';
 
 /* ---- Nominatim Location Picker ---- */
 export function LocationPicker({ value, lat, lng, onChange }) {
@@ -352,14 +353,26 @@ export default function ProjectWizard({ onClose, onCreated, prefill }) {
   const currentPhase = PHASES[step - 1];
 
   return (
-    <div className="wizard-overlay">
-      <div className="wizard-box">
-        {/* Header */}
-        <div className="wizard-header">
-          <span className="wizard-title">New Project</span>
-          <button className="modal-close" onClick={onClose}><X size={18} /></button>
-        </div>
-
+    <Overlay
+      size="full"
+      title="New Project"
+      onClose={onClose}
+      width={780}
+      dirty={step > 0}
+      actions={<>
+        {step > 0 && (
+          <button className="btn btn-ghost btn-sm" onClick={() => { setErr(''); setStep(s => s - 1); }}>Back</button>
+        )}
+        {step < 5 ? (
+          <button className="btn btn-primary btn-sm" onClick={goNext}>Next</button>
+        ) : (
+          <button className="btn btn-primary btn-sm" onClick={handleSubmit} disabled={saving || activePhases.length === 0}>
+            {saving ? 'Creating...' : 'Create Project'}
+          </button>
+        )}
+      </>}
+    >
+      <div className="card wizard-card">
         {/* Step indicator */}
         <div className="wizard-steps">
           {STEP_LABELS.map((label, i) => {
@@ -413,27 +426,12 @@ export default function ProjectWizard({ onClose, onCreated, prefill }) {
           )}
         </div>
 
-        {err && <div className="error-msg" style={{ padding: '0 24px 4px' }}>{err}</div>}
-
-        {/* Footer */}
-        <div className="wizard-footer">
-          <button className="btn btn-ghost" onClick={step === 0 ? onClose : () => { setErr(''); setStep(s => s - 1); }}>
-            {step === 0 ? 'Cancel' : '← Back'}
-          </button>
-          <div style={{ flex: 1 }} />
-          {step < 5 ? (
-            <button className="btn btn-primary" onClick={goNext}>Next →</button>
-          ) : (
-            <button className="btn btn-primary" onClick={handleSubmit} disabled={saving || activePhases.length === 0}>
-              {saving ? 'Creating...' : 'Create Project'}
-            </button>
-          )}
-        </div>
+        {err && <div className="error-msg" style={{ padding: '0 28px 4px' }}>{err}</div>}
       </div>
 
       {showNewClient && <InlineClientModal onClose={() => setShowNewClient(false)} onSave={createClient} />}
       {showNewCrew && <InlineCrewModal onClose={() => setShowNewCrew(false)} onSave={createCrew} />}
-    </div>
+    </Overlay>
   );
 }
 
@@ -765,45 +763,39 @@ function InlineClientModal({ onClose, onSave }) {
   }
 
   return (
-    <div className="modal-overlay" style={{ zIndex: 1100 }} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal-box">
-        <div className="modal-header">
-          <span className="modal-title">New Client</span>
-          <button className="modal-close" onClick={onClose}><X size={18} /></button>
+    <Overlay title="New Client" onClose={onClose}>
+      <div className="form-row">
+        <label className="form-label">Name *</label>
+        <input className="input" value={form.name} onChange={e => f('name', e.target.value)} placeholder="Full name" autoFocus />
+      </div>
+      <div className="form-row">
+        <label className="form-label">Company</label>
+        <input className="input" value={form.company} onChange={e => f('company', e.target.value)} />
+      </div>
+      <div className="form-grid">
+        <div className="form-row">
+          <label className="form-label">Phone</label>
+          <input className="input" value={form.phone} onChange={e => f('phone', e.target.value)} />
         </div>
         <div className="form-row">
-          <label className="form-label">Name *</label>
-          <input className="input" value={form.name} onChange={e => f('name', e.target.value)} placeholder="Full name" autoFocus />
-        </div>
-        <div className="form-row">
-          <label className="form-label">Company</label>
-          <input className="input" value={form.company} onChange={e => f('company', e.target.value)} />
-        </div>
-        <div className="form-grid">
-          <div className="form-row">
-            <label className="form-label">Phone</label>
-            <input className="input" value={form.phone} onChange={e => f('phone', e.target.value)} />
-          </div>
-          <div className="form-row">
-            <label className="form-label">Email</label>
-            <input type="email" className="input" value={form.email} onChange={e => f('email', e.target.value)} />
-          </div>
-        </div>
-        <div className="form-row">
-          <label className="form-label">Social Media</label>
-          <input className="input" value={form.socials} onChange={e => f('socials', e.target.value)} />
-        </div>
-        <div className="form-row">
-          <label className="form-label">Notes</label>
-          <textarea className="input" value={form.notes} onChange={e => f('notes', e.target.value)} />
-        </div>
-        {err && <div className="error-msg">{err}</div>}
-        <div className="modal-footer">
-          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Create & Select'}</button>
+          <label className="form-label">Email</label>
+          <input type="email" className="input" value={form.email} onChange={e => f('email', e.target.value)} />
         </div>
       </div>
-    </div>
+      <div className="form-row">
+        <label className="form-label">Social Media</label>
+        <input className="input" value={form.socials} onChange={e => f('socials', e.target.value)} />
+      </div>
+      <div className="form-row">
+        <label className="form-label">Notes</label>
+        <textarea className="input" value={form.notes} onChange={e => f('notes', e.target.value)} />
+      </div>
+      {err && <div className="error-msg">{err}</div>}
+      <div className="modal-footer">
+        <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Create & Select'}</button>
+      </div>
+    </Overlay>
   );
 }
 
@@ -830,72 +822,66 @@ export function InlineCrewModal({ onClose, onSave, roles: externalRoles }) {
   }
 
   return (
-    <div className="modal-overlay" style={{ zIndex: 1100 }} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal-box">
-        <div className="modal-header">
-          <span className="modal-title">New Crew Member</span>
-          <button className="modal-close" onClick={onClose}><X size={18} /></button>
-        </div>
-        <div className="form-row">
-          <div className="toggle-group">
-            <button type="button" className={`toggle-btn ${!isCompany ? 'active' : ''}`} onClick={() => setIsCompany(false)}>Individual</button>
-            <button type="button" className={`toggle-btn ${isCompany ? 'active' : ''}`} onClick={() => setIsCompany(true)}>Company</button>
-          </div>
-        </div>
-        <div className="form-row">
-          <label className="form-label">{isCompany ? 'Company Name *' : 'Name *'}</label>
-          <input className="input" value={form.name} onChange={e => f('name', e.target.value)} autoFocus />
-        </div>
-        {isCompany ? (
-          <div className="form-row">
-            <label className="form-label">Service Type</label>
-            <input className="input" value={form.service_type} onChange={e => f('service_type', e.target.value)} placeholder="e.g. Rental House, Catering..." />
-          </div>
-        ) : (
-          <div className="form-grid">
-            <div className="form-row">
-              <label className="form-label">Role</label>
-              <select className="select" value={form.role} onChange={e => f('role', e.target.value)}>
-                <option value="">Select role</option>
-                {roles.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
-              </select>
-            </div>
-            <div className="form-row">
-              <label className="form-label">{isCompany ? 'Rate (€)' : 'Day Rate (€)'}</label>
-              <input type="number" className="input" value={form.day_rate} onChange={e => f('day_rate', e.target.value)} placeholder="0.00" />
-            </div>
-          </div>
-        )}
-        {isCompany && (
-          <div className="form-row">
-            <label className="form-label">Rate (€)</label>
-            <input type="number" className="input" value={form.day_rate} onChange={e => f('day_rate', e.target.value)} placeholder="0.00" />
-          </div>
-        )}
-        <div className="form-grid">
-          <div className="form-row">
-            <label className="form-label">Phone</label>
-            <input className="input" value={form.phone} onChange={e => f('phone', e.target.value)} />
-          </div>
-          <div className="form-row">
-            <label className="form-label">Email</label>
-            <input type="email" className="input" value={form.email} onChange={e => f('email', e.target.value)} />
-          </div>
-        </div>
-        <div className="form-row">
-          <label className="form-label">Location</label>
-          <input className="input" value={form.location} onChange={e => f('location', e.target.value)} />
-        </div>
-        <div className="form-row">
-          <label className="form-label">Notes</label>
-          <textarea className="input" value={form.notes} onChange={e => f('notes', e.target.value)} />
-        </div>
-        {err && <div className="error-msg">{err}</div>}
-        <div className="modal-footer">
-          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Create & Select'}</button>
+    <Overlay title="New Crew Member" onClose={onClose}>
+      <div className="form-row">
+        <div className="toggle-group">
+          <button type="button" className={`toggle-btn ${!isCompany ? 'active' : ''}`} onClick={() => setIsCompany(false)}>Individual</button>
+          <button type="button" className={`toggle-btn ${isCompany ? 'active' : ''}`} onClick={() => setIsCompany(true)}>Company</button>
         </div>
       </div>
-    </div>
+      <div className="form-row">
+        <label className="form-label">{isCompany ? 'Company Name *' : 'Name *'}</label>
+        <input className="input" value={form.name} onChange={e => f('name', e.target.value)} autoFocus />
+      </div>
+      {isCompany ? (
+        <div className="form-row">
+          <label className="form-label">Service Type</label>
+          <input className="input" value={form.service_type} onChange={e => f('service_type', e.target.value)} placeholder="e.g. Rental House, Catering..." />
+        </div>
+      ) : (
+        <div className="form-grid">
+          <div className="form-row">
+            <label className="form-label">Role</label>
+            <select className="select" value={form.role} onChange={e => f('role', e.target.value)}>
+              <option value="">Select role</option>
+              {roles.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
+            </select>
+          </div>
+          <div className="form-row">
+            <label className="form-label">{isCompany ? 'Rate (€)' : 'Day Rate (€)'}</label>
+            <input type="number" className="input" value={form.day_rate} onChange={e => f('day_rate', e.target.value)} placeholder="0.00" />
+          </div>
+        </div>
+      )}
+      {isCompany && (
+        <div className="form-row">
+          <label className="form-label">Rate (€)</label>
+          <input type="number" className="input" value={form.day_rate} onChange={e => f('day_rate', e.target.value)} placeholder="0.00" />
+        </div>
+      )}
+      <div className="form-grid">
+        <div className="form-row">
+          <label className="form-label">Phone</label>
+          <input className="input" value={form.phone} onChange={e => f('phone', e.target.value)} />
+        </div>
+        <div className="form-row">
+          <label className="form-label">Email</label>
+          <input type="email" className="input" value={form.email} onChange={e => f('email', e.target.value)} />
+        </div>
+      </div>
+      <div className="form-row">
+        <label className="form-label">Location</label>
+        <input className="input" value={form.location} onChange={e => f('location', e.target.value)} />
+      </div>
+      <div className="form-row">
+        <label className="form-label">Notes</label>
+        <textarea className="input" value={form.notes} onChange={e => f('notes', e.target.value)} />
+      </div>
+      {err && <div className="error-msg">{err}</div>}
+      <div className="modal-footer">
+        <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Create & Select'}</button>
+      </div>
+    </Overlay>
   );
 }

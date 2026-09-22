@@ -1,9 +1,11 @@
 import React, { useEffect, useState, useRef } from 'react';
 import {
-  X, Plus, Trash2, ChevronDown, FileText, Send, Check, Search,
+  Plus, Trash2, ChevronDown, FileText, Send, Search,
 } from 'lucide-react';
 import { api, fmt, fmtDate } from '../api';
 import { Private } from '../context/PrivacyContext';
+import Overlay from './Overlay';
+import { pristinaToday, addDays } from '../lib/pristinaDate';
 
 function uid() { return Math.random().toString(36).slice(2); }
 
@@ -45,13 +47,13 @@ function computeTotals(lines, invoiceDiscount, discountType, taxEnabled, taxRate
   };
 }
 
+// Issue and due dates default to Pristina calendar dates, never UTC, so an
+// invoice started before 02:00 local does not carry yesterday's date.
 function today() {
-  return new Date().toISOString().split('T')[0];
+  return pristinaToday();
 }
 function todayPlus30() {
-  const d = new Date();
-  d.setDate(d.getDate() + 30);
-  return d.toISOString().split('T')[0];
+  return addDays(pristinaToday(), 30);
 }
 
 export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
@@ -92,7 +94,10 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
   const [issuing, setIssuing] = useState(false);
   const [err, setErr] = useState('');
   const [showServicePicker, setShowServicePicker] = useState(null);
-  const scrollRef = useRef(null);
+  // Edits made through buttons rather than form fields (adding or removing a
+  // line, picking a service, the discount and tax toggles). Typed edits are
+  // caught by the overlay itself; together they drive the close guard.
+  const [touched, setTouched] = useState(false);
 
   // ── Load data ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -152,10 +157,12 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
 
   // ── Line helpers ──────────────────────────────────────────────────────────
   function addLine() {
+    setTouched(true);
     setLines(prev => [...prev, mkLine({ sort_order: prev.length })]);
   }
 
   function removeLine(id) {
+    setTouched(true);
     setLines(prev => prev.filter(l => l._id !== id));
   }
 
@@ -169,6 +176,7 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
   }
 
   function applyService(lineId, svc) {
+    setTouched(true);
     setLines(prev => prev.map(l => {
       if (l._id !== lineId) return l;
       const updated = {
@@ -261,63 +269,42 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 1000,
-      background: 'var(--scrim-strong)', backdropFilter: 'blur(8px)',
-      display: 'flex', flexDirection: 'column',
-    }}>
-      {/* Top bar */}
-      <div className="inv-topbar">
-        <div className="inv-topbar-left">
-          <FileText size={18} style={{ color: 'var(--accent)' }} />
-          <span style={{ fontWeight: 700, fontSize: '16px' }}>
-            {isEditing ? (invoice.invoice_number ? `Invoice ${invoice.invoice_number}` : 'Edit Draft') : 'New Invoice'}
-          </span>
-          {invoice?.status && (
-            <StatusBadge status={invoice.status} dueDate={invoice.due_date} />
-          )}
-        </div>
-        <div className="inv-topbar-right">
-          {err && <span style={{ color: 'var(--color-ember)', fontSize: '13px' }}>{err}</span>}
-          {!isLocked && (
-            <>
-              <button className="btn btn-ghost btn-sm" onClick={handleSave} disabled={saving || issuing}>
-                {saving ? 'Saving…' : 'Save Draft'}
+    <Overlay
+      size="full"
+      onClose={onClose}
+      dirty={touched}
+      label={isEditing ? (invoice.invoice_number ? `Invoice ${invoice.invoice_number}` : 'Edit Draft') : 'New Invoice'}
+      title={<>
+        <FileText size={18} style={{ color: 'var(--accent)' }} />
+        <span>
+          {isEditing ? (invoice.invoice_number ? `Invoice ${invoice.invoice_number}` : 'Edit Draft') : 'New Invoice'}
+        </span>
+        {invoice?.status && (
+          <StatusBadge status={invoice.status} dueDate={invoice.due_date} />
+        )}
+      </>}
+      actions={<>
+        {err && <span style={{ color: 'var(--color-ember)', fontSize: '13px' }}>{err}</span>}
+        {!isLocked && (
+          <>
+            <button className="btn btn-ghost btn-sm" onClick={handleSave} disabled={saving || issuing}>
+              {saving ? 'Saving…' : 'Save Draft'}
+            </button>
+            {invoice?.status !== 'issued' && invoice?.status !== 'paid' && (
+              <button
+                className="btn btn-primary btn-sm"
+                style={{ gap: '6px' }}
+                onClick={handleIssue}
+                disabled={saving || issuing}
+              >
+                <Send size={13} />
+                {issuing ? 'Issuing…' : 'Issue Invoice'}
               </button>
-              {invoice?.status !== 'issued' && invoice?.status !== 'paid' && (
-                <button
-                  className="btn btn-primary btn-sm"
-                  style={{ gap: '6px' }}
-                  onClick={handleIssue}
-                  disabled={saving || issuing}
-                >
-                  <Send size={13} />
-                  {issuing ? 'Issuing…' : 'Issue Invoice'}
-                </button>
-              )}
-              {invoice?.status === 'issued' && (
-                <button
-                  className="btn btn-sm"
-                  style={{ background: 'var(--color-ink)', color: 'var(--accent-contrast)', gap: '6px', borderRadius: 'var(--radius-buttons)' }}
-                  onClick={async () => {
-                    try {
-                      await api.put(`/invoices/${invoice.id}`, buildPayload());
-                      await api.post(`/invoices/${invoice.id}/paid`, {});
-                      onSaved();
-                    } catch (e) { setErr(e.message); }
-                  }}
-                >
-                  <Check size={13} /> Mark Paid
-                </button>
-              )}
-            </>
-          )}
-          <button className="btn btn-ghost btn-sm" onClick={onClose}>
-            <X size={16} />
-          </button>
-        </div>
-      </div>
-
+            )}
+          </>
+        )}
+      </>}
+    >
       {/* Service picker modal */}
       {showServicePicker && (
         <ServicePickerModal
@@ -327,9 +314,6 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
         />
       )}
 
-      {/* Scrollable body */}
-      <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '16px' : '24px' }}>
-        <div style={{ maxWidth: '920px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
           {/* ── Row 1: Client + Invoice Meta ───────────────────────────────── */}
           <div className="inv-grid-top">
@@ -339,7 +323,7 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 <select className="select" value={clientId} onChange={handleClientSelect} disabled={isLocked}
                   style={{ width: '100%' }}>
-                  <option value="">— Custom / no client —</option>
+                  <option value="">Custom, no client</option>
                   {clients.map(c => (
                     <option key={c.id} value={c.id}>{c.company || c.name}</option>
                   ))}
@@ -363,7 +347,7 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
                   </label>
                   <select className="select" value={projectId}
                     onChange={e => setProjectId(e.target.value)} disabled={isLocked} style={{ width: '100%' }}>
-                    <option value="">— None —</option>
+                    <option value="">None</option>
                     {projects.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
                   </select>
                 </div>
@@ -495,7 +479,7 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
 
                 {lines.length === 0 && (
                   <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-mid-gray)', fontSize: '13px' }}>
-                    No line items yet — add one below
+                    No line items yet, add one below
                   </div>
                 )}
 
@@ -601,7 +585,7 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
                     {lines.length === 0 && (
                       <tr>
                         <td colSpan={8} style={{ padding: '24px', textAlign: 'center', color: 'var(--color-mid-gray)', fontSize: '13px' }}>
-                          No line items yet — add one above
+                          No line items yet, add one above
                         </td>
                       </tr>
                     )}
@@ -641,12 +625,12 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
                   <button
                     className={`btn btn-sm ${discountType === 'amount' ? 'btn-primary' : 'btn-ghost'}`}
                     style={{ borderRadius: '10px', padding: '8px 14px', fontSize: '13px', flexShrink: 0 }}
-                    onClick={() => !isLocked && setDiscountType('amount')}
+                    onClick={() => { if (!isLocked) { setTouched(true); setDiscountType('amount'); } }}
                   >€</button>
                   <button
                     className={`btn btn-sm ${discountType === 'percent' ? 'btn-primary' : 'btn-ghost'}`}
                     style={{ borderRadius: '10px', padding: '8px 14px', fontSize: '13px', flexShrink: 0 }}
-                    onClick={() => !isLocked && setDiscountType('percent')}
+                    onClick={() => { if (!isLocked) { setTouched(true); setDiscountType('percent'); } }}
                   >%</button>
                 </div>
               </div>
@@ -659,7 +643,7 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
                 <button
                   className={`btn btn-sm ${taxEnabled ? 'btn-primary' : 'btn-ghost'}`}
                   style={{ borderRadius: '18px', padding: '8px 18px', fontSize: '13px', flexShrink: 0 }}
-                  onClick={() => !isLocked && setTaxEnabled(!taxEnabled)}
+                  onClick={() => { if (!isLocked) { setTouched(true); setTaxEnabled(!taxEnabled); } }}
                 >
                   {taxEnabled ? 'On' : 'Off'}
                 </button>
@@ -682,10 +666,7 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
               </div>
             </div>
           </div>
-
-        </div>
-      </div>
-    </div>
+    </Overlay>
   );
 }
 
@@ -736,12 +717,6 @@ function ServicePickerModal({ services, onSelect, onClose }) {
     if (inputRef.current) inputRef.current.focus();
   }, []);
 
-  useEffect(() => {
-    function onKey(e) { if (e.key === 'Escape') onClose(); }
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
   const filtered = q.trim()
     ? services.filter(s =>
         (s.code && s.code.toLowerCase().includes(q.toLowerCase())) ||
@@ -750,36 +725,10 @@ function ServicePickerModal({ services, onSelect, onClose }) {
     : services;
 
   return (
-    <div
-      style={{
-        position: 'fixed', inset: 0, zIndex: 3000,
-        background: 'var(--scrim-strong)', backdropFilter: 'blur(8px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div style={{
-        background: 'var(--color-surface-alt)', borderRadius: '24px',
-        width: '420px', maxWidth: '92vw', maxHeight: '70vh',
-        display: 'flex', flexDirection: 'column',
-        boxShadow: '0 24px 80px var(--scrim-strong)',
-        border: '1px solid var(--color-hairline)',
-      }}>
-        {/* Header */}
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '16px 18px 12px',
-          borderBottom: '1px solid var(--color-hairline)',
-          flexShrink: 0,
-        }}>
-          <span style={{ fontWeight: 700, fontSize: '14px' }}>Select Service</span>
-          <button className="btn btn-ghost btn-sm" style={{ padding: '4px' }} onClick={onClose}>
-            <X size={15} />
-          </button>
-        </div>
+    <Overlay title="Select Service" onClose={onClose} width={420} guard={false} bodyClassName="svc-picker-body">
         {/* Search */}
-        <div style={{ padding: '12px 18px 8px', flexShrink: 0, position: 'relative' }}>
-          <Search size={13} style={{ position: 'absolute', left: '28px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-mid-gray)', pointerEvents: 'none' }} />
+        <div style={{ padding: '0 0 8px', flexShrink: 0, position: 'relative' }}>
+          <Search size={13} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-mid-gray)', pointerEvents: 'none' }} />
           <input
             ref={inputRef}
             className="input"
@@ -790,11 +739,11 @@ function ServicePickerModal({ services, onSelect, onClose }) {
           />
         </div>
         {/* Service list */}
-        <div style={{ overflowY: 'auto', flex: 1, paddingBottom: '8px' }}>
+        <div style={{ margin: '0 -28px -28px', paddingBottom: '8px' }}>
           {filtered.length === 0 ? (
             <div style={{ padding: '28px 18px', textAlign: 'center', color: 'var(--color-mid-gray)', fontSize: '13px', lineHeight: 1.5 }}>
               {services.length === 0
-                ? 'No services in catalogue yet — add them in Invoice Setup.'
+                ? 'No services in catalogue yet, add them in Invoice Setup.'
                 : 'No services match your search.'}
             </div>
           ) : (
@@ -827,7 +776,6 @@ function ServicePickerModal({ services, onSelect, onClose }) {
             ))
           )}
         </div>
-      </div>
-    </div>
+    </Overlay>
   );
 }

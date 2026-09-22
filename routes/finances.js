@@ -1,6 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const { db } = require('../db/database');
+const { pristinaToday, pristinaMonth, pristinaYear, addMonths } = require('../lib/pristinaDate');
+const {
+  readFilter, projectFilterSql, monthlyFigures, projectProfitForMonth, owedSummary, receivableRows,
+} = require('../lib/financeFigures');
 
 function validateMoney(val, name) {
   const n = Number(val);
@@ -10,122 +14,99 @@ function validateMoney(val, name) {
   return null;
 }
 
+// Cash basis figures for one month, every one of them narrowed by the same
+// client and category filter the Overview applies. The owed figures come from
+// the shared owed helper so they reconcile with the receivables and the
+// Invoices page.
 router.get('/stats', (req, res) => {
-  const month = req.query.month || new Date().toISOString().slice(0, 7);
-  const { category_id, client_id } = req.query;
+  const month = req.query.month || pristinaMonth();
+  const f = readFilter(req.query);
+  const pf = projectFilterSql(f);
 
-  let revFilter = '';
-  let expFilter = '';
-  let crewFilter = '';
-  const revParams = [month];
-  const expParams = [month];
-  const crewParams = [month];
+  const m = monthlyFigures([month], f)[0];
+  const owed = owedSummary(f);
 
-  if (category_id) {
-    revFilter = ' AND p.category_id = ?'; revParams.push(category_id);
-    expFilter = ' AND p.category_id = ?'; expParams.push(category_id);
-    crewFilter = ' AND p.category_id = ?'; crewParams.push(category_id);
-  }
-  if (client_id) {
-    revFilter += ' AND p.client_id = ?'; revParams.push(client_id);
-    expFilter += ' AND p.client_id = ?'; expParams.push(client_id);
-    crewFilter += ' AND p.client_id = ?'; crewParams.push(client_id);
-  }
-
-  const revenue = db.prepare(`
-    SELECT COALESCE(SUM(cp.amount), 0) as total FROM client_payments cp
-    JOIN projects p ON p.id = cp.project_id
-    WHERE cp.status='received' AND strftime('%Y-%m', cp.date) = ?${revFilter}
-  `).get(...revParams).total;
-
-  // Only confirmed expenses
-  const expenses = db.prepare(`
-    SELECT COALESCE(SUM(e.amount), 0) as total FROM expenses e
-    JOIN projects p ON p.id = e.project_id
-    WHERE e.status = 'confirmed' AND strftime('%Y-%m', e.date) = ?${expFilter}
-  `).get(...expParams).total;
-
-  // Cash-basis crew cost: sum of recorded payment amounts whose payment_date falls in the month
-  const crewCosts = db.prepare(`
-    SELECT COALESCE(SUM(ca.payment_amount), 0) as total
-    FROM crew_assignments ca
-    JOIN projects p ON p.id = ca.project_id
-    WHERE ca.paid_status IN ('paid', 'partial') AND strftime('%Y-%m', ca.payment_date) = ?${crewFilter}
-  `).get(...crewParams).total;
-
-  // Pending = owed balance > 0 AND (no shoot date OR shoot passed OR completed)
-  const outstanding = db.prepare(`
-    SELECT COALESCE(SUM(p.agreed_budget - COALESCE(r.total, 0)), 0) as total
-    FROM projects p
-    LEFT JOIN (
-      SELECT project_id, SUM(amount) as total FROM client_payments WHERE status='received' GROUP BY project_id
-    ) r ON r.project_id = p.id
-    WHERE (p.agreed_budget - COALESCE(r.total, 0)) > 0
-      AND (p.shoot_date IS NULL OR p.shoot_date <= date('now') OR p.status = 'completed')
-  `).get().total;
-
-  // Upcoming = owed balance > 0 AND shoot date is in the future AND not completed
-  const upcoming = db.prepare(`
-    SELECT COALESCE(SUM(p.agreed_budget - COALESCE(r.total, 0)), 0) as total
-    FROM projects p
-    LEFT JOIN (
-      SELECT project_id, SUM(amount) as total FROM client_payments WHERE status='received' GROUP BY project_id
-    ) r ON r.project_id = p.id
-    WHERE (p.agreed_budget - COALESCE(r.total, 0)) > 0
-      AND p.shoot_date > date('now')
-      AND p.status != 'completed'
-  `).get().total;
-
-  // Unpaid crew: sum of remaining-owed (days*rate - payment_amount, never below 0) for unpaid/partial
+  // Unpaid crew: remaining owed (days x rate minus what was paid, never below 0)
   const unpaidCrew = db.prepare(`
     SELECT COALESCE(SUM(MAX(0, ca.days * ca.rate_per_day - COALESCE(ca.payment_amount, 0))), 0) as total
-    FROM crew_assignments ca WHERE ca.paid_status IN ('unpaid', 'partial')
-  `).get().total;
+    FROM crew_assignments ca JOIN projects p ON p.id = ca.project_id
+    WHERE ca.paid_status IN ('unpaid', 'partial')${pf.sql}
+  `).get(...pf.params).total;
 
-  // Count distinct projects that completed this month
-  const completedThisMonth = db.prepare(`
-    SELECT COUNT(DISTINCT project_id) as v FROM project_status_history
-    WHERE to_status='completed' AND strftime('%Y-%m', changed_at) = ?
-  `).get(month).v;
+  // Distinct projects completed in the month, the month read in Pristina time.
+  // changed_at is stored in UTC, so the rows around the edges are fetched and
+  // converted rather than compared as UTC strings.
+  const from = `${addMonths(month, 0)}-01`;
+  const to = `${addMonths(month, 1)}-01`;
+  const completedRows = db.prepare(`
+    SELECT h.project_id, h.changed_at FROM project_status_history h
+    JOIN projects p ON p.id = h.project_id
+    WHERE h.to_status = 'completed' AND h.changed_at >= date(?, '-1 day') AND h.changed_at < date(?, '+1 day')${pf.sql}
+  `).all(from, to, ...pf.params);
+  const completedThisMonth = new Set(
+    completedRows.filter(r => pristinaMonthOf(r.changed_at) === month).map(r => r.project_id)
+  ).size;
 
   // Average value of completed projects only
   const avgProjectValue = db.prepare(`
-    SELECT COALESCE(AVG(agreed_budget), 0) as v FROM projects WHERE agreed_budget > 0 AND status = 'completed'
-  `).get().v;
-
-  // Overdue: pending payments older than 30 days
-  const overdueAmount = db.prepare(`
-    SELECT COALESCE(SUM(amount), 0) as total FROM client_payments
-    WHERE status='pending' AND date < date('now', '-30 days')
-  `).get().total;
+    SELECT COALESCE(AVG(p.agreed_budget), 0) as v FROM projects p
+    WHERE p.agreed_budget > 0 AND p.status = 'completed'${pf.sql}
+  `).get(...pf.params).v;
 
   res.json({
-    revenue, expenses, crewCosts,
-    netProfit: revenue - expenses - crewCosts,
-    outstanding, upcoming, unpaidCrew, completedThisMonth, avgProjectValue, overdueAmount,
+    revenue: m.revenue,
+    expenses: m.expenses,
+    crewCosts: m.crewCosts,
+    netProfit: m.projectProfit,
+    outstanding: owed.pending,
+    outstandingInvoiced: owed.invoicedUnpaid,
+    outstandingNotInvoiced: owed.uninvoicedDue,
+    upcoming: owed.upcoming,
+    unpaidCrew,
+    completedThisMonth,
+    avgProjectValue,
   });
 });
 
+// A UTC SQLite timestamp ("YYYY-MM-DD HH:MM:SS") to its Pristina month.
+function pristinaMonthOf(utcStamp) {
+  if (!utcStamp) return null;
+  const d = new Date(`${String(utcStamp).replace(' ', 'T')}Z`);
+  if (Number.isNaN(d.getTime())) return String(utcStamp).slice(0, 7);
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Belgrade', year: 'numeric', month: '2-digit',
+  }).format(d).slice(0, 7);
+}
+
 router.get('/all-time-kpis', (req, res) => {
-  const totalRevenue = db.prepare("SELECT COALESCE(SUM(amount),0) as v FROM client_payments WHERE status='received'").get().v;
-  const totalCompleted = db.prepare("SELECT COUNT(*) as v FROM projects WHERE status='completed'").get().v;
+  const f = readFilter(req.query);
+  const pf = projectFilterSql(f);
+
+  const totalRevenue = db.prepare(`
+    SELECT COALESCE(SUM(cp.amount), 0) as v FROM client_payments cp JOIN projects p ON p.id = cp.project_id
+    WHERE cp.status = 'received'${pf.sql}
+  `).get(...pf.params).v;
+  const totalCompleted = db.prepare(`SELECT COUNT(*) as v FROM projects p WHERE p.status = 'completed'${pf.sql}`).get(...pf.params).v;
   // Average value of completed projects only
-  const avgProjectValue = db.prepare("SELECT COALESCE(AVG(agreed_budget),0) as v FROM projects WHERE agreed_budget > 0 AND status = 'completed'").get().v;
+  const avgProjectValue = db.prepare(`
+    SELECT COALESCE(AVG(p.agreed_budget), 0) as v FROM projects p WHERE p.agreed_budget > 0 AND p.status = 'completed'${pf.sql}
+  `).get(...pf.params).v;
 
   const bestMonthRow = db.prepare(`
-    SELECT strftime('%Y-%m', date) as month, SUM(amount) as total
-    FROM client_payments WHERE status='received'
+    SELECT strftime('%Y-%m', cp.date) as month, SUM(cp.amount) as total
+    FROM client_payments cp JOIN projects p ON p.id = cp.project_id
+    WHERE cp.status = 'received'${pf.sql}
     GROUP BY month ORDER BY total DESC LIMIT 1
-  `).get();
+  `).get(...pf.params);
 
   const bestClientRow = db.prepare(`
     SELECT c.name, SUM(cp.amount) as total
     FROM client_payments cp
     JOIN projects p ON p.id = cp.project_id
     JOIN clients c ON c.id = p.client_id
-    WHERE cp.status = 'received'
+    WHERE cp.status = 'received'${pf.sql}
     GROUP BY c.id ORDER BY total DESC LIMIT 1
-  `).get();
+  `).get(...pf.params);
 
   res.json({
     totalRevenue, totalCompleted, avgProjectValue,
@@ -135,57 +116,61 @@ router.get('/all-time-kpis', (req, res) => {
 });
 
 router.get('/details/revenue', (req, res) => {
-  const month = req.query.month || new Date().toISOString().slice(0, 7);
+  const month = req.query.month || pristinaMonth();
+  const pf = projectFilterSql(readFilter(req.query));
   const rows = db.prepare(`
     SELECT cp.*, p.title as project_title, c.name as client_name
     FROM client_payments cp
     JOIN projects p ON p.id = cp.project_id
     LEFT JOIN clients c ON c.id = p.client_id
-    WHERE cp.status = 'received' AND strftime('%Y-%m', cp.date) = ?
+    WHERE cp.status = 'received' AND strftime('%Y-%m', cp.date) = ?${pf.sql}
     ORDER BY cp.date DESC
-  `).all(month);
+  `).all(month, ...pf.params);
   res.json(rows);
 });
 
+// Owed detail rows, read from the shared owed helper. Each row carries the
+// invoiced and the not yet invoiced parts by name, so the interface can show
+// where the Dashboard figure and the Invoices figure differ.
+function owedDetailRow(r, amount, notInvoiced) {
+  return {
+    id: r.project_id,
+    invoice_id: r.invoice_id || null,
+    project_title: r.project_title || (r.invoices[0] && r.invoices[0].invoice_number ? `Invoice ${r.invoices[0].invoice_number}` : 'Invoice'),
+    client_name: r.client_name,
+    agreed_budget: r.agreed_budget,
+    total_received: r.received,
+    invoiced_unpaid: r.invoicedUnpaid,
+    not_invoiced: notInvoiced,
+    overdue: r.overdue,
+    outstanding: amount,
+    shoot_date: r.shoot_date,
+  };
+}
+
 router.get('/details/outstanding', (req, res) => {
-  const rows = db.prepare(`
-    SELECT p.id, p.title as project_title, c.name as client_name,
-      p.agreed_budget,
-      COALESCE(r.total, 0) as total_received,
-      (p.agreed_budget - COALESCE(r.total, 0)) as outstanding
-    FROM projects p
-    LEFT JOIN clients c ON c.id = p.client_id
-    LEFT JOIN (
-      SELECT project_id, SUM(amount) as total FROM client_payments WHERE status='received' GROUP BY project_id
-    ) r ON r.project_id = p.id
-    WHERE (p.agreed_budget - COALESCE(r.total, 0)) > 0
-      AND (p.shoot_date IS NULL OR p.shoot_date <= date('now') OR p.status = 'completed')
-    ORDER BY outstanding DESC
-  `).all();
-  res.json(rows);
+  const { rows } = owedSummary(readFilter(req.query));
+  const out = rows
+    .map(r => {
+      const notInvoiced = r.due ? r.uninvoiced : 0;
+      return owedDetailRow(r, Math.round((r.invoicedUnpaid + notInvoiced) * 100) / 100, notInvoiced);
+    })
+    .filter(r => r.outstanding > 0)
+    .sort((a, b) => b.outstanding - a.outstanding);
+  res.json(out);
 });
 
 router.get('/details/upcoming', (req, res) => {
-  const rows = db.prepare(`
-    SELECT p.id, p.title as project_title, c.name as client_name,
-      p.agreed_budget,
-      COALESCE(r.total, 0) as total_received,
-      (p.agreed_budget - COALESCE(r.total, 0)) as outstanding,
-      p.shoot_date
-    FROM projects p
-    LEFT JOIN clients c ON c.id = p.client_id
-    LEFT JOIN (
-      SELECT project_id, SUM(amount) as total FROM client_payments WHERE status='received' GROUP BY project_id
-    ) r ON r.project_id = p.id
-    WHERE (p.agreed_budget - COALESCE(r.total, 0)) > 0
-      AND p.shoot_date > date('now')
-      AND p.status != 'completed'
-    ORDER BY p.shoot_date ASC
-  `).all();
-  res.json(rows);
+  const { rows } = owedSummary(readFilter(req.query));
+  const out = rows
+    .filter(r => !r.due && r.uninvoiced > 0)
+    .map(r => owedDetailRow(r, r.uninvoiced, r.uninvoiced))
+    .sort((a, b) => String(a.shoot_date).localeCompare(String(b.shoot_date)));
+  res.json(out);
 });
 
 router.get('/details/unpaid-crew', (req, res) => {
+  const pf = projectFilterSql(readFilter(req.query));
   const rows = db.prepare(`
     SELECT ca.*, cr.name as crew_name, p.title as project_title, p.id as project_id,
            (ca.days * ca.rate_per_day) as total_cost,
@@ -193,109 +178,102 @@ router.get('/details/unpaid-crew', (req, res) => {
     FROM crew_assignments ca
     JOIN crew cr ON cr.id = ca.crew_id
     JOIN projects p ON p.id = ca.project_id
-    WHERE ca.paid_status IN ('unpaid', 'partial')
+    WHERE ca.paid_status IN ('unpaid', 'partial')${pf.sql}
     ORDER BY cr.name
-  `).all();
+  `).all(...pf.params);
   res.json(rows);
 });
 
 router.get('/details/profit', (req, res) => {
-  const month = req.query.month || new Date().toISOString().slice(0, 7);
-  const rows = db.prepare(`
-    SELECT p.id, p.title, c.name as client_name,
-      COALESCE((SELECT SUM(cp.amount) FROM client_payments cp WHERE cp.project_id=p.id AND cp.status='received' AND strftime('%Y-%m', cp.date)=?), 0) as revenue,
-      COALESCE((SELECT SUM(ca.payment_amount) FROM crew_assignments ca WHERE ca.project_id=p.id AND ca.paid_status IN ('paid','partial') AND strftime('%Y-%m', ca.payment_date)=?), 0) as crew_cost,
-      COALESCE((SELECT SUM(e.amount) FROM expenses e WHERE e.project_id=p.id AND e.status='confirmed' AND strftime('%Y-%m', e.date)=?), 0) as expenses
-    FROM projects p
-    LEFT JOIN clients c ON c.id = p.client_id
-    WHERE p.id IN (
-      SELECT DISTINCT project_id FROM client_payments WHERE status='received' AND strftime('%Y-%m', date)=?
-      UNION
-      SELECT DISTINCT project_id FROM crew_assignments WHERE paid_status IN ('paid','partial') AND strftime('%Y-%m', payment_date)=?
-      UNION
-      SELECT DISTINCT project_id FROM expenses WHERE status='confirmed' AND strftime('%Y-%m', date)=?
-    )
-    ORDER BY p.title
-  `).all(month, month, month, month, month, month);
-  res.json(rows.map(r => ({ ...r, net_profit: r.revenue - r.crew_cost - r.expenses })));
-});
-
-router.get('/chart', (req, res) => {
-  const months = parseInt(req.query.months) || 6;
-  const rows = [];
-  const now = new Date();
-  for (let i = months - 1; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const m = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    const label = d.toLocaleString('default', { month: 'short', year: '2-digit' });
-
-    const revenue = db.prepare(
-      "SELECT COALESCE(SUM(amount),0) as v FROM client_payments WHERE status='received' AND strftime('%Y-%m',date)=?"
-    ).get(m).v;
-
-    // Only confirmed expenses
-    const expensesAmt = db.prepare(
-      "SELECT COALESCE(SUM(amount),0) as v FROM expenses WHERE status='confirmed' AND strftime('%Y-%m',date)=?"
-    ).get(m).v;
-
-    // Cash-basis crew cost: sum of payment_amount where payment_date falls in that month
-    const crewCosts = db.prepare(`
-      SELECT COALESCE(SUM(ca.payment_amount),0) as v
-      FROM crew_assignments ca
-      WHERE ca.paid_status IN ('paid', 'partial') AND strftime('%Y-%m', ca.payment_date)=?
-    `).get(m).v;
-
-    rows.push({ month: label, revenue, expenses: expensesAmt, crewCosts, profit: revenue - expensesAmt - crewCosts });
-  }
+  const month = req.query.month || pristinaMonth();
+  const perProject = projectProfitForMonth(month, readFilter(req.query));
+  const info = db.prepare(`
+    SELECT p.id, p.title, c.name as client_name FROM projects p LEFT JOIN clients c ON c.id = p.client_id WHERE p.id = ?
+  `);
+  const rows = perProject.map(r => {
+    const p = info.get(r.project_id) || { id: r.project_id, title: '', client_name: null };
+    return {
+      id: p.id, title: p.title, client_name: p.client_name,
+      revenue: r.revenue, crew_cost: r.crewCosts, expenses: r.expenses, net_profit: r.projectProfit,
+    };
+  }).sort((a, b) => String(a.title).localeCompare(String(b.title)));
   res.json(rows);
 });
 
-router.get('/categories', (req, res) => {
-  const data = db.prepare(`
-    SELECT pc.name, pc.group_name,
-      COUNT(DISTINCT p.id) as total_projects,
-      COALESCE((SELECT SUM(cp.amount) FROM client_payments cp JOIN projects p2 ON p2.id=cp.project_id WHERE p2.category_id=pc.id AND cp.status='received'),0) as total_revenue,
-      COALESCE((SELECT SUM(ca.days*ca.rate_per_day) FROM crew_assignments ca JOIN projects p3 ON p3.id=ca.project_id WHERE p3.category_id=pc.id),0) as total_crew,
-      COALESCE((SELECT SUM(e.amount) FROM expenses e JOIN projects p4 ON p4.id=e.project_id WHERE p4.category_id=pc.id AND e.status='confirmed'),0) as total_expenses
-    FROM project_categories pc
-    LEFT JOIN projects p ON p.category_id = pc.id
-    GROUP BY pc.id
-    HAVING COUNT(DISTINCT p.id) > 0
-    ORDER BY total_revenue DESC
-  `).all();
+// The last N months ending with the current Pristina month, or with the month
+// given as ?end=YYYY-MM.
+router.get('/chart', (req, res) => {
+  const count = Math.min(Math.max(parseInt(req.query.months) || 6, 1), 36);
+  const current = /^\d{4}-\d{2}$/.test(req.query.end || '') ? req.query.end : pristinaMonth();
+  const months = Array.from({ length: count }, (_, i) => addMonths(current, i - (count - 1)));
+  const rows = monthlyFigures(months, readFilter(req.query)).map(m => ({
+    month: monthLabel(m.month, true),
+    ym: m.month,
+    revenue: m.revenue,
+    expenses: m.expenses,
+    crewCosts: m.crewCosts,
+    profit: m.projectProfit,
+  }));
+  res.json(rows);
+});
 
-  res.json(data.map(r => ({
-    ...r,
-    net_profit: r.total_revenue - r.total_crew - r.total_expenses,
-    margin: r.total_revenue > 0
-      ? Math.round(((r.total_revenue - r.total_crew - r.total_expenses) / r.total_revenue) * 1000) / 10
-      : 0,
-  })));
+function monthLabel(ym, withYear) {
+  const d = new Date(`${ym}-01T12:00:00Z`);
+  return d.toLocaleString('en-GB', withYear ? { month: 'short', year: '2-digit', timeZone: 'UTC' } : { month: 'short', timeZone: 'UTC' });
+}
+
+// Margins on one basis: completed projects only, revenue as cash received and
+// crew as crew payments actually made (plus confirmed expenses), so neither
+// side of the subtraction counts money the other does not. total_revenue stays
+// the all time cash received and drives the ranking; a row with no completed
+// revenue has no margin (null), never zero percent.
+function marginRows(groupCol, f) {
+  const pf = projectFilterSql(f);
+  const rows = db.prepare(`
+    SELECT p.${groupCol} AS gid,
+      COUNT(DISTINCT p.id) AS total_projects,
+      SUM(CASE WHEN p.status = 'completed' THEN 1 ELSE 0 END) AS completed_projects,
+      COALESCE(SUM((SELECT SUM(amount) FROM client_payments WHERE project_id = p.id AND status = 'received')), 0) AS total_revenue,
+      COALESCE(SUM(CASE WHEN p.status = 'completed' THEN (SELECT SUM(amount) FROM client_payments WHERE project_id = p.id AND status = 'received') END), 0) AS completed_revenue,
+      COALESCE(SUM(CASE WHEN p.status = 'completed' THEN (SELECT SUM(payment_amount) FROM crew_assignments WHERE project_id = p.id AND paid_status IN ('paid', 'partial')) END), 0) AS total_crew,
+      COALESCE(SUM(CASE WHEN p.status = 'completed' THEN (SELECT SUM(amount) FROM expenses WHERE project_id = p.id AND status = 'confirmed') END), 0) AS total_expenses
+    FROM projects p
+    WHERE p.${groupCol} IS NOT NULL${pf.sql}
+    GROUP BY p.${groupCol}
+  `).all(...pf.params);
+  return rows.map(r => {
+    const net = r.completed_revenue - r.total_crew - r.total_expenses;
+    return {
+      ...r,
+      net_profit: r.completed_projects > 0 ? Math.round(net * 100) / 100 : null,
+      margin: r.completed_projects > 0 && r.completed_revenue > 0
+        ? Math.round((net / r.completed_revenue) * 1000) / 10
+        : null,
+    };
+  });
+}
+
+router.get('/categories', (req, res) => {
+  const rows = marginRows('category_id', readFilter(req.query));
+  const cat = db.prepare('SELECT id, name, group_name FROM project_categories WHERE id = ?');
+  res.json(rows.map(r => {
+    const c = cat.get(r.gid) || { id: r.gid, name: 'Uncategorized', group_name: null };
+    const { gid, ...rest } = r;
+    return { id: c.id, name: c.name, group_name: c.group_name, ...rest };
+  }).sort((a, b) => b.total_revenue - a.total_revenue));
 });
 
 router.get('/clients', (req, res) => {
-  const data = db.prepare(`
-    SELECT c.name, c.company,
-      COUNT(DISTINCT p.id) as total_projects,
-      COALESCE((SELECT SUM(cp.amount) FROM client_payments cp JOIN projects p2 ON p2.id=cp.project_id WHERE p2.client_id=c.id AND cp.status='received'),0) as total_revenue,
-      COALESCE((SELECT SUM(ca.days*ca.rate_per_day) FROM crew_assignments ca JOIN projects p3 ON p3.id=ca.project_id WHERE p3.client_id=c.id),0) as total_crew,
-      COALESCE((SELECT SUM(e.amount) FROM expenses e JOIN projects p4 ON p4.id=e.project_id WHERE p4.client_id=c.id AND e.status='confirmed'),0) as total_expenses
-    FROM clients c
-    LEFT JOIN projects p ON p.client_id = c.id
-    GROUP BY c.id
-    ORDER BY total_revenue DESC
-  `).all();
-
-  res.json(data.map(r => ({
-    ...r,
-    net_profit: r.total_revenue - r.total_crew - r.total_expenses,
-    margin: r.total_revenue > 0
-      ? Math.round(((r.total_revenue - r.total_crew - r.total_expenses) / r.total_revenue) * 1000) / 10
-      : 0,
-  })));
+  const rows = marginRows('client_id', readFilter(req.query));
+  const cl = db.prepare('SELECT id, name, company FROM clients WHERE id = ?');
+  res.json(rows.map(r => {
+    const c = cl.get(r.gid) || { id: r.gid, name: 'Unknown', company: null };
+    const { gid, ...rest } = r;
+    return { id: c.id, name: c.name, company: c.company, ...rest };
+  }).sort((a, b) => b.total_revenue - a.total_revenue));
 });
 
-// Top expense categories — all time, confirmed only
+// Top expense categories, all time, confirmed only
 router.get('/expenses', (req, res) => {
   const data = db.prepare(`
     SELECT ec.name, COALESCE(SUM(e.amount), 0) as total
@@ -308,97 +286,35 @@ router.get('/expenses', (req, res) => {
   res.json(data);
 });
 
-router.get('/pending-payments', (req, res) => {
-  const rows = db.prepare(`
-    SELECT cp.*, p.title as project_title, p.id as project_id, c.name as client_name
-    FROM client_payments cp
-    JOIN projects p ON p.id = cp.project_id
-    LEFT JOIN clients c ON c.id = p.client_id
-    WHERE cp.status = 'pending'
-    ORDER BY cp.date ASC
-  `).all();
-  res.json(rows);
-});
-
-router.get('/receivables', (req, res) => {
-  const rows = db.prepare(`
-    SELECT cp.*, p.title as project_title, p.id as project_id, c.name as client_name,
-           CAST(julianday('now') - julianday(cp.date) AS INTEGER) as days_pending
-    FROM client_payments cp
-    JOIN projects p ON p.id = cp.project_id
-    LEFT JOIN clients c ON c.id = p.client_id
-    WHERE cp.status = 'pending'
-    ORDER BY cp.date ASC
-  `).all();
-  res.json(rows);
-});
-
-// GET /api/finances/pl?year=YYYY — monthly P&L breakdown + annual totals (cash basis)
+// GET /api/finances/pl?year=YYYY: monthly P&L and annual totals (cash basis).
+// netProfit here is project profit: expenses always belong to a project, so no
+// business overhead is subtracted.
 router.get('/pl', (req, res) => {
-  const year = req.query.year || String(new Date().getFullYear());
-  const months = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
-  const monthlyData = months.map(ym => {
-    const label = new Date(`${ym}-01T00:00:00`).toLocaleString('default', { month: 'short' });
-    const revenue = db.prepare(
-      "SELECT COALESCE(SUM(cp.amount),0) as v FROM client_payments cp JOIN projects p ON p.id = cp.project_id WHERE cp.status='received' AND strftime('%Y-%m',cp.date)=?"
-    ).get(ym).v;
-    const expenses = db.prepare(
-      "SELECT COALESCE(SUM(e.amount),0) as v FROM expenses e JOIN projects p ON p.id = e.project_id WHERE e.status='confirmed' AND strftime('%Y-%m',e.date)=?"
-    ).get(ym).v;
-    const crewCosts = db.prepare(
-      "SELECT COALESCE(SUM(ca.payment_amount),0) as v FROM crew_assignments ca JOIN projects p ON p.id = ca.project_id WHERE ca.paid_status IN ('paid','partial') AND strftime('%Y-%m',ca.payment_date)=?"
-    ).get(ym).v;
-    return { month: ym, label, revenue, expenses, crewCosts, netProfit: revenue - expenses - crewCosts };
-  });
+  const year = req.query.year || pristinaYear();
+  const monthlyData = plMonths(year).map(m => ({
+    month: m.month, label: monthLabel(m.month, false),
+    revenue: m.revenue, expenses: m.expenses, crewCosts: m.crewCosts, netProfit: m.projectProfit,
+  }));
   const totals = monthlyData.reduce((acc, m) => ({
     revenue: acc.revenue + m.revenue,
     expenses: acc.expenses + m.expenses,
     crewCosts: acc.crewCosts + m.crewCosts,
     netProfit: acc.netProfit + m.netProfit,
   }), { revenue: 0, expenses: 0, crewCosts: 0, netProfit: 0 });
+  Object.keys(totals).forEach(k => { totals[k] = Math.round(totals[k] * 100) / 100; });
   res.json({ year, months: monthlyData, totals });
 });
 
-// GET /api/finances/ar-aging — A/R aging combining pending payments + implied project balances
+function plMonths(year) {
+  const months = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
+  return monthlyFigures(months);
+}
+
+// GET /api/finances/ar-aging: receivables from the shared owed helper. Invoiced
+// balances age from their due date; the not yet invoiced remainder is its own
+// bucket. Completed projects are included.
 router.get('/ar-aging', (req, res) => {
-  const pendingRows = db.prepare(`
-    SELECT 'payment' as source, cp.id, cp.project_id,
-      p.title as project_title, c.name as client_name,
-      cp.amount, cp.date as aged_from, cp.method, cp.notes,
-      CAST(julianday('now') - julianday(cp.date) AS INTEGER) as days_aged
-    FROM client_payments cp
-    JOIN projects p ON p.id = cp.project_id
-    LEFT JOIN clients c ON c.id = p.client_id
-    WHERE cp.status = 'pending' AND cp.amount > 0
-    ORDER BY cp.date ASC
-  `).all();
-
-  // Projects with implied balance not covered by any pending payment row
-  const balanceRows = db.prepare(`
-    SELECT * FROM (
-      SELECT 'balance' as source, p.id, p.id as project_id,
-        p.title as project_title, c.name as client_name,
-        (p.agreed_budget
-          - COALESCE((SELECT SUM(amount) FROM client_payments WHERE project_id=p.id AND status='received'), 0)
-          - COALESCE((SELECT SUM(amount) FROM client_payments WHERE project_id=p.id AND status='pending'), 0)
-        ) as amount,
-        p.created_at as aged_from,
-        CAST(julianday('now') - julianday(p.created_at) AS INTEGER) as days_aged
-      FROM projects p
-      LEFT JOIN clients c ON c.id = p.client_id
-      WHERE p.status != 'completed'
-    ) WHERE amount > 0
-    ORDER BY aged_from ASC
-  `).all();
-
-  const buckets = { current: 0, '31-60': 0, '61-90': 0, '90+': 0 };
-  const allRows = [...pendingRows, ...balanceRows].map(r => {
-    const bucket = r.days_aged <= 30 ? 'current' : r.days_aged <= 60 ? '31-60' : r.days_aged <= 90 ? '61-90' : '90+';
-    buckets[bucket] += r.amount;
-    return { ...r, bucket };
-  });
-  const total = Object.values(buckets).reduce((s, v) => s + v, 0);
-  res.json({ rows: allRows, buckets, total });
+  res.json(receivableRows(readFilter(req.query)));
 });
 
 // GET /api/finances/tax-records?status=unpaid&year=2026
@@ -414,7 +330,7 @@ router.get('/tax-records', (req, res) => {
 
 // PATCH /api/finances/tax-records/:id/paid
 router.patch('/tax-records/:id/paid', (req, res) => {
-  const paid_date = new Date().toISOString().split('T')[0];
+  const paid_date = pristinaToday();
   const result = db.prepare("UPDATE invoice_tax_records SET tax_status='paid', paid_date=? WHERE id=?").run(paid_date, req.params.id);
   if (result.changes === 0) return res.status(404).json({ error: 'Not found' });
   res.json({ ok: true });
@@ -427,19 +343,16 @@ router.patch('/tax-records/:id/unpaid', (req, res) => {
   res.json({ ok: true });
 });
 
-// GET /api/finances/pl-pdf?year=YYYY — light-themed P&L PDF export
+// GET /api/finances/pl-pdf?year=YYYY: light themed P&L PDF export
 router.get('/pl-pdf', (req, res) => {
   const PDFDocument = require('pdfkit');
-  const year = req.query.year || String(new Date().getFullYear());
+  const year = req.query.year || pristinaYear();
 
-  const months = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
-  const monthlyData = months.map(ym => {
-    const label = new Date(`${ym}-01T00:00:00`).toLocaleString('default', { month: 'short' });
-    const revenue = db.prepare("SELECT COALESCE(SUM(amount),0) as v FROM client_payments WHERE status='received' AND strftime('%Y-%m',date)=?").get(ym).v;
-    const expenses = db.prepare("SELECT COALESCE(SUM(amount),0) as v FROM expenses WHERE status='confirmed' AND strftime('%Y-%m',date)=?").get(ym).v;
-    const crewCosts = db.prepare("SELECT COALESCE(SUM(payment_amount),0) as v FROM crew_assignments WHERE paid_status IN ('paid','partial') AND strftime('%Y-%m',payment_date)=?").get(ym).v;
-    return { label, revenue, expenses, crewCosts, net: revenue - expenses - crewCosts };
-  });
+  // The same monthly computation the P&L tab, the chart and the stats read.
+  const monthlyData = plMonths(year).map(m => ({
+    label: monthLabel(m.month, false),
+    revenue: m.revenue, expenses: m.expenses, crewCosts: m.crewCosts, net: m.projectProfit,
+  }));
   const totals = monthlyData.reduce((acc, m) => ({
     revenue: acc.revenue + m.revenue,
     expenses: acc.expenses + m.expenses,
@@ -475,11 +388,11 @@ router.get('/pl-pdf', (req, res) => {
     doc.fontSize(16).font('Helvetica-Bold').fillColor('#000').text(agencyName, pageLeft, headerY + 10, { lineBreak: false });
   }
   doc.fontSize(18).font('Helvetica-Bold').fillColor('#111')
-    .text(`PROFIT & LOSS — ${year}`, pageLeft, headerY + 10, { align: 'right', lineBreak: false });
+    .text(`PROFIT & LOSS ${year}`, pageLeft, headerY + 10, { align: 'right', lineBreak: false });
 
   doc.y = 100;
   doc.fontSize(9).font('Helvetica').fillColor('#888')
-    .text(`Period: 1 Jan ${year} — 31 Dec ${year}    Generated: ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}`, { align: 'right' });
+    .text(`Period: 1 Jan ${year} to 31 Dec ${year}    Generated: ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}`, { align: 'right' });
 
   doc.moveDown(0.5);
   doc.moveTo(pageLeft, doc.y).lineTo(pageRight, doc.y).strokeColor('#cccccc').lineWidth(1).stroke();
@@ -512,12 +425,12 @@ router.get('/pl-pdf', (req, res) => {
   statRow('Crew Costs', totals.crewCosts, { indent: true });
   statRow('Expenses', totals.expenses, { indent: true });
   statRow('Total Cost of Services', totals.crewCosts + totals.expenses, { bold: true, divider: true });
-  doc.moveDown(0.3);
-  statRow('GROSS PROFIT', totals.revenue - totals.crewCosts - totals.expenses, { bold: true, large: true, divider: true });
   doc.moveDown(0.5);
   doc.moveTo(pageLeft, doc.y).lineTo(pageRight, doc.y).strokeColor('#cccccc').lineWidth(1).stroke();
   doc.moveDown(0.5);
-  statRow('NET PROFIT', totals.net, { bold: true, large: true });
+  // Project profit, not net profit: every expense belongs to a project, so no
+  // business overhead is subtracted here.
+  statRow('PROJECT PROFIT', totals.net, { bold: true, large: true });
 
   doc.moveDown(2);
   doc.moveTo(pageLeft, doc.y).lineTo(pageRight, doc.y).strokeColor('#cccccc').lineWidth(1).stroke();
@@ -528,7 +441,7 @@ router.get('/pl-pdf', (req, res) => {
   // Table header
   const colX = [pageLeft, pageLeft + 80, pageLeft + 200, pageLeft + 310, pageLeft + 410];
   const colW = [80, 120, 110, 100, 90];
-  const hdrs = ['Month', 'Revenue', 'Crew Cost', 'Expenses', 'Net Profit'];
+  const hdrs = ['Month', 'Revenue', 'Crew Cost', 'Expenses', 'Project Profit'];
   const hY = doc.y;
   hdrs.forEach((h, i) => {
     doc.fontSize(8).font('Helvetica-Bold').fillColor('#555')

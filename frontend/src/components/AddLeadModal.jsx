@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { X, Lightbulb } from 'lucide-react';
 import { api } from '../api';
+import Overlay from './Overlay';
 
 export default function AddLeadModal({ onClose, onSaved, lead: existingLead }) {
   const isEdit = !!existingLead;
@@ -62,97 +63,89 @@ export default function AddLeadModal({ onClose, onSaved, lead: existingLead }) {
   }, {});
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal-box" style={{ maxWidth: '480px' }}>
-        <div className="modal-header">
-          <span className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Lightbulb size={17} style={{ color: 'var(--accent)' }} /> {isEdit ? 'Edit Lead' : 'New Lead'}
-          </span>
-          <button className="modal-close" onClick={onClose}><X size={18} /></button>
-        </div>
+    <Overlay title={<><Lightbulb size={17} style={{ color: 'var(--accent)' }} /> {isEdit ? 'Edit Lead' : 'New Lead'}</>} onClose={onClose} width={480}>
 
-        {/* Client toggle */}
-        <div className="form-row">
-          <div className="toggle-group" style={{ marginBottom: '8px' }}>
-            <button type="button" className={`toggle-btn ${!useManualClient ? 'active' : ''}`} onClick={() => setUseManualClient(false)}>
-              Select existing
-            </button>
-            <button type="button" className={`toggle-btn ${useManualClient ? 'active' : ''}`} onClick={() => setUseManualClient(true)}>
-              Type name
-            </button>
-          </div>
-          {!useManualClient ? (
-            <select className="select" value={form.client_id} onChange={e => f('client_id', e.target.value)}>
-              <option value="">— No client —</option>
-              {clients.map(c => (
-                <option key={c.id} value={c.id}>{c.name}{c.company ? ` — ${c.company}` : ''}</option>
-              ))}
-            </select>
-          ) : (
-            <input
-              className="input"
-              value={form.client_name_manual}
-              onChange={e => f('client_name_manual', e.target.value)}
-              placeholder="Client name..."
-              autoFocus
-            />
-          )}
-        </div>
-
-        {/* Category */}
-        <div className="form-row">
-          <label className="form-label">Category</label>
-          <select className="select" value={form.category_id} onChange={e => f('category_id', e.target.value)}>
-            <option value="">— No category —</option>
-            {Object.entries(grouped).map(([g, cats]) => (
-              <optgroup key={g} label={g}>
-                {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </optgroup>
-            ))}
-          </select>
-        </div>
-
-        {/* Estimated value, optional, blank allowed */}
-        <div className="form-row">
-          <label className="form-label">Estimated value <span style={{ color: 'var(--color-mid-gray)', fontWeight: 400 }}>(optional)</span></label>
-          <input
-            type="number"
-            className="input"
-            value={form.value}
-            onChange={e => f('value', e.target.value)}
-            placeholder="Leave blank if unknown"
-            min="0"
-            step="any"
-          />
-        </div>
-
-        {/* Note */}
-        <div className="form-row">
-          <label className="form-label">Note</label>
-          <textarea
-            className="input"
-            value={form.note}
-            onChange={e => f('note', e.target.value)}
-            placeholder="What did they ask for? Any details about the project..."
-            rows={3}
-          />
-        </div>
-
-        {/* Date Contacted */}
-        <div className="form-row">
-          <label className="form-label">Date Contacted</label>
-          <input type="date" className="input" value={form.contacted_at} onChange={e => f('contacted_at', e.target.value)} />
-        </div>
-
-        {err && <div className="error-msg">{err}</div>}
-
-        <div className="modal-footer">
-          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={save} disabled={saving}>
-            {saving ? 'Saving...' : isEdit ? 'Save' : 'Save Lead'}
+      {/* Client toggle */}
+      <div className="form-row">
+        <div className="toggle-group" style={{ marginBottom: '8px' }}>
+          <button type="button" className={`toggle-btn ${!useManualClient ? 'active' : ''}`} onClick={() => setUseManualClient(false)}>
+            Select existing
+          </button>
+          <button type="button" className={`toggle-btn ${useManualClient ? 'active' : ''}`} onClick={() => setUseManualClient(true)}>
+            Type name
           </button>
         </div>
+        {!useManualClient ? (
+          <select className="select" value={form.client_id} onChange={e => f('client_id', e.target.value)}>
+            <option value="">No client</option>
+            {clients.map(c => (
+              <option key={c.id} value={c.id}>{c.name}{c.company ? `, ${c.company}` : ''}</option>
+            ))}
+          </select>
+        ) : (
+          <input
+            className="input"
+            value={form.client_name_manual}
+            onChange={e => f('client_name_manual', e.target.value)}
+            placeholder="Client name..."
+            autoFocus
+          />
+        )}
       </div>
-    </div>
+
+      {/* Category */}
+      <div className="form-row">
+        <label className="form-label">Category</label>
+        <select className="select" value={form.category_id} onChange={e => f('category_id', e.target.value)}>
+          <option value="">No category</option>
+          {Object.entries(grouped).map(([g, cats]) => (
+            <optgroup key={g} label={g}>
+              {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </optgroup>
+          ))}
+        </select>
+      </div>
+
+      {/* Estimated value, optional, blank allowed */}
+      <div className="form-row">
+        <label className="form-label">Estimated value <span style={{ color: 'var(--color-mid-gray)', fontWeight: 400 }}>(optional)</span></label>
+        <input
+          type="number"
+          className="input"
+          value={form.value}
+          onChange={e => f('value', e.target.value)}
+          placeholder="Leave blank if unknown"
+          min="0"
+          step="any"
+        />
+      </div>
+
+      {/* Note */}
+      <div className="form-row">
+        <label className="form-label">Note</label>
+        <textarea
+          className="input"
+          value={form.note}
+          onChange={e => f('note', e.target.value)}
+          placeholder="What did they ask for? Any details about the project..."
+          rows={3}
+        />
+      </div>
+
+      {/* Date Contacted */}
+      <div className="form-row">
+        <label className="form-label">Date Contacted</label>
+        <input type="date" className="input" value={form.contacted_at} onChange={e => f('contacted_at', e.target.value)} />
+      </div>
+
+      {err && <div className="error-msg">{err}</div>}
+
+      <div className="modal-footer">
+        <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" onClick={save} disabled={saving}>
+          {saving ? 'Saving...' : isEdit ? 'Save' : 'Save Lead'}
+        </button>
+      </div>
+    </Overlay>
   );
 }

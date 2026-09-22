@@ -3,7 +3,7 @@ import { X, Check, Plus, Trash2, Download, ChevronDown, ChevronRight, Search, Pe
 import { api, fmt } from '../api';
 import { documentFilename } from '../lib/filename';
 import { Private } from '../context/PrivacyContext';
-import ConfirmDialog from './ConfirmDialog';
+import Overlay from './Overlay';
 
 const STEP_LABELS = ['Project Info', 'Crew', 'Assets & Rentals', 'Logistical Costs', 'Review & Finalize'];
 
@@ -173,7 +173,6 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
   // closing is a plain dismissal, never a discard, and the record is never
   // deleted on close.
   const [saved, setSaved] = useState(false);
-  const [confirmClose, setConfirmClose] = useState(false);
 
   // When shoot days changes and lines already carry the previous count, we offer
   // to apply the new count to exactly those lines. daysBaseline is the count the
@@ -592,17 +591,13 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
     setExporting(false);
   }
 
-  // Closing routes: dirty work asks first through the in-app dialog; a clean
-  // wizard closes at once. Once saved, closing reloads the list so the estimate
-  // shows, and the record is never deleted.
+  // Closing routes: the shared overlay asks first when the wizard is dirty and
+  // closes a clean wizard at once (the same dirty flag drives both). Once saved,
+  // closing reloads the list so the estimate shows, and the record is never
+  // deleted.
   function doClose() {
     if (savedId) onSaved(savedId);
     else onClose();
-  }
-
-  function attemptClose() {
-    if (dirty) { setConfirmClose(true); return; }
-    doClose();
   }
 
   const grouped = categories.reduce((acc, c) => {
@@ -621,13 +616,42 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
   );
 
   return (
-    <div className="wizard-overlay">
-      <div className="wizard-box" style={{ maxWidth: '760px' }}>
-
-        <div className="wizard-header">
-          <span className="wizard-title">{isEditing ? 'Edit Estimate' : 'New Estimate'}</span>
-          <button className="modal-close" onClick={attemptClose}><X size={18} /></button>
-        </div>
+    <Overlay
+      size="full"
+      title={isEditing ? 'Edit Estimate' : 'New Estimate'}
+      onClose={doClose}
+      width={760}
+      dirty={dirty}
+      trackInput={false}
+      discardMessage={saved
+        ? 'Changes made since the last save will be lost. The saved estimate stays in your list.'
+        : 'This estimate has not been saved and will be lost.'}
+      actions={<>
+        {!isFirstStep && <button className="btn btn-ghost btn-sm" onClick={goPrev}>Back</button>}
+        {!isLastStep ? (
+          <button className="btn btn-primary btn-sm" onClick={goNext}>Next</button>
+        ) : (
+          <>
+            {saved && !dirty && !isEmpty && (
+              <span title="Saved to your estimates" style={{ display: 'inline-flex', alignItems: 'center' }}>
+                <Check size={15} color="var(--cat-6, var(--accent))" />
+              </span>
+            )}
+            <button className="btn btn-ghost btn-sm" onClick={handleExportPdf} disabled={exporting || saving || isEmpty} title={isEmpty ? 'Add at least one line to save or export' : undefined}>
+              <Download size={14} /> {exporting ? 'Exporting...' : 'Export PDF'}
+            </button>
+            {saved && !dirty ? (
+              <button className="btn btn-primary btn-sm" onClick={doClose}>Close</button>
+            ) : (
+              <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving || exporting || isEmpty} title={isEmpty ? 'Add at least one line to save or export' : undefined}>
+                {saving ? 'Saving...' : 'Save Estimate'}
+              </button>
+            )}
+          </>
+        )}
+      </>}
+    >
+      <div className="card wizard-card">
 
         <div className="wizard-steps">
           {STEP_LABELS.map((label, i) => {
@@ -728,55 +752,8 @@ export default function BudgetWizard({ budget, onClose, onSaved }) {
         </div>
 
         {err && <div className="error-msg" style={{ padding: '0 28px 4px' }}>{err}</div>}
-
-        <div className="wizard-footer">
-          <button className="btn btn-ghost" onClick={isFirstStep ? attemptClose : goPrev}>
-            {isFirstStep ? 'Cancel' : '← Back'}
-          </button>
-          <div style={{ flex: 1 }} />
-          {!isLastStep ? (
-            <button className="btn btn-primary" onClick={goNext}>Next →</button>
-          ) : (
-            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-              {isEmpty && (
-                <span style={{ fontSize: '12px', color: 'var(--color-mid-gray)' }}>
-                  Add at least one line to save or export.
-                </span>
-              )}
-              {saved && !dirty && !isEmpty && (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: 'var(--color-mid-gray)' }}>
-                  <Check size={13} color="var(--cat-6, var(--accent))" /> Saved to your estimates
-                </span>
-              )}
-              <button className="btn btn-ghost" onClick={handleExportPdf} disabled={exporting || saving || isEmpty}>
-                <Download size={14} /> {exporting ? 'Exporting...' : 'Export PDF'}
-              </button>
-              {saved && !dirty ? (
-                <button className="btn btn-primary" onClick={doClose}>Close</button>
-              ) : (
-                <button className="btn btn-primary" onClick={handleSave} disabled={saving || exporting || isEmpty}>
-                  {saving ? 'Saving...' : 'Save Estimate'}
-                </button>
-              )}
-            </div>
-          )}
-        </div>
       </div>
-
-      {confirmClose && (
-        <ConfirmDialog
-          title="Discard unsaved changes?"
-          message={saved
-            ? 'Changes made since the last save will be lost. The saved estimate stays in your list.'
-            : 'This estimate has not been saved and will be lost.'}
-          confirmLabel="Discard"
-          cancelLabel="Keep editing"
-          tone="danger"
-          onConfirm={() => { setConfirmClose(false); doClose(); }}
-          onCancel={() => setConfirmClose(false)}
-        />
-      )}
-    </div>
+    </Overlay>
   );
 }
 

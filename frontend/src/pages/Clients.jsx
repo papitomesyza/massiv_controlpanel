@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Plus, MessageCircle, User, Building2, X, ChevronRight } from 'lucide-react';
 import { api, fmt } from '../api';
 import { Private } from '../context/PrivacyContext';
-import Modal from '../components/Modal';
+import Overlay from '../components/Overlay';
 
 function waUrl(phone) {
   if (!phone) return null;
@@ -161,7 +161,7 @@ export default function Clients() {
       )}
 
       {showModal && (
-        <Modal
+        <Overlay
           title="New Client"
           onClose={() => { setShowModal(false); setErr(''); }}
           footer={<>
@@ -196,7 +196,7 @@ export default function Clients() {
             <textarea className="input" value={form.notes} onChange={e => f('notes', e.target.value)} placeholder="Notes..." />
           </div>
           {err && <div className="error-msg">{err}</div>}
-        </Modal>
+        </Overlay>
       )}
     </div>
   );
@@ -205,57 +205,58 @@ export default function Clients() {
 function ClientDetailSheet({ client, onClose }) {
   const wa = waUrl(client.phone);
   return (
-    <div className="detail-sheet-overlay" onClick={onClose}>
-      <div className="detail-sheet-box" onClick={e => e.stopPropagation()}>
-        <div className="detail-sheet-header">
-          <div>
-            <div style={{ fontWeight: 700, fontSize: '18px', color: 'var(--color-ink)', lineHeight: 1.2 }}>{client.name}</div>
-            {client.company && <div style={{ fontSize: '13px', color: 'var(--color-mid-gray)', marginTop: '3px' }}>{client.company}</div>}
-          </div>
-          <button className="modal-close" onClick={onClose}><X size={18} /></button>
-        </div>
+    <Overlay
+      size="sheet"
+      onClose={onClose}
+      guard={false}
+      title={
+      <div>
+        <div style={{ fontWeight: 700, fontSize: '18px', color: 'var(--color-ink)', lineHeight: 1.2 }}>{client.name}</div>
+        {client.company && <div style={{ fontSize: '13px', color: 'var(--color-mid-gray)', marginTop: '3px' }}>{client.company}</div>}
+      </div>
+      }
+    >
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
-          {client.phone && (
-            <div className="fin-row" style={{ padding: '10px 0' }}>
-              <span className="text-2" style={{ fontSize: '12px' }}>Phone</span>
-              <div className="flex-center gap-1">
-                <span style={{ fontSize: '13px' }}>{client.phone}</span>
-                {wa && (
-                  <a href={wa} target="_blank" rel="noopener noreferrer" className="wa-btn">
-                    <MessageCircle size={12} /> WA
-                  </a>
-                )}
-              </div>
-            </div>
-          )}
-          {client.email && (
-            <div className="fin-row" style={{ padding: '10px 0' }}>
-              <span className="text-2" style={{ fontSize: '12px' }}>Email</span>
-              <span style={{ fontSize: '13px' }}>{client.email}</span>
-            </div>
-          )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
+        {client.phone && (
           <div className="fin-row" style={{ padding: '10px 0' }}>
-            <span className="text-2" style={{ fontSize: '12px' }}>Projects</span>
-            <span style={{ fontSize: '13px' }}>{client.total_projects}</span>
+            <span className="text-2" style={{ fontSize: '12px' }}>Phone</span>
+            <div className="flex-center gap-1">
+              <span style={{ fontSize: '13px' }}>{client.phone}</span>
+              {wa && (
+                <a href={wa} target="_blank" rel="noopener noreferrer" className="wa-btn">
+                  <MessageCircle size={12} /> WA
+                </a>
+              )}
+            </div>
           </div>
-          <div className="fin-row" style={{ padding: '10px 0', borderBottom: 'none' }}>
-            <span className="text-2" style={{ fontSize: '12px' }}>Revenue</span>
-            <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-ink)' }}>{<Private>{fmt(client.total_revenue)}</Private>}</span>
+        )}
+        {client.email && (
+          <div className="fin-row" style={{ padding: '10px 0' }}>
+            <span className="text-2" style={{ fontSize: '12px' }}>Email</span>
+            <span style={{ fontSize: '13px' }}>{client.email}</span>
           </div>
+        )}
+        <div className="fin-row" style={{ padding: '10px 0' }}>
+          <span className="text-2" style={{ fontSize: '12px' }}>Projects</span>
+          <span style={{ fontSize: '13px' }}>{client.total_projects}</span>
         </div>
-
-        <div style={{ marginTop: '16px' }}>
-          <Link
-            to={`/clients/${client.id}`}
-            className="btn btn-primary"
-            style={{ width: '100%', justifyContent: 'center' }}
-            onClick={onClose}
-          >
-            View Full Profile <ChevronRight size={15} />
-          </Link>
+        <div className="fin-row" style={{ padding: '10px 0', borderBottom: 'none' }}>
+          <span className="text-2" style={{ fontSize: '12px' }}>Revenue</span>
+          <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-ink)' }}>{<Private>{fmt(client.total_revenue)}</Private>}</span>
         </div>
       </div>
-    </div>
+
+      <div style={{ marginTop: '16px' }}>
+        <Link
+          to={`/clients/${client.id}`}
+          className="btn btn-primary"
+          style={{ width: '100%', justifyContent: 'center' }}
+          onClick={onClose}
+        >
+          View Full Profile <ChevronRight size={15} />
+        </Link>
+      </div>
+    </Overlay>
   );
 }

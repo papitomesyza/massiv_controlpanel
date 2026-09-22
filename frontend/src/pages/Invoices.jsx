@@ -8,6 +8,8 @@ import { documentFilename } from '../lib/filename';
 import { Private } from '../context/PrivacyContext';
 import InvoiceBuilder from '../components/InvoiceBuilder';
 import ConfirmDialog from '../components/ConfirmDialog';
+import Overlay from '../components/Overlay';
+import { pristinaToday } from '../lib/pristinaDate';
 
 const TABS = [
   { key: 'list',  label: 'Invoices' },
@@ -48,14 +50,6 @@ const PAY_METHODS = [
   { value: 'other', label: 'Other' },
 ];
 const METHOD_LABEL = Object.fromEntries(PAY_METHODS.map(m => [m.value, m.label]));
-
-// Today in Pristina local time (Kosovo shares Europe/Belgrade), formatted as
-// YYYY-MM-DD. Never UTC, so a payment entered late at night keeps the right day.
-function pristinaToday() {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Europe/Belgrade', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).format(new Date());
-}
 
 // Payment state derived from the balance, not from a stored flag.
 function paymentState(inv) {
@@ -311,6 +305,9 @@ function RecordPaymentModal({ invoice, onClose, onChanged }) {
   const [form, setForm] = useState({ amount: '', date: pristinaToday(), method: 'bank_transfer' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  // An edit to the payment form not yet recorded. Recording clears it, so the
+  // close guard only asks while something typed would actually be lost.
+  const [touched, setTouched] = useState(false);
 
   const due = Number(inv.amount_due) || 0;
   const paid = Number(inv.amount_paid) || 0;
@@ -342,6 +339,7 @@ function RecordPaymentModal({ invoice, onClose, onChanged }) {
     setBusy(true);
     try {
       await api.post(`/invoices/${invoice.id}/payments`, { amount: amt, date: form.date, method: form.method });
+      setTouched(false);
       await reload();
       onChanged();
     } catch (e) { setError(e.message); }
@@ -362,18 +360,26 @@ function RecordPaymentModal({ invoice, onClose, onChanged }) {
   const cleared = balance <= 0.005;
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal-box" style={{ width: '460px', maxWidth: '94vw' }}>
-        <div className="modal-header">
-          <div>
-            <div className="modal-title">Record payment</div>
-            <div style={{ fontSize: '12px', color: 'var(--color-mid-gray)', marginTop: '2px' }}>
-              {inv.invoice_number || 'Draft'} · {inv.client_name || 'No client'}
-            </div>
-          </div>
-          <button className="modal-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
+    <Overlay
+      title={<div>
+        <div>Record payment</div>
+        <div style={{ fontSize: '12px', fontWeight: 400, color: 'var(--color-mid-gray)', marginTop: '2px' }}>
+          {inv.invoice_number || 'Draft'} · {inv.client_name || 'No client'}
         </div>
-
+      </div>}
+      onClose={onClose}
+      width={460}
+      dirty={touched}
+      trackInput={false}
+      footer={<>
+        <button className="btn btn-ghost" onClick={onClose}>Close</button>
+        {!cleared && (
+          <button className="btn btn-primary" onClick={record} disabled={busy}>
+            {busy ? 'Working...' : 'Record payment'}
+          </button>
+        )}
+      </>}
+    >
         <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {/* Balance readout */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: 'var(--overlay-02)', borderRadius: '10px' }}>
@@ -388,17 +394,17 @@ function RecordPaymentModal({ invoice, onClose, onChanged }) {
               <div>
                 <label style={{ fontSize: '11px', color: 'var(--color-mid-gray)', display: 'block', marginBottom: '4px' }}>Amount (EUR)</label>
                 <input className="input" type="number" min="0" step="0.01" value={form.amount}
-                  onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} />
+                  onChange={e => { setTouched(true); setForm(f => ({ ...f, amount: e.target.value })); }} />
               </div>
               <div>
                 <label style={{ fontSize: '11px', color: 'var(--color-mid-gray)', display: 'block', marginBottom: '4px' }}>Date</label>
                 <input className="input" type="date" value={form.date}
-                  onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
+                  onChange={e => { setTouched(true); setForm(f => ({ ...f, date: e.target.value })); }} />
               </div>
               <div style={{ gridColumn: '1 / -1' }}>
                 <label style={{ fontSize: '11px', color: 'var(--color-mid-gray)', display: 'block', marginBottom: '4px' }}>Method</label>
                 <select className="select" style={{ width: '100%' }} value={form.method}
-                  onChange={e => setForm(f => ({ ...f, method: e.target.value }))}>
+                  onChange={e => { setTouched(true); setForm(f => ({ ...f, method: e.target.value })); }}>
                   {PAY_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
                 </select>
               </div>
@@ -433,16 +439,7 @@ function RecordPaymentModal({ invoice, onClose, onChanged }) {
           )}
         </div>
 
-        <div className="modal-footer">
-          <button className="btn btn-ghost" onClick={onClose}>Close</button>
-          {!cleared && (
-            <button className="btn btn-primary" onClick={record} disabled={busy}>
-              {busy ? 'Working...' : 'Record payment'}
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
+    </Overlay>
   );
 }
 
@@ -669,6 +666,8 @@ function InvoiceSetupTab() {
   const [svcForm, setSvcForm] = useState({ code: '', name: '', unit: 'Shërbim', default_price: '' });
   const [editingSvc, setEditingSvc] = useState(null);
   const [svcMsg, setSvcMsg] = useState('');
+  const [svcToDelete, setSvcToDelete] = useState(null);
+  const [svcDeleting, setSvcDeleting] = useState(false);
 
   async function loadSettings() {
     setLoading(true);
@@ -767,8 +766,11 @@ function InvoiceSetupTab() {
   }
 
   async function deleteSvc(id) {
-    if (!window.confirm('Delete this service?')) return;
-    try { await api.del(`/invoices/services/${id}`); loadServices(); } catch (e) { alert(e.message); }
+    setSvcDeleting(true);
+    try { await api.del(`/invoices/services/${id}`); loadServices(); }
+    catch (e) { setSvcMsg('Error: ' + e.message); setTimeout(() => setSvcMsg(''), 3000); }
+    setSvcDeleting(false);
+    setSvcToDelete(null);
   }
 
   function startEditSvc(s) {
@@ -1015,7 +1017,7 @@ function InvoiceSetupTab() {
                     <td>
                       <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
                         <button className="btn btn-ghost btn-sm" onClick={() => startEditSvc(s)}><Pencil size={12} /></button>
-                        <button className="btn btn-ghost btn-sm" onClick={() => deleteSvc(s.id)}>
+                        <button className="btn btn-ghost btn-sm" onClick={() => setSvcToDelete(s)}>
                           <Trash2 size={12} style={{ color: 'var(--color-ember)' }} />
                         </button>
                       </div>
@@ -1027,10 +1029,21 @@ function InvoiceSetupTab() {
           </div>
         ) : (
           <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--color-mid-gray)', fontSize: '13px' }}>
-            No services in catalogue yet — add one above
+            No services in catalogue yet, add one above
           </div>
         )}
       </div>
+
+      {svcToDelete && (
+        <ConfirmDialog
+          title={`Delete ${svcToDelete.name}?`}
+          confirmLabel="Delete"
+          tone="danger"
+          busy={svcDeleting}
+          onConfirm={() => deleteSvc(svcToDelete.id)}
+          onCancel={() => setSvcToDelete(null)}
+        />
+      )}
     </div>
   );
 }
@@ -1131,16 +1144,7 @@ export default function Invoices() {
 
       {/* From Estimate picker */}
       {showFromEstimate && (
-        <div style={{
-          position: 'fixed', inset: 0, zIndex: 900,
-          background: 'var(--scrim-strong)', backdropFilter: 'blur(8px)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <div className="card card-pad" style={{ width: '480px', maxWidth: '92vw', maxHeight: '80vh', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-              <div style={{ fontWeight: 700, fontSize: '15px' }}>Create Invoice from Estimate</div>
-              <button className="btn btn-ghost btn-sm" onClick={() => setShowFromEstimate(false)}>✕</button>
-            </div>
+        <Overlay title="Create Invoice from Estimate" onClose={() => setShowFromEstimate(false)} width={480} guard={false}>
             {budgets.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--color-mid-gray)', fontSize: '13px' }}>
                 No estimates found. Create one in Estimates first.
@@ -1166,14 +1170,13 @@ export default function Invoices() {
                       </div>
                     </div>
                     <div style={{ fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap', marginLeft: '16px' }}>
-                      {b.total != null ? <Private>€{Number(b.total).toFixed(2)}</Private> : '—'}
+                      {b.total != null ? <Private>€{Number(b.total).toFixed(2)}</Private> : null}
                     </div>
                   </button>
                 ))}
               </div>
             )}
-          </div>
-        </div>
+        </Overlay>
       )}
     </div>
   );

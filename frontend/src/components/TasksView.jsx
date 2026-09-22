@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api';
 import { categoryIconEl } from '../lib/categoryIcons';
-import Modal from './Modal';
+import Overlay from './Overlay';
 
 // ── Day boundary ───────────────────────────────────────────────────────────────
 // The app treats "today" as Pristina local, the same zone the backups and the
@@ -86,7 +86,7 @@ function EditModal({ task, onClose, onSaved, onError }) {
   }
 
   return (
-    <Modal title="Edit Task" onClose={onClose} footer={
+    <Overlay title="Edit Task" onClose={onClose} footer={
       <>
         <button className="btn btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
         <button className="btn btn-primary" onClick={save} disabled={saving || !title.trim()}>Save</button>
@@ -119,7 +119,7 @@ function EditModal({ task, onClose, onSaved, onError }) {
           </select>
         </div>
       </div>
-    </Modal>
+    </Overlay>
   );
 }
 

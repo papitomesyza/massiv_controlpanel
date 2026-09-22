@@ -388,11 +388,57 @@ router.post('/:id/duplicate', (req, res) => {
   res.json({ id: newProjectId });
 });
 
-// Delete project — also deletes linked shoot, deadline, and task calendar events
+// Money attached to a project. client_payments, expenses and crew_assignments
+// cascade on project delete, so deleting a project with any of these would
+// silently erase received income and paid costs from past months of the P&L,
+// leave payments mirrored to Financial Flow orphaned there, and leave invoices
+// (which survive as SET NULL) claiming payments with nothing behind them.
+function attachedMoney(projectId) {
+  const count = sql => db.prepare(sql).get(projectId).c;
+  return {
+    payments: count('SELECT COUNT(*) c FROM client_payments WHERE project_id = ?'),
+    crewPayments: count("SELECT COUNT(*) c FROM crew_assignments WHERE project_id = ? AND (paid_status IN ('paid', 'partial') OR COALESCE(payment_amount, 0) > 0)"),
+    expenses: count("SELECT COUNT(*) c FROM expenses WHERE project_id = ? AND status = 'confirmed'"),
+    invoices: count('SELECT COUNT(*) c FROM invoices WHERE project_id = ?'),
+  };
+}
+
+function describeAttached(a) {
+  const parts = [];
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  if (a.payments) parts.push(plural(a.payments, 'client payment', 'client payments'));
+  if (a.crewPayments) parts.push(plural(a.crewPayments, 'crew payment', 'crew payments'));
+  if (a.expenses) parts.push(plural(a.expenses, 'confirmed expense', 'confirmed expenses'));
+  if (a.invoices) parts.push(plural(a.invoices, 'invoice', 'invoices'));
+  if (parts.length <= 1) return parts.join('');
+  return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
+}
+
+// Delete project, also deleting its linked shoot, deadline and task calendar
+// events. Refused while any money is attached: finished work is completed, not
+// deleted. The check and the delete run in one transaction, and better-sqlite3
+// is synchronous, so no payment can land between the two.
 router.delete('/:id', (req, res) => {
-  db.prepare("DELETE FROM calendar_events WHERE project_id = ? AND event_type IN ('shoot', 'deadline', 'task')").run(req.params.id);
-  db.prepare('DELETE FROM projects WHERE id = ?').run(req.params.id);
-  res.json({ ok: true });
+  const id = Number(req.params.id);
+  const run = db.transaction(() => {
+    const project = db.prepare('SELECT id FROM projects WHERE id = ?').get(id);
+    if (!project) return { status: 404, body: { error: 'Not found' } };
+    const attached = attachedMoney(id);
+    if (attached.payments || attached.crewPayments || attached.expenses || attached.invoices) {
+      return {
+        status: 409,
+        body: {
+          error: `This project has ${describeAttached(attached)} attached. Deleting it would erase that money from the books. Complete the project instead.`,
+          attached,
+        },
+      };
+    }
+    db.prepare("DELETE FROM calendar_events WHERE project_id = ? AND event_type IN ('shoot', 'deadline', 'task')").run(id);
+    db.prepare('DELETE FROM projects WHERE id = ?').run(id);
+    return { status: 200, body: { ok: true } };
+  });
+  const out = run();
+  res.status(out.status).json(out.body);
 });
 
 // --- TASKS ---

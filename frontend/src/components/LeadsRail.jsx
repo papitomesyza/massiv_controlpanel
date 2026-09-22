@@ -6,6 +6,7 @@ import { api, fmt, fmtDate } from '../api';
 import { Private } from '../context/PrivacyContext';
 import { categoryIconEl } from '../lib/categoryIcons';
 import AddLeadModal from './AddLeadModal';
+import Overlay from './Overlay';
 
 // One leads rail, shared by the Dashboard and the Projects page. The chip is the
 // whole object: avatar, name, category icon, value driven width and an age dot.
@@ -144,12 +145,7 @@ function ArrowRightIcon() {
 function LeadDrawer({ lead, onClose, onEdit, onDismiss }) {
   const [confirming, setConfirming] = useState(false);
   return (
-    <div className="lead-drawer-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="lead-drawer">
-        <div className="lead-drawer-head">
-          <span className="lead-drawer-title">{lead.client_name || 'Lead'}</span>
-          <button className="modal-close" onClick={onClose}><X size={18} /></button>
-        </div>
+    <Overlay size="drawer" title={lead.client_name || 'Lead'} onClose={onClose} guard={false}>
         <div className="lead-drawer-meta">
           <span className="lead-drawer-chip">{lead.category_name || 'Uncategorized'}</span>
           {lead.contacted_at && <span className="lead-drawer-chip">{fmtDate(lead.contacted_at)}</span>}
@@ -183,7 +179,6 @@ function LeadDrawer({ lead, onClose, onEdit, onDismiss }) {
             </>
           )}
         </div>
-      </div>
-    </div>
+    </Overlay>
   );
 }

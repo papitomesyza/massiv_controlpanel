@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { api, fmtDate } from '../api';
 import { SECTION_LABELS, sectionSummary } from '../lib/pitchSections';
+import Overlay from '../components/Overlay';
 
 const STATUS_BADGE = {
   draft: 'badge badge-pending',
@@ -89,72 +90,66 @@ function UseTemplateModal({ template, onClose, onCreated }) {
   }
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal-box" style={{ maxWidth: 560 }}>
-        <div className="modal-header">
-          <span className="modal-title">New pitch from “{template.title}”</span>
-          <button className="modal-close" onClick={onClose}><X size={18} /></button>
+    <Overlay title={<>New pitch from “{template.title}”</>} onClose={onClose} width={560}>
+      <form onSubmit={create}>
+        <div className="form-row">
+          <label className="form-label">Pitch name *</label>
+          <input
+            className="input"
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            placeholder="e.g. Nike SS26 Editorial"
+            autoFocus
+          />
         </div>
-        <form onSubmit={create}>
-          <div className="form-row">
-            <label className="form-label">Pitch name *</label>
-            <input
-              className="input"
-              value={title}
-              onChange={e => setTitle(e.target.value)}
-              placeholder="e.g. Nike SS26 Editorial"
-              autoFocus
-            />
-          </div>
 
-          <div className="form-row">
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-              <label className="form-label" style={{ margin: 0 }}>
-                Sections to include {sections ? `(${picked.size}/${sections.length})` : ''}
-              </label>
-              {sections && sections.length > 0 && (
-                <button
-                  type="button"
-                  className="btn-ghost"
-                  style={{ padding: '3px 8px', fontSize: '11px' }}
-                  onClick={() => setPicked(allOn ? new Set() : new Set(sections.map(s => s.id)))}
-                >
-                  {allOn ? 'Clear all' : 'Select all'}
-                </button>
-              )}
-            </div>
-
-            {loading && <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Loading sections…</p>}
-
-            {sections && (
-              <div className="pitch-section-picker">
-                {sections.map(s => (
-                  <label key={s.id} className={`pitch-section-row${picked.has(s.id) ? ' on' : ''}`}>
-                    <input
-                      type="checkbox"
-                      checked={picked.has(s.id)}
-                      onChange={() => toggle(s.id)}
-                      style={{ accentColor: 'var(--accent)', width: 15, height: 15, flexShrink: 0 }}
-                    />
-                    <span className="pitch-section-type">{SECTION_LABELS[s.type] || s.type}</span>
-                    <span className="pitch-section-sum">{sectionSummary(s.type, s.content)}</span>
-                  </label>
-                ))}
-              </div>
+        <div className="form-row">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <label className="form-label" style={{ margin: 0 }}>
+              Sections to include {sections ? `(${picked.size}/${sections.length})` : ''}
+            </label>
+            {sections && sections.length > 0 && (
+              <button
+                type="button"
+                className="btn-ghost"
+                style={{ padding: '3px 8px', fontSize: '11px' }}
+                onClick={() => setPicked(allOn ? new Set() : new Set(sections.map(s => s.id)))}
+              >
+                {allOn ? 'Clear all' : 'Select all'}
+              </button>
             )}
           </div>
 
-          {error && <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 12px' }}>{error}</p>}
+          {loading && <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Loading sections…</p>}
 
-          <div className="modal-footer">
-            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={creating || loading}>
-              {creating ? 'Creating…' : 'Create pitch'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+          {sections && (
+            <div className="pitch-section-picker">
+              {sections.map(s => (
+                <label key={s.id} className={`pitch-section-row${picked.has(s.id) ? ' on' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={picked.has(s.id)}
+                    onChange={() => toggle(s.id)}
+                    style={{ accentColor: 'var(--accent)', width: 15, height: 15, flexShrink: 0 }}
+                  />
+                  <span className="pitch-section-type">{SECTION_LABELS[s.type] || s.type}</span>
+                  <span className="pitch-section-sum">{sectionSummary(s.type, s.content)}</span>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {error && <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 12px' }}>{error}</p>}
+
+        <div className="modal-footer">
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="submit" className="btn btn-primary" disabled={creating || loading}>
+            {creating ? 'Creating…' : 'Create pitch'}
+          </button>
+        </div>
+      </form>
+    </Overlay>
   );
 }
 

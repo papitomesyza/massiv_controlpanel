@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Plus, ChevronDown, ChevronRight, Trash2, Edit2, Archive, Building2, User, MessageCircle, FileDown, X } from 'lucide-react';
 import { api, fmt } from '../api';
 import { Private } from '../context/PrivacyContext';
-import Modal from '../components/Modal';
+import Overlay from '../components/Overlay';
 
 function waUrl(phone) {
   if (!phone) return null;
@@ -314,7 +314,7 @@ export default function Crew() {
       )}
 
       {showModal && (
-        <Modal
+        <Overlay
           title={editMember ? 'Edit Crew Member' : 'Add Crew Member'}
           onClose={() => { setShowModal(false); setErr(''); setEditMember(null); setIsCompany(false); }}
           footer={<>
@@ -377,7 +377,7 @@ export default function Crew() {
             <textarea className="input" value={form.notes} onChange={e => f('notes', e.target.value)} placeholder="Notes..." />
           </div>
           {err && <div className="error-msg">{err}</div>}
-        </Modal>
+        </Overlay>
       )}
     </div>
   );
@@ -386,87 +386,88 @@ export default function Crew() {
 function CrewDetailSheet({ member, debtAmount, onClose, onEdit, onTxn, onArchive }) {
   const wa = waUrl(member.phone);
   return (
-    <div className="detail-sheet-overlay" onClick={onClose}>
-      <div className="detail-sheet-box" onClick={e => e.stopPropagation()}>
-        <div className="detail-sheet-header">
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontWeight: 700, fontSize: '18px', color: 'var(--color-ink)', lineHeight: 1.2 }}>{member.name}</span>
-              {debtAmount > 0 && (
-                <span style={{ background: 'var(--ember-soft)', color: 'var(--color-ember)', fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '18px' }}>
-                  Unpaid
-                </span>
-              )}
-            </div>
-            <div style={{ fontSize: '13px', color: 'var(--color-mid-gray)', marginTop: '3px' }}>
-              {member.is_company ? (member.service_type || 'Company') : (member.role || 'No role')}
-            </div>
-          </div>
-          <button className="modal-close" onClick={onClose}><X size={18} /></button>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          {member.location && (
-            <div className="fin-row" style={{ padding: '10px 0' }}>
-              <span className="text-2" style={{ fontSize: '12px' }}>Location</span>
-              <span style={{ fontSize: '13px' }}>{member.location}</span>
-            </div>
-          )}
-          {member.day_rate > 0 && (
-            <div className="fin-row" style={{ padding: '10px 0' }}>
-              <span className="text-2" style={{ fontSize: '12px' }}>Day Rate</span>
-              <span style={{ fontSize: '13px', fontWeight: 700 }}>{<Private>{fmt(member.day_rate)}</Private>}</span>
-            </div>
-          )}
-          {member.phone && (
-            <div className="fin-row" style={{ padding: '10px 0' }}>
-              <span className="text-2" style={{ fontSize: '12px' }}>Phone</span>
-              <div className="flex-center gap-1">
-                <span style={{ fontSize: '13px' }}>{member.phone}</span>
-                {wa && (
-                  <a href={wa} target="_blank" rel="noopener noreferrer" className="wa-btn">
-                    <MessageCircle size={12} /> WA
-                  </a>
-                )}
-              </div>
-            </div>
-          )}
+    <Overlay
+      size="sheet"
+      onClose={onClose}
+      guard={false}
+      title={
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontWeight: 700, fontSize: '18px', color: 'var(--color-ink)', lineHeight: 1.2 }}>{member.name}</span>
           {debtAmount > 0 && (
-            <div className="fin-row" style={{ padding: '10px 0' }}>
-              <span className="text-2" style={{ fontSize: '12px' }}>Outstanding</span>
-              <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-ember)' }}><Private>€{Number(debtAmount).toFixed(2)}</Private></span>
-            </div>
+            <span style={{ background: 'var(--ember-soft)', color: 'var(--color-ember)', fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '18px' }}>
+              Unpaid
+            </span>
           )}
         </div>
-
-        <div style={{ display: 'flex', gap: '8px', marginTop: '16px', flexWrap: 'wrap' }}>
-          <button
-            className="btn btn-ghost btn-sm"
-            style={{ color: 'var(--accent)', borderColor: 'var(--color-hairline)', flex: 1 }}
-            onClick={() => onTxn(member)}
-          >
-            <Plus size={13} /> Txn
-          </button>
-          <button className="btn btn-ghost btn-sm" style={{ flex: 1 }} onClick={() => onEdit(member)}>
-            <Edit2 size={13} /> Edit
-          </button>
-          <button className="btn btn-ghost btn-sm" onClick={() => onArchive(member)} title="Archive">
-            <Archive size={13} />
-          </button>
-        </div>
-
-        <div style={{ marginTop: '10px' }}>
-          <Link
-            to={`/crew/${member.id}`}
-            className="btn btn-primary"
-            style={{ width: '100%', justifyContent: 'center' }}
-            onClick={onClose}
-          >
-            View Full Profile <ChevronRight size={15} />
-          </Link>
+        <div style={{ fontSize: '13px', color: 'var(--color-mid-gray)', marginTop: '3px' }}>
+          {member.is_company ? (member.service_type || 'Company') : (member.role || 'No role')}
         </div>
       </div>
-    </div>
+      }
+    >
+
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        {member.location && (
+          <div className="fin-row" style={{ padding: '10px 0' }}>
+            <span className="text-2" style={{ fontSize: '12px' }}>Location</span>
+            <span style={{ fontSize: '13px' }}>{member.location}</span>
+          </div>
+        )}
+        {member.day_rate > 0 && (
+          <div className="fin-row" style={{ padding: '10px 0' }}>
+            <span className="text-2" style={{ fontSize: '12px' }}>Day Rate</span>
+            <span style={{ fontSize: '13px', fontWeight: 700 }}>{<Private>{fmt(member.day_rate)}</Private>}</span>
+          </div>
+        )}
+        {member.phone && (
+          <div className="fin-row" style={{ padding: '10px 0' }}>
+            <span className="text-2" style={{ fontSize: '12px' }}>Phone</span>
+            <div className="flex-center gap-1">
+              <span style={{ fontSize: '13px' }}>{member.phone}</span>
+              {wa && (
+                <a href={wa} target="_blank" rel="noopener noreferrer" className="wa-btn">
+                  <MessageCircle size={12} /> WA
+                </a>
+              )}
+            </div>
+          </div>
+        )}
+        {debtAmount > 0 && (
+          <div className="fin-row" style={{ padding: '10px 0' }}>
+            <span className="text-2" style={{ fontSize: '12px' }}>Outstanding</span>
+            <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-ember)' }}><Private>€{Number(debtAmount).toFixed(2)}</Private></span>
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', gap: '8px', marginTop: '16px', flexWrap: 'wrap' }}>
+        <button
+          className="btn btn-ghost btn-sm"
+          style={{ color: 'var(--accent)', borderColor: 'var(--color-hairline)', flex: 1 }}
+          onClick={() => onTxn(member)}
+        >
+          <Plus size={13} /> Txn
+        </button>
+        <button className="btn btn-ghost btn-sm" style={{ flex: 1 }} onClick={() => onEdit(member)}>
+          <Edit2 size={13} /> Edit
+        </button>
+        <button className="btn btn-ghost btn-sm" onClick={() => onArchive(member)} title="Archive">
+          <Archive size={13} />
+        </button>
+      </div>
+
+      <div style={{ marginTop: '10px' }}>
+        <Link
+          to={`/crew/${member.id}`}
+          className="btn btn-primary"
+          style={{ width: '100%', justifyContent: 'center' }}
+          onClick={onClose}
+        >
+          View Full Profile <ChevronRight size={15} />
+        </Link>
+      </div>
+    </Overlay>
   );
 }
 
@@ -492,7 +493,7 @@ function QuickDebtModal({ member, onClose, onSaved }) {
   }
 
   return (
-    <Modal title={`+ Transaction — ${member.name}`} onClose={onClose} footer={<>
+    <Overlay title={`+ Transaction: ${member.name}`} onClose={onClose} footer={<>
       <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
       <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
     </>}>
@@ -515,7 +516,7 @@ function QuickDebtModal({ member, onClose, onSaved }) {
         <textarea className="input" value={form.notes} onChange={e => f('notes', e.target.value)} placeholder="Notes..." />
       </div>
       {err && <div className="error-msg">{err}</div>}
-    </Modal>
+    </Overlay>
   );
 }
 

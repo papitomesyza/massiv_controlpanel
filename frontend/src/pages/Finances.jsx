@@ -1,67 +1,178 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  PieChart, Pie, Cell, ResponsiveContainer,
-} from 'recharts';
-import {
-  TrendingUp, FolderCheck, BarChart2, Star, Users, AlertCircle,
-  CheckCircle, Download, FileText, Clock, Receipt,
+  ChevronLeft, ChevronRight, Download, Search, X, Receipt, FileText,
 } from 'lucide-react';
 import { api, fmt, fmtDate } from '../api';
-import { Private, usePrivacy } from '../context/PrivacyContext';
-import StatCard from '../components/StatCard';
-import { seriesColors, seriesColor, CHART_GRID, CHART_AXIS, CHART_SURFACE } from '../lib/chartColors';
+import { Private } from '../context/PrivacyContext';
+import { GROUP_TINT, categoryVisual, CategoryTile } from '../lib/categoryIcons';
+import { pristinaMonth, pristinaYear, addMonths } from '../lib/pristinaDate';
+import TrendChart from '../components/TrendChart';
+import Donut from '../components/Donut';
 
-const MONTHS_LIST = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'));
-/* Ageing is ordered, so the buckets darken with severity and only the
-   oldest one earns the ember. */
-const BUCKET_META = {
-  current:  { label: 'Current (0–30d)',  color: 'var(--color-mid-gray)', bg: 'var(--accent-contrast)' },
-  '31-60':  { label: '31–60 Days',       color: 'var(--color-ink-soft)', bg: 'var(--accent-contrast)' },
-  '61-90':  { label: '61–90 Days',       color: 'var(--color-ink)', bg: 'var(--color-hairline)' },
-  '90+':    { label: '90+ Days',         color: 'var(--color-ember)', bg: 'var(--ember-soft)' },
-};
+// The five category groups in the fixed order the Projects and Map pages use.
+const GROUPS = Object.keys(GROUP_TINT);
 
-function getCurrentMonth() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+function monthName(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 }
 
-function getYears() {
-  const y = new Date().getFullYear();
-  return Array.from({ length: 8 }, (_, i) => y - i);
+function filterQuery(filter) {
+  const p = new URLSearchParams();
+  if (filter.group) p.set('group', filter.group);
+  if (filter.client) p.set('client_id', String(filter.client.id));
+  return p;
 }
 
-const CustomTooltip = ({ active, payload, label }) => {
-  if (!active || !payload?.length) return null;
+/* ───────────────────────── Shared controls ───────────────────────── */
+
+// Previous and next arrows either side of the period name, matching the
+// Calendar header.
+function Stepper({ label, onPrev, onNext }) {
   return (
-    <div style={{ background: 'var(--surface-card)', border: '1px solid var(--color-hairline)', borderRadius: '10px', padding: '10px 14px', fontSize: '12px', boxShadow: 'var(--shadow-raised)' }}>
-      <div style={{ marginBottom: '4px', color: 'var(--color-mid-gray)' }}>{label}</div>
-      {payload.map(p => (
-        <div key={p.name} style={{ color: p.color }}>{p.name}: {<Private>{fmt(p.value)}</Private>}</div>
-      ))}
+    <div className="fin-stepper">
+      <button className="btn btn-ghost btn-sm fin-stepper-btn" onClick={onPrev} aria-label="Previous"><ChevronLeft size={16} /></button>
+      <h2 className="fin-stepper-label">{label}</h2>
+      <button className="btn btn-ghost btn-sm fin-stepper-btn" onClick={onNext} aria-label="Next"><ChevronRight size={16} /></button>
     </div>
   );
-};
+}
 
-/* Privacy aware Y axis tick. The tick text lives inside an SVG, so it cannot be
-   wrapped in the Private component. It blurs with the same CSS filter instead,
-   driven by the shared privacy state, so chart axis figures hide with the rest. */
-function PrivacyYTick({ x, y, payload }) {
-  const { hidden } = usePrivacy();
+// The five group glyphs, tinted like the Projects filter. Click to filter, click
+// again to clear.
+function GroupFilter({ value, onChange }) {
   return (
-    <text
-      x={x} y={y} dy={3} textAnchor="end" fontSize={11} fill={CHART_AXIS}
-      style={{ filter: hidden ? 'blur(6px)' : 'none', transition: 'filter 0.25s ease' }}
-    >
-      {`€${(Number(payload.value) / 1000).toFixed(0)}k`}
-    </text>
+    <div className="est-filter-dots">
+      {GROUPS.map(g => {
+        const { Icon, tint } = categoryVisual(undefined, g);
+        return (
+          <button
+            key={g}
+            className={`est-filter-dot proj-group-dot ${value === g ? 'active' : ''}`}
+            style={{ '--tint': tint }}
+            title={g}
+            aria-label={g}
+            aria-pressed={value === g}
+            onClick={() => onChange(value === g ? '' : g)}
+          >
+            <Icon size={16} />
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
-/* ───────────────────────── OVERVIEW TAB ───────────────────────── */
+// Type to find a client, pick one to filter, clear with the X.
+function ClientSearch({ clients, value, onChange }) {
+  const [q, setQ] = useState('');
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
 
-function OverviewTab({ month, setMonth, filterCat, setFilterCat, filterClient, setFilterClient, allCategories, allClients }) {
+  useEffect(() => {
+    function onDoc(e) { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); }
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, []);
+
+  const matches = useMemo(() => {
+    const t = q.trim().toLowerCase();
+    const list = t
+      ? clients.filter(c => `${c.name} ${c.company || ''}`.toLowerCase().includes(t))
+      : clients;
+    return list.slice(0, 8);
+  }, [clients, q]);
+
+  if (value) {
+    return (
+      <div className="est-search fin-client-chip">
+        <Search size={14} />
+        <span className="input fin-client-picked">{value.name}</span>
+        <button className="fin-client-clear" onClick={() => onChange(null)} aria-label="Clear client"><X size={14} /></button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="est-search fin-client-search" ref={wrapRef}>
+      <Search size={14} />
+      <input
+        className="input"
+        value={q}
+        placeholder="Client"
+        aria-label="Filter by client"
+        onFocus={() => setOpen(true)}
+        onChange={e => { setQ(e.target.value); setOpen(true); }}
+        onKeyDown={e => {
+          if (e.key === 'Enter' && matches[0]) { onChange(matches[0]); setQ(''); setOpen(false); }
+        }}
+      />
+      {open && matches.length > 0 && (
+        <ul className="fin-client-menu">
+          {matches.map(c => (
+            <li key={c.id}>
+              <button onMouseDown={e => { e.preventDefault(); onChange(c); setQ(''); setOpen(false); }}>{c.name}</button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/* ───────────────────────── Overview tab ───────────────────────── */
+
+// A signed percentage, coloured: profit green, loss ember. No margin, no value.
+function MarginValue({ margin }) {
+  if (margin === null || margin === undefined) return <span className="rank-margin rank-margin-none" />;
+  return (
+    <span className={`rank-margin ${margin < 0 ? 'is-neg' : 'is-pos'}`}>
+      {margin > 0 ? '+' : ''}{margin}%
+    </span>
+  );
+}
+
+// One row per item: a glyph or name, a bar proportional to revenue, and the
+// margin. Exact figures appear on hover.
+function RankedBars({ rows, renderLabel }) {
+  const [hover, setHover] = useState(null);
+  const max = Math.max(1, ...rows.map(r => r.total_revenue || 0));
+  if (rows.length === 0) return <div className="rank-empty" />;
+  return (
+    <ul className="rank-list">
+      {rows.map((r, i) => (
+        <li
+          key={r.id ?? i}
+          className="rank-row"
+          onMouseEnter={() => setHover(i)}
+          onMouseLeave={() => setHover(null)}
+        >
+          <div className="rank-label">{renderLabel(r)}</div>
+          <div className="rank-track">
+            <div className="rank-bar" style={{ width: `${Math.max(2, (r.total_revenue / max) * 100)}%` }} />
+          </div>
+          <MarginValue margin={r.margin} />
+          {hover === i && (
+            <div className="rank-tip">
+              <div className="rank-tip-row"><span>Revenue</span><Private>{fmt(r.total_revenue)}</Private></div>
+              {r.completed_projects > 0 && (
+                <>
+                  <div className="rank-tip-row"><span>Completed revenue</span><Private>{fmt(r.completed_revenue)}</Private></div>
+                  <div className="rank-tip-row"><span>Crew paid</span><Private>{fmt(r.total_crew)}</Private></div>
+                  <div className="rank-tip-row"><span>Expenses</span><Private>{fmt(r.total_expenses)}</Private></div>
+                  <div className="rank-tip-row rank-tip-total"><span>Project profit</span><Private>{fmt(r.net_profit)}</Private></div>
+                </>
+              )}
+            </div>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function OverviewTab({ month, setMonth, filter, setFilter, clients }) {
   const [stats, setStats] = useState(null);
   const [chart, setChart] = useState([]);
   const [catData, setCatData] = useState([]);
@@ -70,173 +181,100 @@ function OverviewTab({ month, setMonth, filterCat, setFilterCat, filterClient, s
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get('/finances/all-time-kpis').then(k => setKpis(k)).catch(() => {});
-  }, []);
-
-  useEffect(() => {
     setLoading(true);
-    const p = new URLSearchParams({ month });
-    if (filterCat) p.set('category_id', filterCat);
-    if (filterClient) p.set('client_id', filterClient);
+    const fq = filterQuery(filter);
+    const sp = new URLSearchParams(fq); sp.set('month', month);
+    const cp = new URLSearchParams(fq); cp.set('months', '6'); cp.set('end', month);
     Promise.all([
-      api.get(`/finances/stats?${p}`),
-      api.get('/finances/chart?months=6'),
-      api.get('/finances/categories'),
-      api.get('/finances/clients'),
-    ]).then(([s, ch, ca, cl]) => {
-      setStats(s); setChart(ch); setCatData(ca); setClientData(cl);
+      api.get(`/finances/stats?${sp}`),
+      api.get(`/finances/chart?${cp}`),
+      api.get(`/finances/categories?${fq}`),
+      api.get(`/finances/clients?${fq}`),
+      api.get(`/finances/all-time-kpis?${fq}`),
+    ]).then(([s, ch, ca, cl, k]) => {
+      setStats(s);
+      setChart(ch.map(r => ({ ...r, costs: Math.round((r.expenses + r.crewCosts) * 100) / 100 })));
+      setCatData(ca);
+      setClientData(cl);
+      setKpis(k);
       setLoading(false);
     }).catch(() => setLoading(false));
-  }, [month, filterCat, filterClient]);
+  }, [month, filter]);
 
-  const years = getYears();
-  const [selYear, selMon] = month.split('-');
-  const groupedCats = allCategories.reduce((acc, c) => {
-    acc[c.group_name] = acc[c.group_name] || [];
-    acc[c.group_name].push(c);
-    return acc;
-  }, {});
+  const costs = stats ? stats.expenses + stats.crewCosts : 0;
+  const donutData = catData.filter(c => c.total_revenue > 0);
 
   return (
     <div>
-      {/* Period + filter controls */}
-      <div className="filter-bar" style={{ marginBottom: '20px' }}>
-        <select className="select" value={filterCat} onChange={e => setFilterCat(e.target.value)}>
-          <option value="">All Categories</option>
-          {Object.entries(groupedCats).map(([g, cats]) => (
-            <optgroup key={g} label={g}>
-              {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </optgroup>
-          ))}
-        </select>
-        <select className="select" value={filterClient} onChange={e => setFilterClient(e.target.value)}>
-          <option value="">All Clients</option>
-          {allClients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-        <select className="select" value={selYear} onChange={e => setMonth(`${e.target.value}-${selMon}`)}>
-          {years.map(y => <option key={y} value={y}>{y}</option>)}
-        </select>
-        <select className="select" value={selMon} onChange={e => setMonth(`${selYear}-${e.target.value}`)}>
-          {MONTHS_LIST.map(m => <option key={m} value={m}>{new Date(`2000-${m}-01`).toLocaleString('default', { month: 'long' })}</option>)}
-        </select>
+      <div className="fin-controls">
+        <Stepper
+          label={monthName(month)}
+          onPrev={() => setMonth(addMonths(month, -1))}
+          onNext={() => setMonth(addMonths(month, 1))}
+        />
+        <div className="fin-filters">
+          <GroupFilter value={filter.group} onChange={g => setFilter(f => ({ ...f, group: g }))} />
+          <ClientSearch clients={clients} value={filter.client} onChange={c => setFilter(f => ({ ...f, client: c }))} />
+        </div>
       </div>
 
-      {/* All-time KPIs */}
-      {kpis && (
-        <div style={{ marginBottom: '24px' }}>
-          <div className="section-title" style={{ marginBottom: '12px' }}>All-Time Performance</div>
-          <div className="stats-grid">
-            <StatCard label="Total Revenue Ever" value={<Private>{fmt(kpis.totalRevenue)}</Private>} icon={<TrendingUp size={18} />} />
-            <StatCard label="Projects Completed" value={kpis.totalCompleted} icon={<FolderCheck size={18} />} />
-            <StatCard label="Avg Completed Project" value={<Private>{fmt(kpis.avgProjectValue)}</Private>} icon={<BarChart2 size={18} />} />
-            <StatCard label="Best Month" value={kpis.bestMonth?.month || '—'} sub={kpis.bestMonth ? <Private>{fmt(kpis.bestMonth.amount)}</Private> : undefined} icon={<Star size={18} />} />
-            <StatCard label="Best Client" value={kpis.bestClient?.name || '—'} sub={kpis.bestClient ? <Private>{fmt(kpis.bestClient.amount)}</Private> : undefined} icon={<Users size={18} />} />
-          </div>
-        </div>
-      )}
-
-      {loading ? <div className="loading">Loading...</div> : (
+      {loading && !stats ? <div className="loading">Loading...</div> : (
         <>
-          {/* Period KPI cards */}
-          <div style={{ marginBottom: '20px' }}>
-            <div className="section-title" style={{ marginBottom: '12px' }}>
-              {`${month.slice(5)}/${month.slice(0, 4)}`}
+          <div className="est-pipeline fin-strip">
+            <div className="est-pipe-cell">
+              <div className="est-pipe-label">Revenue</div>
+              <div className="est-pipe-value"><Private>{fmt(stats?.revenue)}</Private></div>
             </div>
-            <div className="stats-grid">
-              <StatCard label="Realized Revenue" value={<Private>{fmt(stats?.revenue)}</Private>} icon={<TrendingUp size={18} />} gradient />
-              <StatCard label="Expenses" value={<Private>{fmt(stats?.expenses)}</Private>} icon={<Receipt size={18} />} danger={stats?.expenses > 0} />
-              <StatCard label="Crew Costs" value={<Private>{fmt(stats?.crewCosts)}</Private>} icon={<Users size={18} />} />
-              <StatCard label="Net Profit" value={<Private>{fmt(stats?.netProfit)}</Private>} icon={<BarChart2 size={18} />} danger={stats?.netProfit < 0} />
+            <div className="est-pipe-cell">
+              <div className="est-pipe-label">Costs</div>
+              <div className="est-pipe-value"><Private>{fmt(costs)}</Private></div>
+            </div>
+            <div className="est-pipe-cell">
+              <div className="est-pipe-label">Project profit</div>
+              <div className="est-pipe-value" style={{ color: stats?.netProfit < 0 ? 'var(--color-ember)' : undefined }}>
+                <Private>{fmt(stats?.netProfit)}</Private>
+              </div>
             </div>
           </div>
 
-          {/* Charts */}
-          <div className="two-col" style={{ marginBottom: '24px' }}>
+          {kpis && (
+            <div className="fin-quiet">
+              <div className="fin-quiet-item"><span>All time</span><Private>{fmt(kpis.totalRevenue)}</Private></div>
+              <div className="fin-quiet-item"><span>Completed</span>{kpis.totalCompleted}</div>
+              <div className="fin-quiet-item"><span>Avg project</span><Private>{fmt(kpis.avgProjectValue)}</Private></div>
+              {kpis.bestMonth && (
+                <div className="fin-quiet-item"><span>Best month</span>{monthName(kpis.bestMonth.month)}</div>
+              )}
+              {kpis.bestClient && !filter.client && (
+                <div className="fin-quiet-item"><span>Best client</span>{kpis.bestClient.name}</div>
+              )}
+            </div>
+          )}
+
+          <div className="two-col fin-charts">
             <div className="card card-pad">
-              <div className="section-title" style={{ marginBottom: '16px' }}>Revenue vs Expenses (Last 6 Months)</div>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={chart} margin={{ top: 0, right: 0, bottom: 0, left: 0 }} barGap={2}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} vertical={false} />
-                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: CHART_AXIS }} />
-                  <YAxis tick={<PrivacyYTick />} />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Legend wrapperStyle={{ fontSize: '12px', color: CHART_AXIS }} />
-                  <Bar dataKey="revenue" name="Revenue" fill={seriesColors(3)[0]} radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="expenses" name="Expenses" fill={seriesColors(3)[1]} radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="crewCosts" name="Crew" fill={seriesColors(3)[2]} radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              <TrendChart data={chart} costKey="costs" costLabel="Costs" />
             </div>
             <div className="card card-pad">
-              <div className="section-title" style={{ marginBottom: '16px' }}>Revenue by Category</div>
-              {catData.length === 0 ? (
-                <div className="empty">No category data yet</div>
-              ) : (
-                <ResponsiveContainer width="100%" height={220}>
-                  <PieChart>
-                    <Pie data={catData} dataKey="total_revenue" nameKey="name" cx="50%" cy="50%" outerRadius={80}
-                      label={({ name, percent }) => `${name.split('/')[0].trim()} ${Math.round(percent * 100)}%`}
-                      labelLine={false} fontSize={10}>
-                      {catData.map((_, i) => (
-                        <Cell key={i} fill={seriesColor(i, catData.length)} stroke={CHART_SURFACE} strokeWidth={2} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={v => <Private>{fmt(v)}</Private>} contentStyle={{ background: 'var(--surface-card)', border: '1px solid var(--color-hairline)', borderRadius: '10px', fontSize: '12px' }} />
-                  </PieChart>
-                </ResponsiveContainer>
+              {donutData.length === 0 ? <div className="rank-empty" /> : (
+                <Donut data={donutData} valueKey="total_revenue" nameKey="name" />
               )}
             </div>
           </div>
 
-          {/* Rankings tables */}
           <div className="two-col">
-            <div>
-              <div className="section-title" style={{ marginBottom: '12px' }}>Client Rankings</div>
-              {clientData.length === 0 ? (
-                <div className="card card-pad empty">No client data yet</div>
-              ) : (
-                <div className="card">
-                  <div className="table-wrap table-responsive">
-                    <table>
-                      <thead><tr><th>Client</th><th>Projects</th><th>Revenue</th><th>Margin</th></tr></thead>
-                      <tbody>
-                        {clientData.map((c, i) => (
-                          <tr key={i}>
-                            <td data-label="Client"><div className="text-bold text-sm">{c.name}</div><div className="text-xs text-2">{c.company || ''}</div></td>
-                            <td data-label="Projects">{c.total_projects}</td>
-                            <td data-label="Revenue">{<Private>{fmt(c.total_revenue)}</Private>}</td>
-                            <td data-label="Margin"><span className={c.margin < 0 ? 'text-danger' : ''}>{c.margin}%</span></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
+            <div className="card card-pad">
+              <RankedBars rows={clientData} renderLabel={r => <span className="rank-name">{r.name}</span>} />
             </div>
-            <div>
-              <div className="section-title" style={{ marginBottom: '12px' }}>Category Performance</div>
-              {catData.length === 0 ? (
-                <div className="card card-pad empty">No category data yet</div>
-              ) : (
-                <div className="card">
-                  <div className="table-wrap table-responsive">
-                    <table>
-                      <thead><tr><th>Category</th><th>Projects</th><th>Revenue</th><th>Margin</th></tr></thead>
-                      <tbody>
-                        {catData.map((c, i) => (
-                          <tr key={i}>
-                            <td data-label="Category"><div className="text-sm">{c.name}</div><div className="text-xs text-2">{c.group_name}</div></td>
-                            <td data-label="Projects">{c.total_projects}</td>
-                            <td data-label="Revenue">{<Private>{fmt(c.total_revenue)}</Private>}</td>
-                            <td data-label="Margin"><span className={c.margin < 0 ? 'text-danger' : ''}>{c.margin}%</span></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
+            <div className="card card-pad">
+              <RankedBars
+                rows={catData}
+                renderLabel={r => (
+                  <span className="rank-cat" title={r.name}>
+                    <CategoryTile categoryName={r.name} groupName={r.group_name} size={26} />
+                  </span>
+                )}
+              />
             </div>
           </div>
         </>
@@ -245,13 +283,12 @@ function OverviewTab({ month, setMonth, filterCat, setFilterCat, filterClient, s
   );
 }
 
-/* ─────────────────────── PROFIT & LOSS TAB ─────────────────────── */
+/* ─────────────────────── Profit and loss tab ─────────────────────── */
 
 function PLTab() {
-  const years = getYears();
-  const [year, setYear] = useState(String(new Date().getFullYear()));
+  const [year, setYear] = useState(pristinaYear());
   const [viewMode, setViewMode] = useState('year'); // 'year' | 'month'
-  const [selMonth, setSelMonth] = useState(getCurrentMonth());
+  const [selMonth, setSelMonth] = useState(pristinaMonth());
   const [plData, setPlData] = useState(null);
   const [monthStats, setMonthStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -268,6 +305,11 @@ function PLTab() {
     }
   }, [viewMode, selMonth]);
 
+  // Stepping the month into another year moves the table's year with it.
+  useEffect(() => {
+    if (viewMode === 'month' && selMonth.slice(0, 4) !== year) setYear(selMonth.slice(0, 4));
+  }, [selMonth, viewMode, year]);
+
   async function exportPDF() {
     setPdfLoading(true);
     try { await api.download(`/finances/pl-pdf?year=${year}`, `${year}-Profit-Loss.pdf`); } catch (_) {}
@@ -278,149 +320,94 @@ function PLTab() {
     ? (plData?.totals || null)
     : (monthStats ? { revenue: monthStats.revenue, expenses: monthStats.expenses, crewCosts: monthStats.crewCosts, netProfit: monthStats.netProfit } : null);
 
-  const periodLabel = viewMode === 'year'
-    ? `Full Year ${year}`
-    : `${selMonth.slice(5)}/${selMonth.slice(0, 4)}`;
-
-  const grossProfit = statement ? statement.revenue - statement.crewCosts - statement.expenses : 0;
-
-  const [selYr, selMo] = selMonth.split('-');
+  const maxAbs = plData ? Math.max(1, ...plData.months.map(m => Math.abs(m.netProfit))) : 1;
 
   return (
     <div>
-      {/* Controls */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '24px', flexWrap: 'wrap' }}>
-        <select className="select" value={year} onChange={e => setYear(e.target.value)}>
-          {years.map(y => <option key={y} value={y}>{y}</option>)}
-        </select>
-        <div className="flex-center gap-1">
-          <button
-            className={`btn btn-sm ${viewMode === 'year' ? 'btn-primary' : 'btn-ghost'}`}
-            style={{ borderRadius: '18px', padding: '5px 16px' }}
-            onClick={() => setViewMode('year')}
-          >Full Year</button>
-          <button
-            className={`btn btn-sm ${viewMode === 'month' ? 'btn-primary' : 'btn-ghost'}`}
-            style={{ borderRadius: '18px', padding: '5px 16px' }}
-            onClick={() => setViewMode('month')}
-          >Month</button>
-        </div>
-        {viewMode === 'month' && (
-          <>
-            <select className="select" value={selYr} onChange={e => setSelMonth(`${e.target.value}-${selMo}`)}>
-              {years.map(y => <option key={y} value={y}>{y}</option>)}
-            </select>
-            <select className="select" value={selMo} onChange={e => setSelMonth(`${selYr}-${e.target.value}`)}>
-              {MONTHS_LIST.map(m => <option key={m} value={m}>{new Date(`2000-${m}-01`).toLocaleString('default', { month: 'long' })}</option>)}
-            </select>
-          </>
+      <div className="fin-controls">
+        {viewMode === 'year' ? (
+          <Stepper label={year} onPrev={() => setYear(String(Number(year) - 1))} onNext={() => setYear(String(Number(year) + 1))} />
+        ) : (
+          <Stepper label={monthName(selMonth)} onPrev={() => setSelMonth(addMonths(selMonth, -1))} onNext={() => setSelMonth(addMonths(selMonth, 1))} />
         )}
-        <div style={{ marginLeft: 'auto' }}>
-          <button className="btn btn-ghost btn-sm" onClick={exportPDF} disabled={pdfLoading} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <Download size={14} /> {pdfLoading ? 'Exporting…' : 'Export PDF'}
+        <div className="fin-filters">
+          <div className="toggle-group">
+            <button className={`toggle-btn ${viewMode === 'year' ? 'active' : ''}`} onClick={() => setViewMode('year')}>Year</button>
+            <button className={`toggle-btn ${viewMode === 'month' ? 'active' : ''}`} onClick={() => { setSelMonth(m => (m.slice(0, 4) === year ? m : `${year}-01`)); setViewMode('month'); }}>Month</button>
+          </div>
+          <button className="btn btn-ghost btn-sm" onClick={exportPDF} disabled={pdfLoading} aria-label="Export PDF" title="Export PDF">
+            <Download size={14} /> PDF
           </button>
         </div>
       </div>
 
-      {loading ? <div className="loading">Loading…</div> : (
-        <div className="two-col" style={{ alignItems: 'flex-start' }}>
-          {/* P&L Statement */}
-          <div>
-            <div className="section-title" style={{ marginBottom: '12px' }}>Statement — {periodLabel}</div>
-            {!statement ? (
-              <div className="card card-pad empty">No data for this period</div>
-            ) : (
-              <div className="card card-pad">
-                {/* Revenue */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
-                  <span style={{ fontWeight: 600, fontSize: '15px' }}>Revenue</span>
-                  <span style={{ fontWeight: 700, fontSize: '15px' }}>{<Private>{fmt(statement.revenue)}</Private>}</span>
+      {loading ? <div className="loading">Loading...</div> : (
+        <div className="pl-layout">
+          <div className="card card-pad pl-statement">
+            {!statement ? <div className="rank-empty" /> : (
+              <>
+                <div className="pl-line pl-line-strong"><span>Revenue</span><Private>{fmt(statement.revenue)}</Private></div>
+                <div className="pl-line pl-line-sub"><span>Crew</span><Private>{fmt(statement.crewCosts)}</Private></div>
+                <div className="pl-line pl-line-sub"><span>Expenses</span><Private>{fmt(statement.expenses)}</Private></div>
+                <div className="pl-line"><span>Costs</span><Private>{fmt(statement.crewCosts + statement.expenses)}</Private></div>
+                <div className={`pl-line pl-line-total ${statement.netProfit < 0 ? 'is-neg' : ''}`}>
+                  <span>Project profit</span><Private>{fmt(statement.netProfit)}</Private>
                 </div>
-
-                {/* Cost of Services */}
-                <div style={{ padding: '12px 0', borderBottom: '1px solid var(--border)' }}>
-                  <div style={{ fontSize: '10px', color: 'var(--color-mid-gray)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '10px' }}>Cost of Services</div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 16px', fontSize: '13px' }}>
-                    <span style={{ color: 'var(--color-mid-gray)' }}>Crew Costs</span>
-                    <span>{<Private>{fmt(statement.crewCosts)}</Private>}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 16px', fontSize: '13px' }}>
-                    <span style={{ color: 'var(--color-mid-gray)' }}>Expenses</span>
-                    <span>{<Private>{fmt(statement.expenses)}</Private>}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 0', marginTop: '6px', borderTop: '1px solid var(--border)', fontWeight: 600, fontSize: '13px' }}>
-                    <span>Total Cost of Services</span>
-                    <span>{<Private>{fmt(statement.crewCosts + statement.expenses)}</Private>}</span>
-                  </div>
-                </div>
-
-                {/* Gross Profit */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '2px solid var(--border)' }}>
-                  <span style={{ fontWeight: 700, fontSize: '14px' }}>Gross Profit</span>
-                  <span style={{ fontWeight: 700, fontSize: '14px', color: grossProfit < 0 ? 'var(--color-ember)' : 'var(--color-ink)' }}>{<Private>{fmt(grossProfit)}</Private>}</span>
-                </div>
-
-                {/* Net Profit */}
-                <div style={{
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  padding: '14px 20px', margin: '12px -24px -24px',
-                  background: statement.netProfit < 0 ? 'var(--ember-soft)' : 'var(--overlay-03)',
-                  borderTop: '2px solid ' + (statement.netProfit < 0 ? 'var(--ember-line)' : 'var(--color-hairline)'),
-                  borderRadius: '0 0 24px 24px',
-                }}>
-                  <span style={{ fontWeight: 700, fontSize: '16px', letterSpacing: '0.02em' }}>NET PROFIT</span>
-                  <span style={{ fontWeight: 800, fontSize: '18px', color: statement.netProfit < 0 ? 'var(--color-ember)' : 'var(--color-ink)' }}>{<Private>{fmt(statement.netProfit)}</Private>}</span>
-                </div>
-              </div>
+              </>
             )}
           </div>
 
-          {/* Monthly breakdown */}
-          <div>
-            <div className="section-title" style={{ marginBottom: '12px' }}>Monthly Breakdown — {year}</div>
-            {!plData ? (
-              <div className="card card-pad empty">No data</div>
-            ) : (
-              <div className="card">
-                <div className="table-wrap table-responsive">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Month</th>
-                        <th style={{ textAlign: 'right' }}>Revenue</th>
-                        <th style={{ textAlign: 'right' }}>Crew</th>
-                        <th style={{ textAlign: 'right' }}>Expenses</th>
-                        <th style={{ textAlign: 'right' }}>Net</th>
+          <div className="card">
+            <div className="table-wrap">
+              <table className="pl-table">
+                <thead>
+                  <tr>
+                    <th>Month</th>
+                    <th className="num">Revenue</th>
+                    <th className="num pl-minor">Crew</th>
+                    <th className="num pl-minor">Expenses</th>
+                    <th className="num">Project profit</th>
+                    <th className="pl-bar-col" aria-label="Shape" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {plData.months.map(m => {
+                    const isEmpty = m.revenue === 0 && m.expenses === 0 && m.crewCosts === 0;
+                    const isSelected = viewMode === 'month' && m.month === selMonth;
+                    const neg = m.netProfit < 0;
+                    const w = (Math.abs(m.netProfit) / maxAbs) * 100;
+                    return (
+                      <tr
+                        key={m.month}
+                        className={`${isEmpty ? 'pl-empty' : ''} ${neg ? 'pl-neg' : ''} ${isSelected ? 'pl-selected' : ''}`}
+                        onClick={() => { setSelMonth(m.month); setViewMode('month'); }}
+                      >
+                        <td data-label="Month">{m.label}</td>
+                        <td data-label="Revenue" className="num">{isEmpty ? null : <Private>{fmt(m.revenue)}</Private>}</td>
+                        <td data-label="Crew" className="num text-2 pl-minor">{isEmpty ? null : <Private>{fmt(m.crewCosts)}</Private>}</td>
+                        <td data-label="Expenses" className="num text-2 pl-minor">{isEmpty ? null : <Private>{fmt(m.expenses)}</Private>}</td>
+                        <td data-label="Project profit" className="num pl-profit">{isEmpty ? null : <Private>{fmt(m.netProfit)}</Private>}</td>
+                        <td className="pl-bar-col">
+                          {!isEmpty && (
+                            <div className="pl-bar-track">
+                              <div className={`pl-bar ${neg ? 'is-neg' : ''}`} style={{ width: `${Math.max(2, w)}%` }} />
+                            </div>
+                          )}
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {plData.months.map(m => {
-                        const isEmpty = m.revenue === 0 && m.expenses === 0 && m.crewCosts === 0;
-                        const isSelected = viewMode === 'month' && m.month === selMonth;
-                        return (
-                          <tr key={m.month} style={isSelected ? { background: 'var(--overlay-04)' } : {}}>
-                            <td data-label="Month" style={{ color: isEmpty ? 'var(--color-faint)' : 'var(--color-ink)', fontWeight: isSelected ? 700 : 400 }}>{m.label}</td>
-                            <td data-label="Revenue" style={{ textAlign: 'right', color: isEmpty ? 'var(--color-faint)' : 'var(--color-ink)' }}>{isEmpty ? '—' : <Private>{fmt(m.revenue)}</Private>}</td>
-                            <td data-label="Crew" style={{ textAlign: 'right', color: isEmpty ? 'var(--color-faint)' : 'var(--color-mid-gray)' }}>{isEmpty ? '—' : <Private>{fmt(m.crewCosts)}</Private>}</td>
-                            <td data-label="Expenses" style={{ textAlign: 'right', color: isEmpty ? 'var(--color-faint)' : 'var(--color-mid-gray)' }}>{isEmpty ? '—' : <Private>{fmt(m.expenses)}</Private>}</td>
-                            <td data-label="Net" style={{ textAlign: 'right', fontWeight: 600, color: isEmpty ? 'var(--color-faint)' : m.netProfit < 0 ? 'var(--color-ember)' : 'var(--color-ink)' }}>
-                              {isEmpty ? '—' : <Private>{fmt(m.netProfit)}</Private>}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                      <tr style={{ borderTop: '2px solid var(--border)', fontWeight: 700 }}>
-                        <td data-label="Month">TOTAL</td>
-                        <td data-label="Revenue" style={{ textAlign: 'right' }}>{<Private>{fmt(plData.totals.revenue)}</Private>}</td>
-                        <td data-label="Crew" style={{ textAlign: 'right', color: 'var(--color-mid-gray)' }}>{<Private>{fmt(plData.totals.crewCosts)}</Private>}</td>
-                        <td data-label="Expenses" style={{ textAlign: 'right', color: 'var(--color-mid-gray)' }}>{<Private>{fmt(plData.totals.expenses)}</Private>}</td>
-                        <td data-label="Net" style={{ textAlign: 'right', fontWeight: 700, color: plData.totals.netProfit < 0 ? 'var(--color-ember)' : 'var(--color-ink)' }}>{<Private>{fmt(plData.totals.netProfit)}</Private>}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
+                    );
+                  })}
+                  <tr className={`pl-total ${plData.totals.netProfit < 0 ? 'pl-neg' : ''}`}>
+                    <td data-label="Month">{year}</td>
+                    <td data-label="Revenue" className="num"><Private>{fmt(plData.totals.revenue)}</Private></td>
+                    <td data-label="Crew" className="num text-2 pl-minor"><Private>{fmt(plData.totals.crewCosts)}</Private></td>
+                    <td data-label="Expenses" className="num text-2 pl-minor"><Private>{fmt(plData.totals.expenses)}</Private></td>
+                    <td data-label="Project profit" className="num pl-profit"><Private>{fmt(plData.totals.netProfit)}</Private></td>
+                    <td className="pl-bar-col" />
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
@@ -428,19 +415,69 @@ function PLTab() {
   );
 }
 
-/* ─────────────────────── RECEIVABLES TAB ─────────────────────── */
+/* ─────────────────────── Receivables tab ─────────────────────── */
+
+// Age buckets in order, coloured from neutral to ember as age increases. The
+// not yet invoiced balance is its own distinct, hatched segment: it is owed but
+// has no invoice date to age from.
+const BUCKETS = [
+  { key: 'current',    label: 'Not due',          cls: 'ar-seg-0' },
+  { key: '1-30',       label: '1-30d',            cls: 'ar-seg-1' },
+  { key: '31-60',      label: '31-60d',           cls: 'ar-seg-2' },
+  { key: '61-90',      label: '61-90d',           cls: 'ar-seg-3' },
+  { key: '90+',        label: '90d+',             cls: 'ar-seg-4' },
+  { key: 'uninvoiced', label: 'Not yet invoiced', cls: 'ar-seg-un' },
+];
+const BUCKET_BY_KEY = Object.fromEntries(BUCKETS.map(b => [b.key, b]));
+
+function AgingBar({ buckets, total, active, onPick }) {
+  const present = BUCKETS.filter(b => (buckets?.[b.key] || 0) > 0);
+  return (
+    <div className="ar-aging">
+      <div className="ar-bar" role="group" aria-label="Receivables by age">
+        {total > 0 ? present.map(b => (
+          <button
+            key={b.key}
+            className={`ar-seg ${b.cls} ${active && active !== b.key ? 'is-dim' : ''}`}
+            style={{ flexGrow: buckets[b.key] }}
+            title={b.label}
+            aria-label={b.label}
+            aria-pressed={active === b.key}
+            onClick={() => onPick(active === b.key ? null : b.key)}
+          />
+        )) : <div className="ar-seg ar-seg-empty" />}
+      </div>
+      <div className="ar-legend">
+        {present.map(b => (
+          <button
+            key={b.key}
+            className={`ar-legend-item ${active === b.key ? 'active' : ''}`}
+            onClick={() => onPick(active === b.key ? null : b.key)}
+          >
+            <span className={`ar-swatch ${b.cls}`} />
+            <span className="ar-legend-label">{b.label}</span>
+            <span className="ar-legend-amt"><Private>{fmt(buckets[b.key])}</Private></span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function YearStepper({ year, setYear }) {
+  return <Stepper label={year} onPrev={() => setYear(String(Number(year) - 1))} onNext={() => setYear(String(Number(year) + 1))} />;
+}
 
 function ReceivablesTab() {
-  const years = getYears();
   const [arData, setArData] = useState(null);
+  const [bucket, setBucket] = useState(null);
   const [taxRecords, setTaxRecords] = useState([]);
   const [taxSettings, setTaxSettings] = useState(null);
-  const [taxYear, setTaxYear] = useState(String(new Date().getFullYear()));
+  const [taxYear, setTaxYear] = useState(pristinaYear());
   const [loading, setLoading] = useState(true);
 
   const loadAR = useCallback(async () => {
-    const ar = await api.get('/finances/ar-aging');
-    setArData(ar);
+    setArData(await api.get('/finances/ar-aging'));
   }, []);
 
   const loadTax = useCallback(async () => {
@@ -457,17 +494,6 @@ function ReceivablesTab() {
     Promise.all([loadAR(), loadTax()]).then(() => setLoading(false)).catch(() => setLoading(false));
   }, [loadAR, loadTax]);
 
-  async function markReceived(row) {
-    await api.put(`/projects/${row.project_id}/payments/${row.id}`, {
-      amount: row.amount,
-      date: new Date().toISOString().split('T')[0],
-      method: row.method || 'bank_transfer',
-      notes: row.notes || '',
-      status: 'received',
-    });
-    await loadAR();
-  }
-
   async function markTaxPaid(id) {
     await api.patch(`/finances/tax-records/${id}/paid`, {});
     await loadTax();
@@ -482,146 +508,98 @@ function ReceivablesTab() {
   const taxPaid = taxRecords.filter(r => r.tax_status === 'paid').reduce((s, r) => s + (r.tax_amount || 0), 0);
   const taxLabel = taxSettings?.tax_label || 'Tax';
 
-  if (loading) return <div className="loading">Loading…</div>;
+  if (loading) return <div className="loading">Loading...</div>;
+
+  const rows = (arData?.rows || []).filter(r => !bucket || r.bucket === bucket);
 
   return (
     <div>
-      {/* ── A/R Aging Section ── */}
-      <div style={{ marginBottom: '32px' }}>
-        <div className="section-title" style={{ marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Clock size={15} style={{ color: 'var(--accent)' }} />
-          Accounts Receivable Aging
+      <div className="est-pipeline fin-strip">
+        <div className="est-pipe-cell">
+          <div className="est-pipe-label">Owed</div>
+          <div className="est-pipe-value"><Private>{fmt(arData?.total)}</Private></div>
         </div>
-
-        {/* Bucket summary cards */}
-        <div className="ar-buckets-grid">
-          {Object.entries(BUCKET_META).map(([key, meta]) => (
-            <div key={key} className="card card-pad" style={{ borderTop: `3px solid ${meta.color}`, textAlign: 'center' }}>
-              <div style={{ fontSize: '11px', color: 'var(--color-mid-gray)', marginBottom: '6px' }}>{meta.label}</div>
-              <div style={{ fontSize: '20px', fontWeight: 700, color: meta.color }}>{<Private>{fmt(arData?.buckets[key] || 0)}</Private>}</div>
-            </div>
-          ))}
+        <div className="est-pipe-cell">
+          <div className="est-pipe-label">Invoiced</div>
+          <div className="est-pipe-value" style={{ color: arData?.overdue > 0 ? 'var(--color-ember)' : undefined }}>
+            <Private>{fmt(arData?.invoiced)}</Private>
+          </div>
         </div>
-
-        {/* Total band */}
-        {arData?.total > 0 && (
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--overlay-03)', border: '1px solid var(--color-hairline)', borderRadius: '10px', padding: '12px 20px', marginBottom: '16px' }}>
-            <span style={{ color: 'var(--color-mid-gray)', fontSize: '13px' }}>Total Outstanding</span>
-            <span style={{ fontWeight: 700, fontSize: '18px', color: 'var(--warning)' }}>{<Private>{fmt(arData.total)}</Private>}</span>
-          </div>
-        )}
-
-        {/* AR table */}
-        {!arData?.rows?.length ? (
-          <div className="card card-pad empty" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--color-ink)' }}>
-            <CheckCircle size={15} /> No outstanding receivables
-          </div>
-        ) : (
-          <div className="card">
-            <div className="table-wrap table-responsive">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Client</th>
-                    <th>Project</th>
-                    <th style={{ textAlign: 'right' }}>Amount</th>
-                    <th style={{ textAlign: 'right' }}>Days</th>
-                    <th>Bucket</th>
-                    <th>Type</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {arData.rows.map((row, i) => {
-                    const meta = BUCKET_META[row.bucket];
-                    return (
-                      <tr key={i}>
-                        <td data-label="Client" className="text-bold text-sm">{row.client_name || '—'}</td>
-                        <td data-label="Project" className="text-sm text-2">{row.project_title}</td>
-                        <td data-label="Amount" style={{ textAlign: 'right', fontWeight: 700, color: 'var(--warning)' }}>{<Private>{fmt(row.amount)}</Private>}</td>
-                        <td data-label="Days" style={{ textAlign: 'right', fontWeight: 600, color: meta.color, fontSize: '13px' }}>{row.days_aged}d</td>
-                        <td data-label="Bucket">
-                          <span style={{ fontSize: '11px', fontWeight: 600, color: meta.color, background: meta.bg, borderRadius: '6px', padding: '2px 8px' }}>
-                            {meta.label}
-                          </span>
-                        </td>
-                        <td data-label="Type" className="text-xs text-2">{row.source === 'payment' ? 'Payment' : 'Balance'}</td>
-                        <td className="mobile-actions">
-                          {row.source === 'payment' ? (
-                            <button
-                              className="btn btn-ghost btn-sm"
-                              style={{ fontSize: '11px', color: 'var(--color-ink)', borderRadius: '18px', border: '1px solid var(--color-hairline)' }}
-                              onClick={() => markReceived(row)}
-                            >
-                              <CheckCircle size={11} /> Mark Received
-                            </button>
-                          ) : (
-                            <span className="text-xs text-2">Add payment in project</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+        <div className="est-pipe-cell">
+          <div className="est-pipe-label">Not yet invoiced</div>
+          <div className="est-pipe-value"><Private>{fmt(arData?.uninvoiced)}</Private></div>
+        </div>
       </div>
 
-      {/* ── Tax Section ── */}
-      <div style={{ borderTop: '1px solid var(--border)', paddingTop: '28px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+      <div className="card card-pad" style={{ marginBottom: '16px' }}>
+        <AgingBar buckets={arData?.buckets} total={arData?.total || 0} active={bucket} onPick={setBucket} />
+      </div>
+
+      {rows.length > 0 && (
+        <div className="card ar-list">
+          {rows.map((r, i) => {
+            const meta = BUCKET_BY_KEY[r.bucket];
+            const to = r.project_id ? `/projects/${r.project_id}` : '/invoices';
+            return (
+              <Link key={`${r.source}-${r.invoice_id ?? r.project_id}-${i}`} to={to} className="ar-row">
+                <span className={`ar-swatch ${meta.cls}`} title={meta.label} />
+                <span className="ar-row-main">
+                  <span className="ar-row-client">{r.client_name || r.project_title}</span>
+                  {r.project_title && r.client_name && <span className="ar-row-project">{r.project_title}</span>}
+                </span>
+                {r.source === 'invoice' ? (
+                  <span className="ar-row-due" title={r.invoice_number ? `Invoice ${r.invoice_number}` : undefined}>
+                    {r.due_date ? fmtDate(r.due_date) : null}
+                    {r.days_overdue > 0 && <span className="ar-row-days">{r.days_overdue}d</span>}
+                  </span>
+                ) : (
+                  <span className="ar-row-due" />
+                )}
+                <span className="ar-row-amt"><Private>{fmt(r.amount)}</Private></span>
+              </Link>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Tax */}
+      <div className="fin-tax">
+        <div className="fin-controls">
           <div className="section-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <FileText size={15} style={{ color: 'var(--accent)' }} />
-            {taxLabel} Obligations
+            <FileText size={15} /> {taxLabel}
           </div>
-          <div className="flex-center gap-2">
-            <span style={{ fontSize: '12px', color: 'var(--color-mid-gray)' }}>Year:</span>
-            <select className="select" value={taxYear} onChange={e => setTaxYear(e.target.value)}>
-              {years.map(y => <option key={y} value={y}>{y}</option>)}
-            </select>
-          </div>
+          <YearStepper year={taxYear} setYear={setTaxYear} />
         </div>
 
         {taxSettings && !taxSettings.tax_enabled ? (
           <div className="card card-pad empty">Tax tracking is disabled. Enable it in Settings.</div>
         ) : taxRecords.length === 0 ? (
-          <div className="card card-pad" style={{ textAlign: 'center', padding: '40px 24px' }}>
-            <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'var(--overlay-04)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
-              <Receipt size={22} style={{ color: 'var(--accent)' }} />
-            </div>
-            <div style={{ fontWeight: 600, marginBottom: '6px' }}>No {taxLabel} records for {taxYear}</div>
-            <div style={{ fontSize: '12px', color: 'var(--color-mid-gray)', maxWidth: '340px', margin: '0 auto' }}>
-              {taxLabel} obligations will appear here once invoices are issued. This section tracks which invoices have their tax settled.
-            </div>
+          <div className="card card-pad fin-tax-empty">
+            <Receipt size={22} />
           </div>
         ) : (
           <>
-            {/* Tax summary */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
-              <div className="card card-pad" style={{ borderLeft: '3px solid var(--ember-line-strong)' }}>
-                <div style={{ fontSize: '11px', color: 'var(--color-mid-gray)', marginBottom: '4px' }}>{taxLabel} Owed (Unpaid)</div>
-                <div style={{ fontSize: '22px', fontWeight: 700, color: 'var(--color-ember)' }}>{<Private>{fmt(taxOwed)}</Private>}</div>
+            <div className="est-pipeline fin-strip fin-strip-2">
+              <div className="est-pipe-cell">
+                <div className="est-pipe-label">Owed</div>
+                <div className="est-pipe-value" style={{ color: taxOwed > 0 ? 'var(--color-ember)' : undefined }}><Private>{fmt(taxOwed)}</Private></div>
               </div>
-              <div className="card card-pad" style={{ borderLeft: '3px solid var(--color-ink)' }}>
-                <div style={{ fontSize: '11px', color: 'var(--color-mid-gray)', marginBottom: '4px' }}>{taxLabel} Paid</div>
-                <div style={{ fontSize: '22px', fontWeight: 700, color: 'var(--color-ink)' }}>{<Private>{fmt(taxPaid)}</Private>}</div>
+              <div className="est-pipe-cell">
+                <div className="est-pipe-label">Paid</div>
+                <div className="est-pipe-value"><Private>{fmt(taxPaid)}</Private></div>
               </div>
             </div>
 
-            {/* Tax records table */}
             <div className="card">
               <div className="table-wrap table-responsive">
                 <table>
                   <thead>
                     <tr>
-                      <th>Invoice #</th>
-                      <th style={{ textAlign: 'right' }}>Invoice Total</th>
-                      <th style={{ textAlign: 'right' }}>Rate</th>
-                      <th style={{ textAlign: 'right' }}>{taxLabel}</th>
-                      <th>Status</th>
-                      <th>Paid Date</th>
+                      <th>Invoice</th>
+                      <th className="num">Total</th>
+                      <th className="num">Rate</th>
+                      <th className="num">{taxLabel}</th>
+                      <th>Paid</th>
                       <th></th>
                     </tr>
                   </thead>
@@ -629,22 +607,15 @@ function ReceivablesTab() {
                     {taxRecords.map(r => (
                       <tr key={r.id}>
                         <td data-label="Invoice" className="text-sm">{r.invoice_number || `#${r.id}`}</td>
-                        <td data-label="Total" style={{ textAlign: 'right' }}>{<Private>{fmt(r.invoice_total)}</Private>}</td>
-                        <td data-label="Rate" style={{ textAlign: 'right', color: 'var(--color-mid-gray)' }}>{r.tax_rate_applied}%</td>
-                        <td data-label={taxLabel} style={{ textAlign: 'right', fontWeight: 600, color: r.tax_status === 'paid' ? 'var(--color-ink)' : 'var(--warning)' }}>{<Private>{fmt(r.tax_amount)}</Private>}</td>
-                        <td data-label="Status">
-                          <span className={`badge badge-${r.tax_status === 'paid' ? 'paid' : 'unpaid'}`}>{r.tax_status}</span>
-                        </td>
-                        <td data-label="Paid" className="text-xs text-2">{r.paid_date ? fmtDate(r.paid_date) : '—'}</td>
+                        <td data-label="Total" className="num"><Private>{fmt(r.invoice_total)}</Private></td>
+                        <td data-label="Rate" className="num text-2">{r.tax_rate_applied}%</td>
+                        <td data-label={taxLabel} className="num" style={{ fontWeight: 600, color: r.tax_status === 'paid' ? 'var(--color-ink)' : 'var(--color-ember)' }}><Private>{fmt(r.tax_amount)}</Private></td>
+                        <td data-label="Paid" className="text-xs text-2">{r.paid_date ? fmtDate(r.paid_date) : null}</td>
                         <td className="mobile-actions">
                           {r.tax_status === 'unpaid' ? (
-                            <button className="btn btn-ghost btn-sm" style={{ fontSize: '11px', color: 'var(--color-ink)', borderRadius: '18px', border: '1px solid var(--color-hairline)' }} onClick={() => markTaxPaid(r.id)}>
-                              Mark Paid
-                            </button>
+                            <button className="btn btn-ghost btn-sm" onClick={() => markTaxPaid(r.id)}>Mark Paid</button>
                           ) : (
-                            <button className="btn btn-ghost btn-sm" style={{ fontSize: '11px', color: 'var(--color-mid-gray)', borderRadius: '18px' }} onClick={() => markTaxUnpaid(r.id)}>
-                              Mark Unpaid
-                            </button>
+                            <button className="btn btn-ghost btn-sm text-2" onClick={() => markTaxUnpaid(r.id)}>Mark Unpaid</button>
                           )}
                         </td>
                       </tr>
@@ -660,7 +631,7 @@ function ReceivablesTab() {
   );
 }
 
-/* ────────────────────────── MAIN PAGE ────────────────────────── */
+/* ────────────────────────── Main page ────────────────────────── */
 
 const TABS = [
   { key: 'overview',     label: 'Overview' },
@@ -670,38 +641,25 @@ const TABS = [
 
 export default function Finances() {
   const [activeTab, setActiveTab] = useState('overview');
-  const [month, setMonth] = useState(getCurrentMonth());
-  const [filterCat, setFilterCat] = useState('');
-  const [filterClient, setFilterClient] = useState('');
-  const [allCategories, setAllCategories] = useState([]);
-  const [allClients, setAllClients] = useState([]);
+  const [month, setMonth] = useState(pristinaMonth());
+  const [filter, setFilter] = useState({ group: '', client: null });
+  const [clients, setClients] = useState([]);
 
   useEffect(() => {
-    Promise.all([
-      api.get('/settings/project-categories'),
-      api.get('/clients'),
-    ]).then(([cats, clients]) => {
-      setAllCategories(cats);
-      setAllClients(clients);
-    }).catch(() => {});
+    api.get('/clients').then(setClients).catch(() => {});
   }, []);
 
   return (
     <div>
       <div className="page-header" style={{ marginBottom: '20px' }}>
-        <div>
-          <div className="page-title">Finances</div>
-          <div className="page-subtitle">Agency financial overview</div>
-        </div>
+        <div className="page-title">Finances</div>
       </div>
 
-      {/* Tab navigation */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '24px', borderBottom: '1px solid var(--border)', paddingBottom: '12px' }}>
+      <div className="toggle-group fin-tabs">
         {TABS.map(t => (
           <button
             key={t.key}
-            className={`btn btn-sm ${activeTab === t.key ? 'btn-primary' : 'btn-ghost'}`}
-            style={{ borderRadius: '18px', padding: '6px 20px', fontWeight: activeTab === t.key ? 600 : 400 }}
+            className={`toggle-btn ${activeTab === t.key ? 'active' : ''}`}
             onClick={() => setActiveTab(t.key)}
           >
             {t.label}
@@ -710,12 +668,7 @@ export default function Finances() {
       </div>
 
       {activeTab === 'overview' && (
-        <OverviewTab
-          month={month} setMonth={setMonth}
-          filterCat={filterCat} setFilterCat={setFilterCat}
-          filterClient={filterClient} setFilterClient={setFilterClient}
-          allCategories={allCategories} allClients={allClients}
-        />
+        <OverviewTab month={month} setMonth={setMonth} filter={filter} setFilter={setFilter} clients={clients} />
       )}
       {activeTab === 'pl' && <PLTab />}
       {activeTab === 'receivables' && <ReceivablesTab />}

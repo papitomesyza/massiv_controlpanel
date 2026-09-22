@@ -11,7 +11,7 @@ import {
 } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import Modal from '../components/Modal';
+import Overlay from '../components/Overlay';
 import { api } from '../api';
 
 const CATEGORIES = [
@@ -901,7 +901,7 @@ export default function PitchEditor() {
 
       {/* Settings drawer */}
       {showSettings && (
-        <Modal title="Pitch Settings" onClose={() => setShowSettings(false)}>
+        <Overlay title="Pitch Settings" onClose={() => setShowSettings(false)}>
           <div className="form-row">
             <label className="form-label">Category</label>
             <select className="select" style={{ width: '100%' }} value={pres.category || ''} onChange={e => handlePresChange({ category: e.target.value || null })}>
@@ -939,12 +939,12 @@ export default function PitchEditor() {
           <div className="modal-footer">
             <button className="btn btn-primary" onClick={() => setShowSettings(false)}>Done</button>
           </div>
-        </Modal>
+        </Overlay>
       )}
 
       {/* Publish success modal */}
       {publishedSlug && (
-        <Modal title="Published" onClose={() => setPublishedSlug(null)}>
+        <Overlay title="Published" onClose={() => setPublishedSlug(null)}>
           <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '14px' }}>
             Your pitch is live. Share this link with the client:
           </p>
@@ -966,7 +966,7 @@ export default function PitchEditor() {
           <div className="modal-footer">
             <button className="btn btn-ghost" onClick={() => setPublishedSlug(null)}>Close</button>
           </div>
-        </Modal>
+        </Overlay>
       )}
     </div>
     </AiContext.Provider>

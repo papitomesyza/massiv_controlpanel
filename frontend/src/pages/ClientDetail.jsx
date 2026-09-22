@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Edit2, AlertCircle, MessageCircle } from 'lucide-react';
 import { api, fmt } from '../api';
-import Modal from '../components/Modal';
+import Overlay from '../components/Overlay';
 import StatCard from '../components/StatCard';
 import { Private } from '../context/PrivacyContext';
 
@@ -179,7 +179,7 @@ function EditClientModal({ client, clientId, onClose, onSaved }) {
   }
 
   return (
-    <Modal title="Edit Client" onClose={onClose} footer={<>
+    <Overlay title="Edit Client" onClose={onClose} footer={<>
       <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
       <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
     </>}>
@@ -209,6 +209,6 @@ function EditClientModal({ client, clientId, onClose, onSaved }) {
         <label className="form-label">Notes</label>
         <textarea className="input" value={form.notes} onChange={e => f('notes', e.target.value)} />
       </div>
-    </Modal>
+    </Overlay>
   );
 }

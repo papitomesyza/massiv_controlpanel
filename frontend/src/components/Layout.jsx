@@ -11,6 +11,7 @@ import { useTheme } from '../context/ThemeContext';
 import { usePrivacy } from '../context/PrivacyContext';
 import { api } from '../api';
 import SetupWizard from './SetupWizard';
+import Overlay from './Overlay';
 
 const OPS_LINKS = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
@@ -377,49 +378,47 @@ export default function Layout() {
 
       {/* Float-menu full-nav launcher — all pages */}
       {floatMenuOpen && (
-        <div className="more-launcher-overlay" onClick={() => setFloatMenuOpen(false)}>
-          <div className="more-launcher-box" onClick={e => e.stopPropagation()}>
-            <div className="more-launcher-header">
-              <span className="more-launcher-title">Navigation</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {/* Privacy control for mobile, where the sidebar row is hidden.
-                    Mirrors the theme toggle button beside it so the control stays
-                    reachable from every page. */}
-                <button
-                  className="modal-close"
-                  onClick={togglePrivacy}
-                  aria-pressed={numbersVisible}
-                  aria-label={numbersVisible ? 'Hide money figures' : 'Show money figures'}
-                >
-                  {numbersVisible ? <Eye size={18} /> : <EyeOff size={18} />}
-                </button>
-                <button
-                  className="modal-close"
-                  onClick={toggleTheme}
-                  aria-pressed={isDark}
-                  aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-                >
-                  {isDark ? <Sun size={18} /> : <Moon size={18} />}
-                </button>
-                <button className="modal-close" onClick={() => setFloatMenuOpen(false)} aria-label="Close">
-                  <X size={18} />
-                </button>
-              </div>
-            </div>
-            <div className="more-launcher-grid">
-              {ALL_NAV_PAGES.map(({ to, icon: Icon, label }) => (
-                <button
-                  key={to}
-                  className={`more-tile${location.pathname.startsWith(to) ? ' active' : ''}`}
-                  onClick={() => { navigate(to); setFloatMenuOpen(false); }}
-                >
-                  <div className="more-tile-icon"><Icon size={22} /></div>
-                  <span className="more-tile-label">{label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
+        <Overlay
+          size="sheet"
+          className="more-launcher-sheet"
+          title="Navigation"
+          onClose={() => setFloatMenuOpen(false)}
+          guard={false}
+          actions={<>
+            {/* Privacy control for mobile, where the sidebar row is hidden.
+                Mirrors the theme toggle beside it so the control stays
+                reachable from every page. */}
+            <button
+              className="ov-close"
+              onClick={togglePrivacy}
+              aria-pressed={numbersVisible}
+              aria-label={numbersVisible ? 'Hide money figures' : 'Show money figures'}
+            >
+              {numbersVisible ? <Eye size={18} /> : <EyeOff size={18} />}
+            </button>
+            <button
+              className="ov-close"
+              onClick={toggleTheme}
+              aria-pressed={isDark}
+              aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+            >
+              {isDark ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+          </>}
+        >
+        <div className="more-launcher-grid">
+          {ALL_NAV_PAGES.map(({ to, icon: Icon, label }) => (
+            <button
+              key={to}
+              className={`more-tile${location.pathname.startsWith(to) ? ' active' : ''}`}
+              onClick={() => { navigate(to); setFloatMenuOpen(false); }}
+            >
+              <div className="more-tile-icon"><Icon size={22} /></div>
+              <span className="more-tile-label">{label}</span>
+            </button>
+          ))}
         </div>
+        </Overlay>
       )}
 
       {showSetupWizard && (
