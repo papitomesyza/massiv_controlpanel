@@ -139,8 +139,9 @@ function ProximityRing({ frac, color, days }) {
 
 // ── Stat strip ────────────────────────────────────────────────────────────────
 // Opens the page with four figures, matching the construction of the Estimates
-// pipeline strip so the two pages read as siblings.
-function StatStrip({ projects }) {
+// pipeline strip so the two pages read as siblings. Owed is not derived here:
+// it is read from the shared owed calculation through /finances/stats.
+function StatStrip({ projects, owedTotal }) {
   const strip = useMemo(() => {
     const active = projects.filter(p => p.status !== 'completed');
     // Every active project, meaning every project not yet completed, not only
@@ -151,26 +152,24 @@ function StatStrip({ projects }) {
     // a zero total explain itself.
     const awaitingBudget = active.filter(p => !((Number(p.agreed_budget) || 0) > 0)).length;
     const agreedValue = active.reduce((s, p) => s + (Number(p.agreed_budget) || 0), 0);
-    const outstanding = active.reduce((s, p) => {
-      const owed = (Number(p.agreed_budget) || 0) - (Number(p.total_received) || 0);
-      return s + Math.max(0, owed);
-    }, 0);
 
-    // Next upcoming shoot among active projects.
+    // Next upcoming shoot among active projects. The original YYYY-MM-DD string
+    // is kept for the tooltip: formatting a local midnight Date through UTC
+    // would read one day early in Pristina.
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    let nextShoot = null;
+    let nextShoot = null, nextShootDate = null;
     active.forEach(p => {
       if (!p.shoot_date) return;
       const d = new Date(p.shoot_date + 'T00:00:00');
       if (isNaN(d.getTime()) || d < today) return;
-      if (!nextShoot || d < nextShoot) nextShoot = d;
+      if (!nextShoot || d < nextShoot) { nextShoot = d; nextShootDate = p.shoot_date; }
     });
     let shootDays = null, shootFrac = 0;
     if (nextShoot) {
       shootDays = Math.round((nextShoot - today) / 86400000);
       shootFrac = Math.max(0, Math.min(1, 1 - shootDays / NEXT_SHOOT_WINDOW));
     }
-    return { activeCount, awaitingBudget, agreedValue, outstanding, nextShoot, shootDays, shootFrac };
+    return { activeCount, awaitingBudget, agreedValue, nextShoot, nextShootDate, shootDays, shootFrac };
   }, [projects]);
 
   // When every active project is awaiting a budget, the money figures are not
@@ -185,7 +184,7 @@ function StatStrip({ projects }) {
   ) : null;
 
   const shootTip = strip.nextShoot
-    ? `Next shoot ${fmtDate(strip.nextShoot.toISOString().slice(0, 10))}${strip.shootDays === 0 ? ' (today)' : ` (in ${strip.shootDays}d)`}`
+    ? `Next shoot ${fmtDate(strip.nextShootDate)}${strip.shootDays === 0 ? ' (today)' : ` (in ${strip.shootDays}d)`}`
     : 'No upcoming shoot';
 
   return (
@@ -201,12 +200,11 @@ function StatStrip({ projects }) {
         </div>
         {awaitingNote}
       </div>
+      {/* Everything the agency is owed, from the shared owed calculation: the
+          Dashboard's pending plus upcoming, completed projects included. */}
       <div className="est-pipe-cell">
-        <div className="est-pipe-label">Outstanding</div>
-        <div className="est-pipe-value">
-          {allTBC ? <span className="pipe-tbc">TBC</span> : <Private>{fmt(strip.outstanding)}</Private>}
-        </div>
-        {awaitingNote}
+        <div className="est-pipe-label">Owed</div>
+        <div className="est-pipe-value"><Private>{fmt(owedTotal)}</Private></div>
       </div>
       <div className="est-pipe-cell">
         <div className="est-pipe-label">Next shoot</div>
@@ -221,6 +219,7 @@ function StatStrip({ projects }) {
 export default function Projects() {
   const [projects, setProjects]       = useState([]);
   const [leads, setLeads]             = useState([]);
+  const [owedTotal, setOwedTotal]     = useState(0);
   const [loading, setLoading]         = useState(true);
   const [activeTab, setActiveTab]     = useState('active');
   const [filterStatus, setFilterStatus] = useState('');
@@ -243,12 +242,14 @@ export default function Projects() {
   // Everything the page needs is small and fully in memory, so we fetch once on
   // mount and do all filtering and sorting client side.
   async function load() {
-    const [p, l] = await Promise.all([
+    const [p, l, st] = await Promise.all([
       api.get('/projects'),
       api.get('/leads'),
+      api.get('/finances/stats').catch(() => null),
     ]);
     setProjects(p);
     setLeads(l);
+    setOwedTotal(st ? st.owedTotal : 0);
     setLeadsOpen(l.length > 0);
     setLoading(false);
     return { leads: l };
@@ -261,29 +262,31 @@ export default function Projects() {
     setProjects(p);
   }
 
-  useEffect(() => {
-    load().then(({ leads: loadedLeads }) => {
-      // Handle FAB / dashboard URL params after data loads.
-      const action    = searchParams.get('new');
-      const newLead   = searchParams.get('newlead');
-      const convertId = searchParams.get('convert');
+  useEffect(() => { load(); }, []);
 
-      if (action === '1') {
+  // Handle FAB, quick action and dashboard URL params once data has loaded. Read
+  // on every change, so a quick action works while this page is already open.
+  useEffect(() => {
+    if (loading) return;
+    const action    = searchParams.get('new');
+    const newLead   = searchParams.get('newlead');
+    const convertId = searchParams.get('convert');
+    if (action !== '1' && newLead !== '1' && !convertId) return;
+    setSearchParams({}, { replace: true });
+    if (action === '1') {
+      setWizardPrefill(null);
+      setShowWizard(true);
+    } else if (newLead === '1') {
+      setShowAddLead(true);
+    } else if (convertId) {
+      const lead = leads.find(l => String(l.id) === convertId);
+      if (lead) {
+        setWizardPrefill(lead);
         setShowWizard(true);
-        setSearchParams({});
-      } else if (newLead === '1') {
-        setShowAddLead(true);
-        setSearchParams({});
-      } else if (convertId) {
-        const lead = loadedLeads.find(l => String(l.id) === convertId);
-        if (lead) {
-          setWizardPrefill(lead);
-          setShowWizard(true);
-        }
-        setSearchParams({});
       }
-    });
-  }, []);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, loading]);
 
   // One shared deadline patch path (see lib/patchDeadline), so dragging a bar on
   // this page saves and re-syncs the calendar exactly as the Dashboard does.
@@ -403,7 +406,7 @@ export default function Projects() {
         </div>
       </div>
 
-      {projects.length > 0 && <StatStrip projects={projects} />}
+      {projects.length > 0 && <StatStrip projects={projects} owedTotal={owedTotal} />}
 
       {/* Active / Completed tabs */}
       <div style={{ display: 'flex', gap: '4px', marginBottom: '16px' }}>

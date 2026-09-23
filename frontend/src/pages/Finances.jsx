@@ -539,7 +539,10 @@ function ReceivablesTab() {
         <div className="card ar-list">
           {rows.map((r, i) => {
             const meta = BUCKET_BY_KEY[r.bucket];
-            const to = r.project_id ? `/projects/${r.project_id}` : '/invoices';
+            // An invoice row opens that invoice; an uninvoiced balance opens its project.
+            const to = r.source === 'invoice' && r.invoice_id
+              ? `/invoices?id=${r.invoice_id}`
+              : (r.project_id ? `/projects/${r.project_id}` : '/invoices');
             return (
               <Link key={`${r.source}-${r.invoice_id ?? r.project_id}-${i}`} to={to} className="ar-row">
                 <span className={`ar-swatch ${meta.cls}`} title={meta.label} />

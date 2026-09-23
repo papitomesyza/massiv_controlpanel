@@ -4,6 +4,7 @@ import {
   Plus, Trash2, Edit2, Check, ChevronDown, ChevronUp, Flag, Search, ListChecks, FolderOpen,
 } from 'lucide-react';
 import { api } from '../api';
+import DateField from './DateField';
 import { categoryIconEl } from '../lib/categoryIcons';
 import Overlay from './Overlay';
 
@@ -109,7 +110,7 @@ function EditModal({ task, onClose, onSaved, onError }) {
       <div className="form-grid">
         <div>
           <label className="form-label">Due Date</label>
-          <input className="input" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+          <DateField value={dueDate} onChange={setDueDate} />
         </div>
         <div>
           <label className="form-label">Priority</label>
@@ -639,11 +640,11 @@ export default function TasksView() {
               />
             </div>
             <div className="standalone-add-controls">
-              <input
-                className="input standalone-date-input"
-                type="date"
+              <DateField
+                className="standalone-date-input"
+                wrapClassName="standalone-date-wrap"
                 value={newDue}
-                onChange={e => setNewDue(e.target.value)}
+                onChange={setNewDue}
                 title="Due date (optional)"
               />
               <button

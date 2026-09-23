@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { db } = require('../db/database');
+const { pristinaToday } = require('../lib/pristinaDate');
 
 // GET /api/leads — all active leads with client + category names
 router.get('/', (req, res) => {
@@ -29,7 +30,7 @@ router.post('/', (req, res) => {
     category_id || null,
     category_name_manual || null,
     note || null,
-    contacted_at || new Date().toISOString().split('T')[0],
+    contacted_at || pristinaToday(),
     value === undefined || value === null || value === '' ? null : Number(value)
   );
   const lead = db.prepare(`
@@ -57,7 +58,7 @@ router.put('/:id', (req, res) => {
     category_id || null,
     category_name_manual || null,
     note || null,
-    contacted_at || new Date().toISOString().split('T')[0],
+    contacted_at || pristinaToday(),
     value === undefined || value === null || value === '' ? null : Number(value),
     req.params.id
   );

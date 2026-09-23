@@ -34,3 +34,17 @@ export function addMonths(ym, months) {
   const t = new Date(Date.UTC(y, m - 1 + months, 1));
   return t.toISOString().slice(0, 7);
 }
+
+// The Pristina calendar date of an instant: an ISO timestamp, or a SQLite UTC
+// stamp ("YYYY-MM-DD HH:MM:SS", stored without a zone). Returns null when it
+// cannot be read.
+export function pristinaDateOf(instant) {
+  if (!instant) return null;
+  let str = String(instant);
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(str)) str = `${str.replace(' ', 'T')}Z`;
+  const d = new Date(str);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: ZONE, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(d);
+}

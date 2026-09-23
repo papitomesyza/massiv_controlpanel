@@ -6,7 +6,8 @@ import { api, fmt, fmtDate } from '../api';
 import { documentFilename } from '../lib/filename';
 import { categoryVisual } from '../lib/categoryIcons';
 import { Private } from '../context/PrivacyContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { pristinaMonth, pristinaDateOf } from '../lib/pristinaDate';
 import BudgetWizard from '../components/BudgetWizard';
 import ConfirmDialog from '../components/ConfirmDialog';
 
@@ -32,11 +33,11 @@ function daysSince(iso) {
   return Math.max(0, (Date.now() - then.getTime()) / 86400000);
 }
 
+// The Pristina month (YYYY-MM) an instant falls in, so an estimate accepted in
+// the first hours of a month counts in that month, not the previous one.
 function monthKey(iso) {
-  if (!iso) return '';
-  const d = new Date(String(iso).includes('T') ? iso : iso.replace(' ', 'T'));
-  if (isNaN(d.getTime())) return '';
-  return `${d.getFullYear()}-${d.getMonth()}`;
+  const day = pristinaDateOf(iso);
+  return day ? day.slice(0, 7) : '';
 }
 
 // ── Hover tooltip ────────────────────────────────────────────────────────────
@@ -280,7 +281,7 @@ function WinRing({ accepted, rejected }) {
 
 // ── Pipeline strip ───────────────────────────────────────────────────────────
 function PipelineStrip({ budgets }) {
-  const now = monthKey(new Date().toISOString());
+  const now = pristinaMonth();
   const outForApproval = budgets.filter(b => b.status === 'sent').reduce((s, b) => s + (b.total || 0), 0);
   const acceptedThisMonth = budgets
     .filter(b => b.status === 'accepted' && monthKey(b.responded_at) === now)
@@ -309,6 +310,7 @@ function PipelineStrip({ budgets }) {
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function Budgets() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [budgets, setBudgets] = useState([]);
   const [catGroups, setCatGroups] = useState({});   // category name → group name
   const [loading, setLoading] = useState(true);
@@ -337,6 +339,21 @@ export default function Budgets() {
 
   useEffect(() => { load(); }, []);
 
+  // URL parameters the quick actions and cross links use: ?new=1 opens the
+  // estimate wizard, ?id=N opens that estimate. Each is cleared once handled,
+  // the same pattern the Projects page uses, and it is read on every change so
+  // the New Estimate quick action works while this page is already open.
+  useEffect(() => {
+    if (loading) return;
+    const isNew = searchParams.get('new');
+    const openId = searchParams.get('id');
+    if (isNew !== '1' && !openId) return;
+    setSearchParams({}, { replace: true });
+    if (isNew === '1') handleNew();
+    else openEstimate({ id: openId });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, loading]);
+
   async function openEstimate(budget) {
     try {
       const full = await api.get(`/budgets/${budget.id}`);
@@ -361,8 +378,8 @@ export default function Budgets() {
 
   async function createInvoice(budget) {
     try {
-      await api.post(`/invoices/from-estimate/${budget.id}`, {});
-      navigate('/invoices');
+      const { id } = await api.post(`/invoices/from-estimate/${budget.id}`, {});
+      navigate(`/invoices?id=${id}`);
     } catch (e) { setError(e.message); }
   }
 
@@ -423,8 +440,8 @@ export default function Budgets() {
         await api.del(`/budgets/${confirm.budget.id}`);
         await load();
       } else if (confirm.kind === 'project') {
-        await api.post(`/budgets/${confirm.budget.id}/project`, {});
-        navigate('/projects');
+        const { id } = await api.post(`/budgets/${confirm.budget.id}/project`, {});
+        navigate(`/projects/${id}`);
       }
       setConfirm(null);
     } catch (e) { setError(e.message); }

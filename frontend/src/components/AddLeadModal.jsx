@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { X, Lightbulb } from 'lucide-react';
 import { api } from '../api';
 import Overlay from './Overlay';
+import DateField from './DateField';
+import { pristinaToday } from '../lib/pristinaDate';
 
 export default function AddLeadModal({ onClose, onSaved, lead: existingLead }) {
   const isEdit = !!existingLead;
@@ -17,7 +19,7 @@ export default function AddLeadModal({ onClose, onSaved, lead: existingLead }) {
     category_name_manual: isEdit ? (existingLead.category_name_manual || '') : '',
     note: isEdit ? (existingLead.note || '') : '',
     value: isEdit ? (existingLead.value != null ? String(existingLead.value) : '') : '',
-    contacted_at: isEdit ? (existingLead.contacted_at || new Date().toISOString().split('T')[0]) : new Date().toISOString().split('T')[0],
+    contacted_at: isEdit ? (existingLead.contacted_at || pristinaToday()) : pristinaToday(),
   });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
@@ -135,7 +137,7 @@ export default function AddLeadModal({ onClose, onSaved, lead: existingLead }) {
       {/* Date Contacted */}
       <div className="form-row">
         <label className="form-label">Date Contacted</label>
-        <input type="date" className="input" value={form.contacted_at} onChange={e => f('contacted_at', e.target.value)} />
+        <DateField value={form.contacted_at} onChange={v => f('contacted_at', v)} />
       </div>
 
       {err && <div className="error-msg">{err}</div>}

@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
-  ChevronLeft, ChevronRight, Plus, X, Trash2, Edit2,
+  ChevronLeft, ChevronRight, Plus, Trash2, Edit2,
   CalendarDays, CalendarRange, Camera, Flag, Check, Users, Circle,
+  CheckCircle2, ListTodo, FolderOpen, Lock,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { DndContext, useDraggable, useDroppable, PointerSensor, TouchSensor, useSensors, useSensor, pointerWithin } from '@dnd-kit/core';
@@ -9,6 +10,8 @@ import { CSS } from '@dnd-kit/utilities';
 import { api } from '../api';
 import { GROUP_TINT, categoryVisual } from '../lib/categoryIcons';
 import Overlay from '../components/Overlay';
+import ConfirmDialog from '../components/ConfirmDialog';
+import DateField from '../components/DateField';
 
 // One visual per event type. Colour is derived from the type at render, never
 // stored: each type takes one hue from the shared categorical palette in
@@ -30,6 +33,31 @@ const EVENT_TYPE_VISUAL = {
 };
 function eventVisual(type) {
   return EVENT_TYPE_VISUAL[type] || EVENT_TYPE_VISUAL.other;
+}
+
+// A synced event mirrors a date held on its source: a project's shoot date or
+// deadline, or a task's due date. Every change goes through that source on the
+// server (see lib/calendarSync), so here the event type and project are locked
+// and only the fields the source can hold stay editable.
+const SYNC_EDITABLE = {
+  shoot:           ['start_date', 'start_time', 'end_time'],
+  deadline:        ['start_date'],
+  task:            ['start_date'],
+  standalone_task: ['start_date'],
+};
+function isSynced(ev) {
+  if (!ev) return false;
+  if (ev.event_type === 'shoot' || ev.event_type === 'deadline') return !!ev.project_id;
+  if (ev.event_type === 'task') return !!ev.task_id;
+  if (ev.event_type === 'standalone_task') return !!ev.standalone_task_id;
+  return false;
+}
+// What deleting a synced event changes, named for the confirm dialog.
+function syncedDeleteCopy(ev) {
+  const project = ev.project_title || 'this project';
+  if (ev.event_type === 'shoot') return { title: `Clear the shoot date of ${project}?`, message: `${project} will have no shoot date and this event is removed.` };
+  if (ev.event_type === 'deadline') return { title: `Clear the deadline of ${project}?`, message: `${project} will have no deadline and this event is removed.` };
+  return { title: `Clear the due date of ${ev.title}?`, message: 'The task stays, without a due date, and this event is removed.' };
 }
 // The five toggles in the type filter. standalone_task folds into task, so one
 // task toggle governs both.
@@ -647,8 +675,6 @@ export default function Calendar() {
         </div>
       </DndContext>
 
-      <footer style={{ marginTop: '32px', textAlign: 'center', fontSize: '11px', color: 'var(--color-mid-gray)' }}>built by year28</footer>
-
       {addModal && (
         <EventModal mode="add" initialDate={addModal.date} projects={projects}
           onClose={() => setAddModal(null)} onSaved={() => { setAddModal(null); loadEvents(); }} />
@@ -657,7 +683,7 @@ export default function Calendar() {
         <EventDetailModal event={detailModal}
           onClose={() => setDetailModal(null)}
           onEdit={() => { setEditModal(detailModal); setDetailModal(null); }}
-          onDelete={async () => { await api.del(`/calendar/${detailModal.id}`); setDetailModal(null); loadEvents(); }} />
+          onChanged={() => { setDetailModal(null); loadEvents(); }} />
       )}
       {editModal && (
         <EventModal mode="edit" event={editModal} projects={projects}
@@ -838,20 +864,56 @@ function DayDrawer({ ds, events, edgeTintFor, onClose, onClickEvent }) {
   );
 }
 
-function EventDetailModal({ event, onClose, onEdit, onDelete }) {
-  const [deleting, setDeleting] = useState(false);
+function EventDetailModal({ event, onClose, onEdit, onChanged }) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
   const navigate = useNavigate();
   const isTask = event.event_type === 'task' || event.event_type === 'standalone_task';
+  const synced = isSynced(event);
   const { Icon, hue, label } = eventVisual(event.event_type);
+  const deleteCopy = synced
+    ? syncedDeleteCopy(event)
+    : { title: `Delete ${event.title}?`, message: 'This cannot be undone.' };
 
-  async function handleDelete() {
-    if (!window.confirm('Delete this event?')) return;
-    setDeleting(true);
-    await onDelete();
+  // Deleting a synced event clears the date on its source (server side), so it
+  // does not come back on the next save. A manual event is simply removed.
+  async function runDelete() {
+    setBusy(true);
+    setErr('');
+    try {
+      await api.del(`/calendar/${event.id}`);
+      setConfirmDelete(false);
+      onChanged();
+    } catch (e) { setErr(e.message); setConfirmDelete(false); setBusy(false); }
   }
 
-  function openProject() {
-    navigate(`/projects/${event.project_id}`);
+  // Marks the task done through its own endpoint, exactly as the Tasks page and
+  // the project page do. The event then drops off, since done tasks carry none.
+  async function markDone() {
+    setBusy(true);
+    setErr('');
+    try {
+      if (event.event_type === 'task') {
+        const full = await api.get(`/projects/${event.project_id}`);
+        const task = full.phases.flatMap(ph => ph.tasks || []).find(t => t.id === event.task_id);
+        if (!task) throw new Error('This task no longer exists.');
+        if (task.status !== 'done') {
+          await api.put(`/projects/${event.project_id}/tasks/${task.id}`, { ...task, status: 'done' });
+        }
+      } else {
+        // Toggle flips the flag, so it is only sent while the task is still open.
+        const all = await api.get('/standalone-tasks');
+        const task = all.find(t => t.id === event.standalone_task_id);
+        if (!task) throw new Error('This task no longer exists.');
+        if (!task.done) await api.post(`/standalone-tasks/${task.id}/toggle`, {});
+      }
+      onChanged();
+    } catch (e) { setErr(e.message); setBusy(false); }
+  }
+
+  function go(to) {
+    navigate(to);
     onClose();
   }
 
@@ -894,24 +956,45 @@ function EventDetailModal({ event, onClose, onEdit, onDelete }) {
             {event.notes}
           </div>
         )}
+        {err && <div className="error-msg">{err}</div>}
       </div>
       <div className="modal-footer">
-        {!isTask && (
-          <button className="btn btn-danger btn-sm" onClick={handleDelete} disabled={deleting}>
-            <Trash2 size={13} /> {deleting ? 'Deleting...' : 'Delete'}
-          </button>
-        )}
+        <button className="btn btn-ghost btn-sm cal-delete-btn" onClick={() => setConfirmDelete(true)} disabled={busy} title="Delete" aria-label="Delete">
+          <Trash2 size={14} />
+        </button>
         <div style={{ flex: 1 }} />
-        <button className="btn btn-ghost" onClick={onClose}>Close</button>
-        {event.project_id && <button className="btn btn-ghost" onClick={openProject}>Open Project</button>}
-        {!isTask && <button className="btn btn-primary" onClick={onEdit}><Edit2 size={13} /> Edit</button>}
+        {event.event_type === 'standalone_task' && (
+          <button className="btn btn-ghost" onClick={() => go('/tasks')} title="Open in Tasks"><ListTodo size={14} /> Tasks</button>
+        )}
+        {event.project_id && (
+          <button className="btn btn-ghost" onClick={() => go(`/projects/${event.project_id}`)} title="Open project"><FolderOpen size={14} /> Project</button>
+        )}
+        {isTask && synced && (
+          <button className="btn btn-ghost" onClick={markDone} disabled={busy} title="Mark done"><CheckCircle2 size={14} /> Done</button>
+        )}
+        <button className="btn btn-primary" onClick={onEdit} disabled={busy}><Edit2 size={13} /> Edit</button>
       </div>
+      {confirmDelete && (
+        <ConfirmDialog
+          title={deleteCopy.title}
+          message={deleteCopy.message}
+          confirmLabel={synced ? 'Clear date' : 'Delete'}
+          tone="danger"
+          busy={busy}
+          onConfirm={runDelete}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      )}
     </Overlay>
   );
 }
 
 function EventModal({ mode, event, initialDate, projects, onClose, onSaved }) {
   const isEdit = mode === 'edit';
+  const synced = isEdit && isSynced(event);
+  const editable = synced ? (SYNC_EDITABLE[event.event_type] || []) : null;
+  // A field is locked on a synced event when its source has no place for it.
+  const locked = k => !!editable && !editable.includes(k);
   const [form, setForm] = useState({
     title: event?.title || '',
     project_id: event?.project_id || '',
@@ -962,64 +1045,85 @@ function EventModal({ mode, event, initialDate, projects, onClose, onSaved }) {
     setSaving(false);
   }
 
+  const { Icon: TypeIcon, hue: typeHue, label: typeLabel } = eventVisual(form.event_type);
+  const sourceName = event?.event_type === 'standalone_task' || event?.event_type === 'task' ? 'task' : 'project';
+
   return (
-    <Overlay title={isEdit ? 'Edit Event' : 'Add Event'} onClose={onClose} width={520}>
+    <Overlay title={isEdit ? 'Edit Event' : 'Add Event'} onClose={onClose} width={520} className="cal-event-form">
 
       <div className="form-row">
         <label className="form-label">Title *</label>
-        <input className="input" value={form.title} onChange={e => f('title', e.target.value)} placeholder="Event title" autoFocus />
+        <input className="input" value={form.title} onChange={e => f('title', e.target.value)} placeholder="Event title" autoFocus={!synced} disabled={locked('title')} />
       </div>
 
       <div className="form-grid">
         <div className="form-row">
           <label className="form-label">Link to Project</label>
-          <select className="select" value={form.project_id} onChange={e => f('project_id', e.target.value)}>
-            <option value="">No project</option>
-            {projects.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
-          </select>
+          {synced ? (
+            <div className="cal-locked-field" title="Linked to its source">
+              <Lock size={12} /> <span>{event.project_title || 'No project'}</span>
+            </div>
+          ) : (
+            <select className="select" value={form.project_id} onChange={e => f('project_id', e.target.value)}>
+              <option value="">No project</option>
+              {projects.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
+            </select>
+          )}
         </div>
         <div className="form-row">
           <label className="form-label">Event Type</label>
-          <select className="select" value={form.event_type} onChange={e => f('event_type', e.target.value)}>
-            <option value="shoot">Shoot</option>
-            <option value="meeting">Meeting</option>
-            <option value="deadline">Deadline</option>
-            <option value="other">Other</option>
-          </select>
+          {synced ? (
+            <div className="cal-locked-field" style={{ color: typeHue }} title={typeLabel}>
+              <Lock size={12} /> <TypeIcon size={14} />
+            </div>
+          ) : (
+            <select className="select" value={form.event_type} onChange={e => f('event_type', e.target.value)}>
+              <option value="shoot">Shoot</option>
+              <option value="meeting">Meeting</option>
+              <option value="deadline">Deadline</option>
+              <option value="other">Other</option>
+            </select>
+          )}
         </div>
       </div>
 
       <div className="form-grid">
         <div className="form-row">
           <label className="form-label">Start Date *</label>
-          <input type="date" className="input" value={form.start_date} onChange={e => f('start_date', e.target.value)} />
+          <DateField value={form.start_date} onChange={v => f('start_date', v)} />
         </div>
         <div className="form-row">
           <label className="form-label">End Date</label>
-          <input type="date" className="input" value={form.end_date} onChange={e => f('end_date', e.target.value)} />
+          <DateField value={form.end_date} onChange={v => f('end_date', v)} disabled={locked('end_date')} />
         </div>
       </div>
 
       <div className="form-grid">
         <div className="form-row">
           <label className="form-label">Start Time</label>
-          <input type="time" className="input" value={form.start_time} onChange={e => f('start_time', e.target.value)} />
+          <input type="time" className="input" value={form.start_time} onChange={e => f('start_time', e.target.value)} disabled={locked('start_time')} />
         </div>
         <div className="form-row">
           <label className="form-label">End Time</label>
-          <input type="time" className="input" value={form.end_time} onChange={e => f('end_time', e.target.value)} />
+          <input type="time" className="input" value={form.end_time} onChange={e => f('end_time', e.target.value)} disabled={locked('end_time')} />
         </div>
       </div>
 
       <div className="form-row">
         <label className="form-label">Location</label>
-        <input className="input" value={form.location} onChange={e => f('location', e.target.value)} placeholder="Location" />
+        <input className="input" value={form.location} onChange={e => f('location', e.target.value)} placeholder="Location" disabled={locked('location')} />
       </div>
 
       <div className="form-row">
         <label className="form-label">Notes</label>
-        <textarea className="input" rows={3} value={form.notes} onChange={e => f('notes', e.target.value)} placeholder="Notes..." />
+        <textarea className="input" rows={3} value={form.notes} onChange={e => f('notes', e.target.value)} placeholder="Notes..." disabled={locked('notes')} />
       </div>
+
+      {synced && (
+        <div className="cal-sync-note">
+          <Lock size={12} /> Greyed fields live on the {sourceName}. Change them there.
+        </div>
+      )}
 
       {err && <div className="error-msg">{err}</div>}
 

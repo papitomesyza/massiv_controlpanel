@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef, useLayoutEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Receipt, Plus, Download, Trash2, Pencil, Send, Search, MoreVertical,
   Wallet, RotateCcw, X, Settings, Package, Image as ImageIcon, FileText,
@@ -9,7 +10,9 @@ import { Private } from '../context/PrivacyContext';
 import InvoiceBuilder from '../components/InvoiceBuilder';
 import ConfirmDialog from '../components/ConfirmDialog';
 import Overlay from '../components/Overlay';
+import DateField from '../components/DateField';
 import { pristinaToday } from '../lib/pristinaDate';
+import { categoryVisual } from '../lib/categoryIcons';
 
 const TABS = [
   { key: 'list',  label: 'Invoices' },
@@ -241,7 +244,18 @@ function OverflowMenu({ inv, isOpen, onOpenChange, onAction }) {
 }
 
 // ── Invoice card ──────────────────────────────────────────────────────────────
-function InvoiceCard({ inv, onOpen, onAction, menuOpen, onMenuChange }) {
+// The linked project's category, drawn from the one shared category icon system
+// exactly as estimate cards draw theirs. The word lives in the hover tooltip.
+function CategoryIcon({ category, group }) {
+  const { Icon } = categoryVisual(category, group);
+  return (
+    <Tip content={category || 'Uncategorised'}>
+      <span className="est-cat-icon"><Icon size={15} /></span>
+    </Tip>
+  );
+}
+
+function InvoiceCard({ inv, project, onOpen, onAction, menuOpen, onMenuChange }) {
   const metaTip = (
     <span>
       <div>{`Issued: ${fmtDate(inv.issue_date) || 'not set'}`}</div>
@@ -255,6 +269,7 @@ function InvoiceCard({ inv, onOpen, onAction, menuOpen, onMenuChange }) {
         <Tip content={metaTip} className="est-status">
           <StatusDot inv={inv} />
         </Tip>
+        {project && <CategoryIcon category={project.category_name} group={project.group_name} />}
         <div style={{ flex: 1 }} />
         <OverflowMenu inv={inv} isOpen={menuOpen} onOpenChange={onMenuChange} onAction={a => onAction(a, inv)} />
       </div>
@@ -398,8 +413,8 @@ function RecordPaymentModal({ invoice, onClose, onChanged }) {
               </div>
               <div>
                 <label style={{ fontSize: '11px', color: 'var(--color-mid-gray)', display: 'block', marginBottom: '4px' }}>Date</label>
-                <input className="input" type="date" value={form.date}
-                  onChange={e => { setTouched(true); setForm(f => ({ ...f, date: e.target.value })); }} />
+                <DateField value={form.date}
+                  onChange={v => { setTouched(true); setForm(f => ({ ...f, date: v })); }} />
               </div>
               <div style={{ gridColumn: '1 / -1' }}>
                 <label style={{ fontSize: '11px', color: 'var(--color-mid-gray)', display: 'block', marginBottom: '4px' }}>Method</label>
@@ -447,6 +462,7 @@ function RecordPaymentModal({ invoice, onClose, onChanged }) {
 
 function InvoicesListTab({ onEdit, refresh }) {
   const [invoices, setInvoices] = useState([]);
+  const [projectsById, setProjectsById] = useState({});
   const [stats, setStats] = useState({ outstanding: 0, overdue: 0, collected: 0 });
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
@@ -459,12 +475,16 @@ function InvoicesListTab({ onEdit, refresh }) {
 
   async function load() {
     try {
-      const [data, s] = await Promise.all([
+      const [data, s, projects] = await Promise.all([
         api.get('/invoices'),
         api.get('/invoices/stats').catch(() => ({ outstanding: 0, overdue: 0, collected: 0 })),
+        api.get('/projects').catch(() => []),
       ]);
       setInvoices(data);
       setStats(s);
+      const byId = {};
+      (projects || []).forEach(p => { byId[p.id] = p; });
+      setProjectsById(byId);
     } catch (_) {}
     setLoading(false);
   }
@@ -594,6 +614,7 @@ function InvoicesListTab({ onEdit, refresh }) {
             <InvoiceCard
               key={inv.id}
               inv={inv}
+              project={inv.project_id ? projectsById[inv.project_id] : null}
               onOpen={onEdit}
               onAction={handleAction}
               menuOpen={openMenuId === inv.id}
@@ -813,7 +834,7 @@ function InvoiceSetupTab() {
             <select className="select" style={{ width: '100%' }}
               value={form.billing_bank_name}
               onChange={e => setForm(f => ({ ...f, billing_bank_name: e.target.value, billing_bank_name_custom: '' }))}>
-              <option value="">— Select bank —</option>
+              <option value="">Select bank</option>
               {KOSOVO_BANKS.map(b => <option key={b} value={b}>{b}</option>)}
               <option value="Other">Other (specify)</option>
             </select>
@@ -840,8 +861,8 @@ function InvoiceSetupTab() {
             <label style={{ fontSize: '11px', color: 'var(--color-mid-gray)', display: 'block', marginBottom: '4px' }}>Invoice Language</label>
             <select className="select" value={form.language}
               onChange={e => setForm(f => ({ ...f, language: e.target.value }))} style={{ width: '100%' }}>
-              <option value="sq">Albanian (Shqip) — Faturë</option>
-              <option value="en">English — Invoice</option>
+              <option value="sq">Albanian (Shqip): Faturë</option>
+              <option value="en">English: Invoice</option>
             </select>
           </div>
           <div>
@@ -859,11 +880,11 @@ function InvoiceSetupTab() {
                 style={{ width: '60px' }}
                 placeholder="25" />
               <span style={{ fontSize: '13px', color: 'var(--color-mid-gray)', whiteSpace: 'nowrap' }}>
-                → Next: <strong style={{ color: 'var(--color-ink)' }}>{settings?.next_number_preview || '—'}</strong>
+                → Next: <strong style={{ color: 'var(--color-ink)' }}>{settings?.next_number_preview || '-'}</strong>
               </span>
             </div>
             <div style={{ fontSize: '11px', color: 'var(--color-mid-gray)', marginTop: '5px' }}>
-              Year never changes automatically — you control it here.
+              Year never changes automatically. You control it here.
             </div>
           </div>
         </div>
@@ -917,7 +938,7 @@ function InvoiceSetupTab() {
           {/* Stamp + Signature */}
           <div>
             <label style={{ fontSize: '11px', color: 'var(--color-mid-gray)', display: 'block', marginBottom: '8px' }}>
-              Stamp + Signature (transparent PNG — overlays Dorezoi line)
+              Stamp + Signature (transparent PNG, overlays Dorezoi line)
             </label>
             {stamp ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -949,7 +970,7 @@ function InvoiceSetupTab() {
           <Package size={14} style={{ color: 'var(--accent)' }} />
           <div className="section-title">Services Catalogue</div>
           <span style={{ fontSize: '11px', color: 'var(--color-mid-gray)', marginLeft: 'auto' }}>
-            Used in invoice line items — auto-fills code, name, unit, price
+            Used in invoice line items: auto-fills code, name, unit, price
           </span>
         </div>
 
@@ -1010,7 +1031,7 @@ function InvoiceSetupTab() {
               <tbody>
                 {services.map(s => (
                   <tr key={s.id} style={editingSvc?.id === s.id ? { background: 'var(--overlay-02)' } : {}}>
-                    <td className="text-sm" style={{ color: 'var(--accent)' }}>{s.code || '—'}</td>
+                    <td className="text-sm" style={{ color: 'var(--accent)' }}>{s.code || '-'}</td>
                     <td className="text-sm text-bold">{s.name}</td>
                     <td className="text-sm text-2">{s.unit}</td>
                     <td style={{ textAlign: 'right', color: 'var(--accent)', fontWeight: 600 }}>{<Private>{fmt(s.default_price)}</Private>}</td>
@@ -1051,6 +1072,8 @@ function InvoiceSetupTab() {
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function Invoices() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('list');
   const [showBuilder, setShowBuilder] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState(null);
@@ -1064,27 +1087,45 @@ export default function Invoices() {
   }, []);
 
   function handleNew() {
+    setError('');
     setEditingInvoice(null);
     setShowBuilder(true);
   }
 
   async function handleEdit(inv) {
+    setError('');
     try {
       const full = await api.get(`/invoices/${inv.id}`);
       setEditingInvoice(full);
       setShowBuilder(true);
-    } catch (e) { alert(e.message); }
+    } catch (e) { setError(e.message); }
   }
 
   async function handleFromEstimate(budgetId) {
+    setError('');
     try {
       const { id } = await api.post(`/invoices/from-estimate/${budgetId}`, {});
       const full = await api.get(`/invoices/${id}`);
       setShowFromEstimate(false);
       setEditingInvoice(full);
       setShowBuilder(true);
-    } catch (e) { alert(e.message); }
+    } catch (e) { setShowFromEstimate(false); setError(e.message); }
   }
+
+  // URL parameters the quick actions and cross links use: ?new=1 opens the
+  // invoice builder, ?id=N opens that invoice. Each is cleared once handled,
+  // the same pattern the Projects page uses, and read on every change so the
+  // New Invoice quick action works while this page is already open.
+  useEffect(() => {
+    const isNew = searchParams.get('new');
+    const openId = searchParams.get('id');
+    if (isNew !== '1' && !openId) return;
+    setSearchParams({}, { replace: true });
+    setActiveTab('list');
+    if (isNew === '1') handleNew();
+    else handleEdit({ id: openId });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   function handleBuilderClose() {
     setShowBuilder(false);
@@ -1114,6 +1155,8 @@ export default function Invoices() {
           </div>
         )}
       </div>
+
+      {error && <div className="error-msg" style={{ marginBottom: '12px' }}>{error}</div>}
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: '6px', marginBottom: '24px', borderBottom: '1px solid var(--border)', paddingBottom: '12px' }}>

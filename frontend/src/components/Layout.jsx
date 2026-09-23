@@ -35,13 +35,13 @@ const MIND_LINKS = [
   { to: '/accounts',    icon: KeyRound,  label: 'Accounts'    },
 ];
 
-// Tools — each item is a card grid of the tools in that family.
+// Tools: each item is a card grid of the tools in that family.
 const TOOLS_LINKS = [
   { to: '/pitches',    icon: Presentation, label: 'Pitches'    },
   { to: '/production', icon: Clapperboard, label: 'Production' },
 ];
 
-// All pages — used by the floating menu button for full-nav access
+// All pages, used by the floating menu button for full-nav access
 const ALL_NAV_PAGES = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Home'      },
   { to: '/projects',  icon: FolderKanban,    label: 'Projects'  },
@@ -63,8 +63,8 @@ const ALL_NAV_PAGES = [
 
 const FAB_ACTIONS = [
   { label: 'New Project',  icon: FolderKanban, to: '/projects?new=1' },
-  { label: 'New Estimate', icon: FileText,     to: '/budgets' },
-  { label: 'New Invoice',  icon: Receipt,      to: '/invoices' },
+  { label: 'New Estimate', icon: FileText,     to: '/budgets?new=1' },
+  { label: 'New Invoice',  icon: Receipt,      to: '/invoices?new=1' },
   { label: 'New Lead',     icon: Lightbulb,    to: '/projects?newlead=1' },
 ];
 
@@ -133,6 +133,8 @@ export default function Layout() {
   const [fabOpen, setFabOpen] = useState(false);
   const [floatMenuOpen, setFloatMenuOpen] = useState(false);
   const fabRef = useRef(null);
+  const [newOpen, setNewOpen] = useState(false);
+  const newRef = useRef(null);
   const [showSetupWizard, setShowSetupWizard] = useState(false);
   const [openGroup, setOpenGroup] = useState(() => getGroupForPath(location.pathname) || 'ops');
 
@@ -158,9 +160,24 @@ export default function Layout() {
     return () => document.removeEventListener('mousedown', handleClick);
   }, [fabOpen]);
 
+  useEffect(() => {
+    if (!newOpen) return undefined;
+    function handleClick(e) {
+      if (newRef.current && !newRef.current.contains(e.target)) setNewOpen(false);
+    }
+    function handleKey(e) { if (e.key === 'Escape') setNewOpen(false); }
+    document.addEventListener('mousedown', handleClick);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [newOpen]);
+
   // Close all launchers on navigation; auto-open the active group
   useEffect(() => {
     setFloatMenuOpen(false);
+    setNewOpen(false);
     const group = getGroupForPath(location.pathname);
     if (group) setOpenGroup(group);
   }, [location.pathname]);
@@ -177,12 +194,13 @@ export default function Layout() {
 
   function handleFabAction(to) {
     setFabOpen(false);
+    setNewOpen(false);
     navigate(to);
   }
 
   return (
     <div className="app-shell">
-      {/* Mobile top branding header — hidden on desktop */}
+      {/* Mobile top branding header, hidden on desktop */}
       <header className="mobile-header">
         {logo ? (
           <img src={logo} alt={name || 'Agency'} className="mobile-header-logo" />
@@ -207,6 +225,30 @@ export default function Layout() {
                   {tagline}
                 </div>
               )}
+            </div>
+          )}
+        </div>
+
+        {/* Desktop quick actions: one New button at the top of the sidebar, so a
+            page's own create button never sits beside a floating plus. On
+            mobile the floating plus below carries the same menu. */}
+        <div className="sidebar-new" ref={newRef}>
+          <button
+            className={`sidebar-new-btn${newOpen ? ' is-open' : ''}`}
+            onClick={() => setNewOpen(o => !o)}
+            aria-haspopup="true"
+            aria-expanded={newOpen}
+          >
+            <Plus size={16} /> New
+          </button>
+          {newOpen && (
+            <div className="fab-menu sidebar-new-menu" role="menu">
+              {FAB_ACTIONS.map(({ label, icon: Icon, to }) => (
+                <button key={label} className="fab-item" role="menuitem" onClick={() => handleFabAction(to)}>
+                  <span className="fab-item-icon"><Icon size={15} /></span>
+                  {label}
+                </button>
+              ))}
             </div>
           )}
         </div>
@@ -351,7 +393,8 @@ export default function Layout() {
         </div>
       </div>
 
-      {/* Sticky FAB — menu button on top, + FAB below */}
+      {/* Mobile only: the page launcher above and the quick actions plus below,
+          within thumb reach. On desktop the sidebar New button replaces it. */}
       <div className="fab-wrap" ref={fabRef}>
         {fabOpen && (
           <div className="fab-menu">
@@ -363,7 +406,7 @@ export default function Layout() {
             ))}
           </div>
         )}
-        {/* Floating nav menu button — mobile: primary navigation; desktop: hidden */}
+        {/* Floating nav menu button: the primary navigation on mobile */}
         <button
           className={`fab-nav-btn${floatMenuOpen ? ' active' : ''}`}
           onClick={() => { setFabOpen(false); setFloatMenuOpen(o => !o); }}
@@ -376,7 +419,7 @@ export default function Layout() {
         </button>
       </div>
 
-      {/* Float-menu full-nav launcher — all pages */}
+      {/* Float-menu full-nav launcher: all pages */}
       {floatMenuOpen && (
         <Overlay
           size="sheet"

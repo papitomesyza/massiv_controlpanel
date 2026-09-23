@@ -5,6 +5,7 @@ import {
 import { api, fmt, fmtDate } from '../api';
 import { Private } from '../context/PrivacyContext';
 import Overlay from './Overlay';
+import DateField from './DateField';
 import { pristinaToday, addDays } from '../lib/pristinaDate';
 
 function uid() { return Math.random().toString(36).slice(2); }
@@ -354,13 +355,11 @@ export default function InvoiceBuilder({ invoice, onClose, onSaved }) {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                   <div>
                     <label style={{ fontSize: '11px', color: 'var(--color-mid-gray)', display: 'block', marginBottom: '4px' }}>Issue Date</label>
-                    <input className="input" type="date" value={issueDate}
-                      onChange={e => setIssueDate(e.target.value)} disabled={isLocked} />
+                    <DateField value={issueDate} onChange={setIssueDate} disabled={isLocked} />
                   </div>
                   <div>
                     <label style={{ fontSize: '11px', color: 'var(--color-mid-gray)', display: 'block', marginBottom: '4px' }}>Due Date</label>
-                    <input className="input" type="date" value={dueDate}
-                      onChange={e => setDueDate(e.target.value)} disabled={isLocked} />
+                    <DateField value={dueDate} onChange={setDueDate} disabled={isLocked} />
                   </div>
                 </div>
                 <div>

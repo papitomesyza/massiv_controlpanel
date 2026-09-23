@@ -4774,3 +4774,99 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
   .pl-table .pl-minor { display: none; }
   .pl-table td, .pl-table th { padding-left: 10px; padding-right: 10px; }
 }
+
+/* ===== Shared date field =====
+   Always dd/mm/yyyy, whatever the browser locale. The text input carries the
+   value; a hidden native date input under the calendar button supplies the
+   picker. Every colour is a token, so it follows both themes. */
+.date-field { position: relative; display: block; width: 100%; min-width: 0; }
+.date-field .date-field-input { width: 100%; padding-right: 38px; font-variant-numeric: tabular-nums; }
+.date-field-btn {
+  position: absolute; top: 50%; right: 6px; transform: translateY(-50%);
+  width: 28px; height: 28px; border: none; border-radius: 8px;
+  background: transparent; color: var(--color-mid-gray);
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: background 0.15s ease, color 0.15s ease;
+}
+.date-field-btn:hover { background: var(--overlay-04); color: var(--color-ink); }
+.date-field-btn:disabled { cursor: not-allowed; opacity: 0.5; }
+/* The native input only hosts the picker: invisible, inert, anchored under the
+   button so the popup opens beside the field. */
+.date-field-picker {
+  position: absolute; right: 6px; bottom: 0; width: 28px; height: 1px;
+  opacity: 0; pointer-events: none; border: 0; padding: 0; margin: 0;
+}
+.date-field.is-invalid .date-field-input { border-color: var(--color-ember); }
+.date-field.is-disabled .date-field-input { opacity: 0.55; }
+.standalone-date-wrap { width: 150px; flex-shrink: 0; }
+.date-field .standalone-date-input { width: 100%; padding-right: 36px; }
+@media (max-width: 600px) {
+  .standalone-date-wrap { width: 100%; }
+}
+
+/* ===== Sidebar New button (desktop quick actions) =====
+   The global quick actions live here on desktop, so a page's own create button
+   never sits beside a floating plus. On mobile the sidebar is hidden and the
+   floating plus carries the same menu within thumb reach. */
+.sidebar-new { position: relative; padding: 12px 12px 4px; }
+.sidebar-new-btn {
+  width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 9px 14px; border-radius: var(--radius-buttons);
+  border: 1px solid var(--color-hairline); background: var(--surface-card);
+  color: var(--color-ink); font-family: var(--font); font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: background 0.15s ease, border-color 0.15s ease;
+}
+.sidebar-new-btn:hover, .sidebar-new-btn.is-open { background: var(--overlay-03); border-color: var(--color-hairline-strong); }
+.sidebar-new-menu { position: absolute; left: 12px; right: 12px; top: calc(100% + 2px); z-index: 20; min-width: 0; }
+@media (min-width: 769px) {
+  .fab-wrap { display: none; }
+}
+
+/* ===== Dashboard stat strip =====
+   One strip of six figures, the construction every other page opens with.
+   Each cell is a button into its detail. */
+.dash-strip { grid-template-columns: repeat(6, minmax(0, 1fr)); margin-bottom: 0; }
+.dash-cell {
+  background: none; border: none; padding: 4px 6px; margin: -4px -6px;
+  text-align: left; font-family: var(--font); color: inherit; cursor: pointer;
+  border-radius: 10px; transition: background 0.15s ease;
+}
+.dash-cell:hover { background: var(--overlay-03); }
+.dash-cell:focus-visible { outline: 2px solid var(--color-hairline-strong); outline-offset: 2px; }
+.dash-strip .est-pipe-value { font-size: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dash-quiet { margin-top: -8px; margin-bottom: 0; }
+@media (max-width: 1100px) {
+  .dash-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .est-pipeline.dash-strip { grid-template-columns: 1fr 1fr; }
+  .est-pipeline.dash-strip .est-pipe-cell:nth-child(3) { grid-column: auto; flex-direction: column; align-items: flex-start; }
+  .dash-strip .est-pipe-value { font-size: 18px; }
+}
+
+/* ===== Project page =====
+   The strip opens the page like every other one; the header carries one filled
+   button and an overflow menu; rows use quiet icon actions. */
+.pd-strip .est-pipe-value { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pd-strip.est-pipeline-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 640px) {
+  .pd-strip.est-pipeline-4 { grid-template-columns: 1fr 1fr; }
+  .pd-strip.est-pipeline-4 .est-pipe-cell:nth-child(4) { flex-direction: column; align-items: flex-start; }
+}
+.pd-menu .est-menu { right: 0; left: auto; }
+.pd-menu .est-menu-item:disabled { opacity: 0.5; cursor: default; }
+.row-icon-btn { padding: 4px 6px; }
+.pd-schedule { display: flex; flex-direction: column; gap: 8px; }
+.pd-schedule-row { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--color-ink); }
+
+/* ===== Calendar: synced event editing ===== */
+.cal-locked-field {
+  display: flex; align-items: center; gap: 8px; min-height: 38px;
+  padding: 9px 14px; border-radius: var(--radius-inputs);
+  border: 1px dashed var(--color-hairline); color: var(--color-mid-gray);
+  font-size: var(--text-body); overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.cal-sync-note { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--color-mid-gray); margin: -4px 0 8px; }
+.cal-delete-btn { padding: 6px 8px; }
+.cal-delete-btn svg { color: var(--color-ember); }
+.cal-event-form .input:disabled, .cal-event-form textarea.input:disabled { opacity: 0.55; cursor: not-allowed; }

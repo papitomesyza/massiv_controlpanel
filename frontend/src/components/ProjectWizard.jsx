@@ -4,6 +4,7 @@ import { api } from '../api';
 import { Private } from '../context/PrivacyContext';
 import { getTasksForCategory } from '../data/projectTasks';
 import Overlay from './Overlay';
+import DateField from './DateField';
 
 /* ---- Nominatim Location Picker ---- */
 export function LocationPicker({ value, lat, lng, onChange }) {
@@ -460,7 +461,7 @@ function StepBasicInfo({ form, setForm, clients, grouped, onAddClient, profile }
             setForm('client_id', e.target.value);
           }}>
             <option value="">No client</option>
-            {clients.map(c => <option key={c.id} value={c.id}>{c.name}{c.company ? ` — ${c.company}` : ''}</option>)}
+            {clients.map(c => <option key={c.id} value={c.id}>{c.name}{c.company ? `, ${c.company}` : ''}</option>)}
             <option value="__add__" disabled>──────────</option>
             <option value="__add__" onMouseDown={e => { e.preventDefault(); onAddClient(); }}>+ Add New Client</option>
           </select>
@@ -507,14 +508,14 @@ function StepBasicInfo({ form, setForm, clients, grouped, onAddClient, profile }
       </div>
       <div className="form-row">
         <label className="form-label">Deadline</label>
-        <input type="date" className="input" value={form.deadline} onChange={e => setForm('deadline', e.target.value)} />
+        <DateField value={form.deadline} onChange={v => setForm('deadline', v)} />
       </div>
       {isProduction && (
         <>
           <div className="form-grid">
             <div className="form-row">
               <label className="form-label">Shoot Date</label>
-              <input type="date" className="input" value={form.shoot_date} onChange={e => setForm('shoot_date', e.target.value)} />
+              <DateField value={form.shoot_date} onChange={v => setForm('shoot_date', v)} />
             </div>
             <div className="form-row">
               <label className="form-label">Shoot Days</label>
@@ -737,12 +738,12 @@ function StepReview({ basicInfo, phaseTasks, clients, categories, skippedPhases 
 
       {skippedPhases.size > 0 && [...skippedPhases].map(phase => (
         <div key={phase} style={{ marginBottom: '10px', opacity: 0.4 }}>
-          <div className="text-xs" style={{ textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px', color: 'var(--color-mid-gray)' }}>{phase} — skipped</div>
+          <div className="text-xs" style={{ textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px', color: 'var(--color-mid-gray)' }}>{phase}, skipped</div>
         </div>
       ))}
 
       {activePhases.length === 0 && (
-        <div className="error-msg">No phases selected — at least one phase is required.</div>
+        <div className="error-msg">No phases selected. At least one phase is required.</div>
       )}
     </div>
   );

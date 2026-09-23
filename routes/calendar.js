@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const { db } = require('../db/database');
+const { pristinaToday, addDays } = require('../lib/pristinaDate');
+const { applySyncedEventChange, eventSource, EDITABLE } = require('../lib/calendarSync');
 
 // GET /api/calendar?month=YYYY-MM  OR  ?start=YYYY-MM-DD&end=YYYY-MM-DD
 // Returns events that overlap with the requested range (date-range overlap)
@@ -54,51 +56,77 @@ router.post('/', (req, res) => {
   res.json({ id: result.lastInsertRowid });
 });
 
-// PUT /api/calendar/:id/move — reschedule by shifting start_date (and end_date span)
+// Send a thrown validation error back with its status, anything else as a 500.
+function fail(res, err) {
+  res.status(err.status || 500).json({ error: err.message });
+}
+
+// PUT /api/calendar/:id/move: reschedule by shifting start_date. A synced event
+// moves its source (the project shoot date or deadline, or the task due date)
+// through the one shared write path; a manual event shifts itself, keeping the
+// span to its end date.
 router.put('/:id/move', (req, res) => {
   const { start_date } = req.body;
-  if (!start_date) return res.status(400).json({ error: 'start_date required' });
+  if (!start_date || !/^\d{4}-\d{2}-\d{2}$/.test(start_date)) {
+    return res.status(400).json({ error: 'start_date required' });
+  }
 
   const event = db.prepare('SELECT * FROM calendar_events WHERE id = ?').get(req.params.id);
   if (!event) return res.status(404).json({ error: 'Event not found' });
 
-  let new_end_date = null;
+  try {
+    if (applySyncedEventChange(event.id, { start_date })) return res.json({ ok: true });
+  } catch (err) { return fail(res, err); }
+
+  let newEndDate = null;
   if (event.end_date) {
-    const spanDays = Math.round(
-      (new Date(event.end_date + 'T00:00:00') - new Date(event.start_date + 'T00:00:00')) / 86400000
+    const span = Math.round(
+      (Date.parse(`${event.end_date}T00:00:00Z`) - Date.parse(`${event.start_date}T00:00:00Z`)) / 86400000
     );
-    const d = new Date(start_date + 'T00:00:00');
-    d.setDate(d.getDate() + spanDays);
-    new_end_date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    newEndDate = addDays(start_date, span);
   }
-
   db.prepare('UPDATE calendar_events SET start_date = ?, end_date = ? WHERE id = ?')
-    .run(start_date, new_end_date, req.params.id);
-
-  if (event.project_id) {
-    if (event.event_type === 'shoot') {
-      db.prepare('UPDATE projects SET shoot_date = ? WHERE id = ?').run(start_date, event.project_id);
-    } else if (event.event_type === 'deadline') {
-      db.prepare('UPDATE projects SET deadline = ? WHERE id = ?').run(start_date, event.project_id);
-    }
-  }
-  if (event.event_type === 'task' && event.task_id) {
-    db.prepare('UPDATE tasks SET due_date = ? WHERE id = ?').run(start_date, event.task_id);
-  }
-  if (event.event_type === 'standalone_task' && event.standalone_task_id) {
-    db.prepare('UPDATE standalone_tasks SET due_date = ? WHERE id = ?').run(start_date, event.standalone_task_id);
-  }
-
+    .run(start_date, newEndDate, event.id);
   res.json({ ok: true });
 });
 
 // PUT /api/calendar/:id
+// A synced event is edited through its source, the same write path a drag
+// uses. Its type and linked project are locked, and a field its source has no
+// place for is refused rather than silently dropped on the next sync.
 router.put('/:id', (req, res) => {
-  const event = db.prepare('SELECT id FROM calendar_events WHERE id = ?').get(req.params.id);
+  const event = db.prepare('SELECT * FROM calendar_events WHERE id = ?').get(req.params.id);
   if (!event) return res.status(404).json({ error: 'Event not found' });
   // Colour is no longer stored: it is derived from event_type at render time.
   const { project_id, title, event_type, start_date, end_date, start_time, end_time, location, notes } = req.body;
   if (!title || !start_date) return res.status(400).json({ error: 'Title and start_date required' });
+
+  const source = eventSource(event);
+  if (source) {
+    const norm = v => (v === undefined || v === null || v === '' ? null : String(v));
+    const sameTime = (a, b) => (norm(a) || '').slice(0, 5) === (norm(b) || '').slice(0, 5);
+    if ((event_type || event.event_type) !== event.event_type || norm(project_id) !== norm(event.project_id)) {
+      return res.status(400).json({ error: 'The type and project of a synced event cannot be changed' });
+    }
+    const editable = EDITABLE[source.kind] || [];
+    const incoming = { title, end_date, start_time, end_time, location, notes };
+    const locked = Object.keys(incoming).filter(k => {
+      if (editable.includes(k)) return false;
+      if (k === 'start_time' || k === 'end_time') return !sameTime(incoming[k], event[k]);
+      return norm(incoming[k]) !== norm(event[k]);
+    });
+    if (locked.length) {
+      return res.status(400).json({ error: `These fields live on the source and cannot be changed here: ${locked.join(', ')}` });
+    }
+    const change = { start_date };
+    if (editable.includes('start_time')) change.start_time = start_time || null;
+    if (editable.includes('end_time')) change.end_time = end_time || null;
+    try {
+      applySyncedEventChange(event.id, change);
+    } catch (err) { return fail(res, err); }
+    return res.json({ ok: true });
+  }
+
   db.prepare(`
     UPDATE calendar_events SET
       project_id=?, title=?, event_type=?, start_date=?, end_date=?,
@@ -119,15 +147,23 @@ router.put('/:id', (req, res) => {
 });
 
 // DELETE /api/calendar/:id
+// Deleting a synced event clears the date on its source, so the event does not
+// return on the next save of that project or task. A manual event is removed.
 router.delete('/:id', (req, res) => {
-  db.prepare('DELETE FROM calendar_events WHERE id = ?').run(req.params.id);
+  const event = db.prepare('SELECT * FROM calendar_events WHERE id = ?').get(req.params.id);
+  if (!event) return res.json({ ok: true });
+  try {
+    const source = applySyncedEventChange(event.id, { start_date: null });
+    if (source) return res.json({ ok: true, cleared: { kind: source.kind, id: source.id, name: source.name } });
+  } catch (err) { return fail(res, err); }
+  db.prepare('DELETE FROM calendar_events WHERE id = ?').run(event.id);
   res.json({ ok: true });
 });
 
 // GET /api/calendar/upcoming?limit=3
 router.get('/upcoming', (req, res) => {
   const limit = parseInt(req.query.limit) || 3;
-  const today = new Date().toISOString().split('T')[0];
+  const today = pristinaToday();
   const events = db.prepare(`
     SELECT * FROM calendar_events
     WHERE start_date >= ?

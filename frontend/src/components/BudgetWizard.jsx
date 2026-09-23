@@ -850,7 +850,7 @@ function StepCrew({ crewMembers, lines, isFlatFee, selected, onToggle, onUpdate,
               onClick={() => onToggle(m)}
             >
               <div className="budget-person-name">{m.name}</div>
-              <div className="budget-person-role">{m.role || '—'}</div>
+              <div className="budget-person-role">{m.role || '-'}</div>
               <div className="budget-person-rate"><Private>{isFlatFee ? `€${Number(m.day_rate || 0).toFixed(0)} flat` : `€${Number(m.day_rate || 0).toFixed(0)}/day`}</Private></div>
             </div>
           ))}
@@ -1392,7 +1392,7 @@ function StepReview({
         </div>
       </div>
 
-      {/* Section 01 — Crew */}
+      {/* Section 01: Crew */}
       <div className="budget-review-section">
         <SectionHeader title="01 · CREW COST" step={1} />
         {crewLines.length === 0 ? (
@@ -1414,7 +1414,7 @@ function StepReview({
         )}
       </div>
 
-      {/* Section 02 — Assets & Rentals */}
+      {/* Section 02: Assets & Rentals */}
       {hasEquipment && (
         <div className="budget-review-section">
           <SectionHeader title="02 · ASSETS & RENTALS" step={2} />
@@ -1444,7 +1444,7 @@ function StepReview({
         </div>
       )}
 
-      {/* Section 03 — Logistical */}
+      {/* Section 03: Logistical */}
       {hasLogistics && (
         <div className="budget-review-section">
           <SectionHeader title="03 · LOGISTICAL COSTS" step={3} />

@@ -459,7 +459,7 @@ export default function Map() {
   return (
     <div className="map-page">
       <div className="page-header" style={{ marginBottom: '12px' }}>
-        <div className="page-title">Projects Map</div>
+        <div className="page-title">Map</div>
       </div>
 
       {!loading && mappable.length > 0 && <StatStrip projects={filtered} />}

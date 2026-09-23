@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { db } = require('../db/database');
+const { syncStandaloneTaskCalendarEvent } = require('../lib/calendarSync');
 
 // GET / — all tasks, ordered: pending first (due_date asc, then no-date, newest tiebreak), then done (completed_at desc)
 router.get('/', (req, res) => {
@@ -161,21 +162,5 @@ router.delete('/:id', (req, res) => {
   db.prepare('DELETE FROM standalone_tasks WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
-
-// ── helper: keeps the calendar event for a standalone task in sync ──
-function syncStandaloneTaskCalendarEvent(taskId) {
-  db.prepare('DELETE FROM calendar_events WHERE event_type = ? AND standalone_task_id = ?')
-    .run('standalone_task', taskId);
-  const task = db.prepare('SELECT * FROM standalone_tasks WHERE id = ?').get(taskId);
-  if (!task) return;
-  if (task.due_date && task.done === 0) {
-    // Colour is derived from event_type at render time, never stored. NULL is set
-    // explicitly so existing databases do not fall back to the old column default.
-    db.prepare(`
-      INSERT INTO calendar_events (standalone_task_id, event_type, start_date, title, color)
-      VALUES (?, 'standalone_task', ?, ?, NULL)
-    `).run(taskId, task.due_date, task.title);
-  }
-}
 
 module.exports = router;

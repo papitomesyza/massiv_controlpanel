@@ -62,6 +62,8 @@ router.get('/stats', (req, res) => {
     outstandingInvoiced: owed.invoicedUnpaid,
     outstandingNotInvoiced: owed.uninvoicedDue,
     upcoming: owed.upcoming,
+    // Additive: everything owed, pending plus upcoming, for the Projects strip.
+    owedTotal: owed.total,
     unpaidCrew,
     completedThisMonth,
     avgProjectValue,

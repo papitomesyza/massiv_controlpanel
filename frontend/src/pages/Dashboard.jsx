@@ -1,13 +1,9 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Activity, TrendingUp, DollarSign, AlertCircle, UserX,
-  FolderCheck, BarChart2, Users as UsersIcon,
-  X, CheckCircle, Lightbulb, LayoutGrid, GripHorizontal, Eye, EyeOff,
-  Clock,
+  CheckCircle, Lightbulb, LayoutGrid, GripHorizontal, Eye, EyeOff,
 } from 'lucide-react';
 import { api, fmt, fmtDate } from '../api';
-import StatCard from '../components/StatCard';
 import ProjectTimeline from '../components/ProjectTimeline';
 import LeadsRail from '../components/LeadsRail';
 import { Private } from '../context/PrivacyContext';
@@ -291,81 +287,38 @@ export default function Dashboard() {
 function WidgetContent({ id, stats, projects, expenses, chartData, leads, setLeads, reloadProjects, reloadLeads, onPatchDeadline, setActiveModal }) {
   switch (id) {
 
-    case 'stat_cards':
+    // One stat strip, the same construction every other page opens with. Each
+    // figure stays clickable into its detail. The widget id is unchanged, so
+    // every saved layout still places it.
+    case 'stat_cards': {
+      const cells = [
+        { key: 'active-projects', label: 'Active projects', value: projects.length },
+        { key: 'revenue', label: 'Revenue this month', value: <Private>{fmt(stats?.revenue)}</Private> },
+        { key: 'profit', label: 'Project profit', value: <Private>{fmt(stats?.netProfit)}</Private>, danger: stats?.netProfit < 0 },
+        { key: 'outstanding', label: 'Pending payments', value: <Private>{fmt(stats?.outstanding)}</Private>, danger: stats?.outstanding > 0 },
+        { key: 'upcoming', label: 'Upcoming', value: <Private>{fmt(stats?.upcoming)}</Private> },
+        { key: 'unpaid-crew', label: 'Unpaid crew', value: <Private>{fmt(stats?.unpaidCrew)}</Private>, danger: stats?.unpaidCrew > 0 },
+      ];
       return (
-        <div className="stats-grid">
-          <StatCard
-            label="Active Projects"
-            value={projects.length}
-            icon={<Activity size={16} />}
-            iconTint="purple"
-            onClick={() => setActiveModal('active-projects')}
-          />
-          <StatCard
-            label="Revenue This Month"
-            value={<Private>{fmt(stats?.revenue)}</Private>}
-            icon={<TrendingUp size={16} />}
-            onClick={() => setActiveModal('revenue')}
-            emphasis
-          />
-          <StatCard
-            label="Project Profit"
-            value={<Private>{fmt(stats?.netProfit)}</Private>}
-            danger={stats?.netProfit < 0}
-            icon={<DollarSign size={16} />}
-            iconTint={stats?.netProfit < 0 ? 'danger' : 'purple'}
-            onClick={() => setActiveModal('profit')}
-          />
-          <StatCard
-            label="Pending Payments"
-            value={<Private>{fmt(stats?.outstanding)}</Private>}
-            sub={stats?.outstandingNotInvoiced > 0
-              ? <><Private>{fmt(stats.outstandingNotInvoiced)}</Private> not yet invoiced</>
-              : undefined}
-            danger={stats?.outstanding > 0}
-            icon={<AlertCircle size={16} />}
-            iconTint={stats?.outstanding > 0 ? 'danger' : 'success'}
-            onClick={() => setActiveModal('outstanding')}
-          />
-          <StatCard
-            label="Upcoming"
-            value={<Private>{fmt(stats?.upcoming)}</Private>}
-            icon={<Clock size={16} />}
-            iconTint="blue"
-            onClick={() => setActiveModal('upcoming')}
-          />
-          <StatCard
-            label="Unpaid Crew"
-            value={<Private>{fmt(stats?.unpaidCrew)}</Private>}
-            danger={stats?.unpaidCrew > 0}
-            icon={<UserX size={16} />}
-            iconTint={stats?.unpaidCrew > 0 ? 'danger' : 'success'}
-            onClick={() => setActiveModal('unpaid-crew')}
-          />
+        <div className="est-pipeline dash-strip">
+          {cells.map(c => (
+            <button key={c.key} type="button" className="est-pipe-cell dash-cell" onClick={() => setActiveModal(c.key)}>
+              <span className="est-pipe-label">{c.label}</span>
+              <span className="est-pipe-value" style={{ color: c.danger ? 'var(--color-ember)' : undefined }}>{c.value}</span>
+            </button>
+          ))}
         </div>
       );
+    }
 
+    // The secondary figures read as a quieter row beneath, the way the Finances
+    // page shows its all time figures. The widget id is unchanged.
     case 'metric_cards':
       return (
-        <div className="stats-grid-3">
-          <StatCard
-            label="Completed This Month"
-            value={stats?.completedThisMonth ?? 0}
-            icon={<FolderCheck size={16} />}
-            iconTint="success"
-          />
-          <StatCard
-            label="Avg Project Value"
-            value={<Private>{fmt(stats?.avgProjectValue)}</Private>}
-            icon={<BarChart2 size={16} />}
-            iconTint="purple"
-          />
-          <StatCard
-            label="Crew Paid (Month)"
-            value={<Private>{fmt(stats?.crewCosts)}</Private>}
-            icon={<UsersIcon size={16} />}
-            iconTint="orange"
-          />
+        <div className="fin-quiet dash-quiet">
+          <div className="fin-quiet-item"><span>Completed this month</span>{stats?.completedThisMonth ?? 0}</div>
+          <div className="fin-quiet-item"><span>Avg project value</span><Private>{fmt(stats?.avgProjectValue)}</Private></div>
+          <div className="fin-quiet-item"><span>Crew paid this month</span><Private>{fmt(stats?.crewCosts)}</Private></div>
         </div>
       );
 
@@ -569,7 +522,7 @@ function DashboardModal({ type, month, projects, onClose, onReload }) {
                       <td>
                         {row.id
                           ? <Link to={`/projects/${row.id}`} className="link text-bold" onClick={onClose}>{row.project_title}</Link>
-                          : <Link to="/invoices" className="link text-bold" onClick={onClose}>{row.project_title}</Link>}
+                          : <Link to={row.invoice_id ? `/invoices?id=${row.invoice_id}` : '/invoices'} className="link text-bold" onClick={onClose}>{row.project_title}</Link>}
                       </td>
                       <td className="text-2 text-sm">{row.client_name || '-'}</td>
                       <td className="text-sm"><Private>{fmt(row.invoiced_unpaid)}</Private></td>

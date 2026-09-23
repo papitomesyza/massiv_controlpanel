@@ -1,14 +1,139 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { Plus, Check, Trash2, Edit2, ChevronDown, ChevronRight, FileDown, ArrowLeft, Lock, X, Copy, ArrowRight, Clock, GripVertical, Link2, Link2Off, ExternalLink, Image, Download, FileText, Library } from 'lucide-react';
+import { Plus, Check, Trash2, Edit2, ChevronDown, ChevronRight, FileDown, ArrowLeft, Lock, X, Copy, ArrowRight, Clock, GripVertical, Link2, Link2Off, ExternalLink, Image, Download, FileText, Library, MoreVertical, Camera, Flag } from 'lucide-react';
 import { api, fmt, fmtDate } from '../api';
 import { Private } from '../context/PrivacyContext';
 import Overlay from '../components/Overlay';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { PhaseTaskStep, InlineCrewModal, LocationPicker } from '../components/ProjectWizard';
 import { getTasksForCategory } from '../data/projectTasks';
+import DateField from '../components/DateField';
+import { CategoryTile } from '../lib/categoryIcons';
+import { pristinaToday, pristinaDateOf } from '../lib/pristinaDate';
 
 const PRODUCTION_GROUPS = ['Video Production', 'Photography'];
+
+// Status words never print on this page. Each state is a dot drawn from the
+// shared tokens in index.css, the same hues the Projects rows, the Estimates
+// and the Invoices cards use, and the word lives only in the tooltip.
+const PROJECT_STATUS_HUE = {
+  'development':     'var(--tl-hue-development)',
+  'pre-production':  'var(--tl-hue-pre-production)',
+  'production':      'var(--tl-hue-production)',
+  'post-production': 'var(--tl-hue-post-production)',
+};
+const PROJECT_STATUS_LABEL = {
+  'development':     'Development',
+  'pre-production':  'Pre-Production',
+  'production':      'Production',
+  'post-production': 'Post-Production',
+  'completed':       'Completed',
+};
+// Money states use the same hues as the Invoices payment dots: amber while
+// money is still due, violet when part of it has moved, green once settled.
+const MONEY_STATE = {
+  pending:  { hue: 'var(--cat-2)', label: 'Pending' },
+  received: { hue: 'var(--cat-6)', label: 'Received' },
+  unpaid:   { hue: 'var(--cat-2)', label: 'Unpaid' },
+  partial:  { hue: 'var(--cat-4)', label: 'Partly paid' },
+  paid:     { hue: 'var(--cat-6)', label: 'Paid' },
+};
+
+function Dot({ hue, label, size = 10, hollow = false }) {
+  return (
+    <span
+      className="status-dot"
+      title={label}
+      aria-label={label}
+      role="img"
+      style={hollow
+        ? { width: size, height: size, background: 'transparent', border: '1.5px solid var(--color-hairline-strong)' }
+        : { width: size, height: size, background: hue }}
+    />
+  );
+}
+
+function ProjectStatusDot({ status, size = 12 }) {
+  const label = PROJECT_STATUS_LABEL[status] || status;
+  if (status === 'completed') return <Dot hollow size={size} label={label} />;
+  return <Dot hue={PROJECT_STATUS_HUE[status] || 'var(--color-hairline-strong)'} size={size} label={label} />;
+}
+
+function MoneyDot({ state }) {
+  const m = MONEY_STATE[state] || { hue: 'var(--color-hairline-strong)', label: state };
+  return <Dot hue={m.hue} label={m.label} />;
+}
+
+// The quiet delete used on every row, the same treatment as the Estimates and
+// Invoices cards: a ghost icon button with an ember glyph, never a red fill.
+function RowDelete({ onClick, title = 'Delete', disabled }) {
+  return (
+    <button type="button" className="btn btn-ghost btn-sm row-icon-btn" onClick={onClick} title={title} aria-label={title} disabled={disabled}>
+      <Trash2 size={13} style={{ color: 'var(--color-ember)' }} />
+    </button>
+  );
+}
+
+// Opens the page with four figures, the construction every other page uses.
+// Owed comes from the shared owed calculation on the server (pnl.owed).
+function ProjectStatStrip({ pnl }) {
+  return (
+    <div className="est-pipeline est-pipeline-4 pd-strip">
+      <div className="est-pipe-cell">
+        <div className="est-pipe-label">Agreed budget</div>
+        <div className="est-pipe-value"><Private>{fmt(pnl.agreedBudget)}</Private></div>
+      </div>
+      <div className="est-pipe-cell">
+        <div className="est-pipe-label">Received</div>
+        <div className="est-pipe-value"><Private>{fmt(pnl.totalReceived)}</Private></div>
+      </div>
+      <div className="est-pipe-cell">
+        <div className="est-pipe-label">Owed</div>
+        <div className="est-pipe-value"><Private>{fmt(pnl.owed)}</Private></div>
+      </div>
+      <div className="est-pipe-cell">
+        <div className="est-pipe-label">Project profit</div>
+        <div className="est-pipe-value" style={{ color: pnl.realizedProfit < 0 ? 'var(--color-ember)' : undefined }}>
+          <Private>{fmt(pnl.realizedProfit)}</Private>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Header overflow: the secondary and destructive actions, so the only filled
+// button in the header is the primary one. Same menu as the Estimates cards.
+function HeaderMenu({ onDuplicate, onPdf, onDelete, pdfLoading }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    function onDoc(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    function onKey(e) { if (e.key === 'Escape') setOpen(false); }
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+  const pick = fn => () => { setOpen(false); fn(); };
+  return (
+    <div className="est-overflow pd-menu" ref={ref}>
+      <button className="btn-icon" title="More actions" aria-haspopup="true" aria-expanded={open} onClick={() => setOpen(o => !o)}>
+        <MoreVertical size={16} />
+      </button>
+      {open && (
+        <div className="est-menu" role="menu">
+          <button className="est-menu-item" onClick={pick(onDuplicate)}><Copy size={14} /> Duplicate</button>
+          <button className="est-menu-item" onClick={pick(onPdf)} disabled={pdfLoading}><FileDown size={14} /> {pdfLoading ? 'Exporting...' : 'Export PDF'}</button>
+          <div className="est-menu-sep" />
+          <button className="est-menu-item is-danger" onClick={pick(onDelete)}><Trash2 size={14} /> Delete</button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function ProjectDetail() {
   const { id } = useParams();
@@ -42,6 +167,9 @@ export default function ProjectDetail() {
   const blobUrlsRef = useRef({});
   const [projectCollection, setProjectCollection] = useState(null);
   const [collLoading, setCollLoading] = useState(false);
+  const [pageError, setPageError] = useState('');
+  const [rowConfirm, setRowConfirm] = useState(null); // { title, message, run }
+  const [rowBusy, setRowBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -124,8 +252,9 @@ export default function ProjectDetail() {
 
   async function handlePdf() {
     setPdfLoading(true);
+    setPageError('');
     try { await api.download(`/projects/${id}/pdf`, `MASSIV-${project.title}.pdf`); }
-    catch (e) { alert(e.message); }
+    catch (e) { setPageError(e.message); }
     setPdfLoading(false);
   }
 
@@ -145,7 +274,7 @@ export default function ProjectDetail() {
       setLogInput('');
       const updated = await api.get(`/projects/${id}/logs`);
       setLogs(updated);
-    } catch (e) { alert(e.message); }
+    } catch (e) { setPageError(e.message); }
     setLogSaving(false);
   }
 
@@ -160,7 +289,7 @@ export default function ProjectDetail() {
     try {
       const res = await api.post(`/projects/${id}/expense-link`, {});
       setExpenseLink({ exists: true, is_active: true, token: res.token, url: res.url });
-    } catch (e) { alert(e.message); }
+    } catch (e) { setPageError(e.message); }
     setLinkLoading(false);
   }
 
@@ -170,7 +299,7 @@ export default function ProjectDetail() {
     try {
       await api.del(`/projects/${id}/expense-link`);
       setExpenseLink(prev => ({ ...prev, is_active: false }));
-    } catch (e) { alert(e.message); }
+    } catch (e) { setPageError(e.message); }
     setLinkLoading(false);
   }
 
@@ -196,10 +325,24 @@ export default function ProjectDetail() {
       await loadCollection();
       navigate(`/collections/${res.id}`);
     } catch (err) {
-      alert(err.message || 'Failed to create references collection');
+      setPageError(err.message || 'Failed to create references collection');
     } finally {
       setCollLoading(false);
     }
+  }
+
+  // Deleting a row that holds money asks first, through the in-app dialog.
+  function askRowDelete(cfg) { setPageError(''); setRowConfirm(cfg); }
+
+  async function runRowDelete() {
+    if (!rowConfirm) return;
+    setRowBusy(true);
+    try {
+      await rowConfirm.run();
+      setRowConfirm(null);
+      load();
+    } catch (e) { setRowConfirm(null); setPageError(e.message); }
+    setRowBusy(false);
   }
 
   const postProdPhase = phases.find(p => p.phase_name === 'Post-Production');
@@ -210,9 +353,12 @@ export default function ProjectDetail() {
       <div className="flex-between mb-4" style={{ flexWrap: 'wrap', gap: '12px' }}>
         <div className="flex-center gap-2">
           <Link to="/projects" className="btn btn-ghost btn-sm"><ArrowLeft size={14} /></Link>
+          <span title={project.category_name || 'Uncategorised'}>
+            <CategoryTile categoryName={project.category_name} groupName={project.category_group} />
+          </span>
           <div>
             <div className="page-title">{project.title}</div>
-            <div className="text-2 text-sm">{project.client_name || 'No client'}{project.category_name ? ` · ${project.category_name}` : ''}</div>
+            <div className="text-2 text-sm">{project.client_name || 'No client'}</div>
             {duplicatedFromTitle && (
               <div className="duplicated-from">
                 <Copy size={10} /> Duplicated from{' '}
@@ -222,15 +368,20 @@ export default function ProjectDetail() {
           </div>
         </div>
         <div className="flex-center gap-2" style={{ flexWrap: 'wrap' }}>
-          <StatusBadge status={project.status} />
-          <button className="btn btn-ghost btn-sm" onClick={() => setEditModal(true)}><Edit2 size={14} /> Edit</button>
-          <button className="btn btn-ghost btn-sm" onClick={() => setDuplicateModal(true)}><Copy size={14} /> Duplicate</button>
-          <button className="btn btn-danger btn-sm" onClick={() => setDeleteModal(true)}><Trash2 size={14} /> Delete</button>
-          <button className="btn btn-ghost btn-sm" onClick={handlePdf} disabled={pdfLoading}>
-            <FileDown size={14} /> {pdfLoading ? 'Exporting...' : 'Export PDF'}
-          </button>
+          <ProjectStatusDot status={project.status} />
+          <button className="btn btn-primary btn-sm" onClick={() => setEditModal(true)}><Edit2 size={14} /> Edit</button>
+          <HeaderMenu
+            onDuplicate={() => setDuplicateModal(true)}
+            onPdf={handlePdf}
+            onDelete={() => setDeleteModal(true)}
+            pdfLoading={pdfLoading}
+          />
         </div>
       </div>
+
+      <ProjectStatStrip pnl={pnl} />
+
+      {pageError && <div className="error-msg" style={{ marginBottom: '12px' }}>{pageError}</div>}
 
       <div className="two-col">
         {/* LEFT */}
@@ -274,7 +425,7 @@ export default function ProjectDetail() {
                     <ArrowRight size={10} style={{ color: 'var(--color-mid-gray)' }} />
                     <span>{h.to_status.replace(/-/g, ' ')}</span>
                     <span className="text-xs text-2" style={{ marginLeft: 'auto' }}>
-                      {fmtDate(h.changed_at)}
+                      {fmtDate(pristinaDateOf(h.changed_at))}
                       {' '}
                       {new Date(h.changed_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
                     </span>
@@ -301,7 +452,7 @@ export default function ProjectDetail() {
                       <span className="text-2 text-sm" style={{ marginLeft: '10px' }}>{fmtDate(r.date)}</span>
                       {r.notes && <div className="text-2 text-xs mt-1">{r.notes}</div>}
                     </div>
-                    <button className="btn btn-danger btn-sm" onClick={async () => { await api.del(`/projects/${id}/revisions/${r.id}`); load(); }}><Trash2 size={13} /></button>
+                    <RowDelete title="Delete revision" onClick={async () => { await api.del(`/projects/${id}/revisions/${r.id}`); load(); }} />
                   </div>
                 ))
               )}
@@ -331,13 +482,13 @@ export default function ProjectDetail() {
                 <div key={log.id} className="list-item" style={{ alignItems: 'flex-start' }}>
                   <div style={{ flex: 1 }}>
                     <div className="text-xs text-2" style={{ marginBottom: '2px' }}>
-                      {fmtDate(log.created_at)}
+                      {fmtDate(pristinaDateOf(log.created_at))}
                       {' · '}
                       {new Date(log.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
                     </div>
                     <div className="text-sm">{log.note}</div>
                   </div>
-                  <button className="btn btn-danger btn-sm" style={{ marginTop: '2px' }} onClick={() => deleteLog(log.id)}><Trash2 size={12} /></button>
+                  <RowDelete title="Delete note" onClick={() => deleteLog(log.id)} />
                 </div>
               ))
             )}
@@ -346,28 +497,29 @@ export default function ProjectDetail() {
 
         {/* RIGHT */}
         <div>
-          <div className="card card-pad" style={{ marginBottom: '16px' }}>
-            <div className="section-title" style={{ marginBottom: '12px' }}>Agreed Budget</div>
-            <div style={{ fontSize: '28px', fontWeight: 800 }}>{<Private>{fmt(project.agreed_budget)}</Private>}</div>
-            {PRODUCTION_GROUPS.includes(project.category_group) ? (
-              project.shoot_date && (
-                <div className="text-2 text-sm mt-1">
-                  {'Shoot: '}
-                  {fmtDate(project.shoot_date)}
-                  {project.shoot_start_time ? `, ${project.shoot_start_time.slice(0, 5)}${project.shoot_end_time ? `–${project.shoot_end_time.slice(0, 5)}` : ''}` : ''}
-                  {` · ${project.shoot_days}d`}
-                  {project.shoot_location ? ` · ${project.shoot_location}` : ''}
+          {/* The dates the user acts on. The agreed budget now opens the page in
+              the stat strip, so it is not repeated here. */}
+          {((PRODUCTION_GROUPS.includes(project.category_group) && project.shoot_date) || project.deadline) && (
+            <div className="card card-pad pd-schedule" style={{ marginBottom: '16px' }}>
+              {PRODUCTION_GROUPS.includes(project.category_group) && project.shoot_date && (
+                <div className="pd-schedule-row" title="Shoot">
+                  <Camera size={14} style={{ color: 'var(--cat-2)' }} />
+                  <span>
+                    {fmtDate(project.shoot_date)}
+                    {project.shoot_start_time ? `, ${project.shoot_start_time.slice(0, 5)}${project.shoot_end_time ? ` to ${project.shoot_end_time.slice(0, 5)}` : ''}` : ''}
+                    {` · ${project.shoot_days}d`}
+                    {project.shoot_location ? ` · ${project.shoot_location}` : ''}
+                  </span>
                 </div>
-              )
-            ) : (
-              project.deadline && (
-                <div className="text-2 text-sm mt-1">{'Deadline: '}{fmtDate(project.deadline)}</div>
-              )
-            )}
-            {PRODUCTION_GROUPS.includes(project.category_group) && project.deadline && (
-              <div className="text-2 text-sm mt-1">{'Deadline: '}{fmtDate(project.deadline)}</div>
-            )}
-          </div>
+              )}
+              {project.deadline && (
+                <div className="pd-schedule-row" title="Deadline">
+                  <Flag size={14} style={{ color: 'var(--cat-1)' }} />
+                  <span>{fmtDate(project.deadline)}</span>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="card card-pad" style={{ marginBottom: '16px' }}>
             <div className="section-header">
@@ -382,9 +534,13 @@ export default function ProjectDetail() {
                   {p.notes && <div className="text-xs text-2">{p.notes}</div>}
                 </div>
                 <div className="flex-center gap-2">
-                  <span className={`badge ${p.status === 'received' ? 'badge-paid' : 'badge-unpaid'}`}>{p.status}</span>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setPaymentModal(p)}><Edit2 size={12} /></button>
-                  <button className="btn btn-danger btn-sm" onClick={async () => { await api.del(`/projects/${id}/payments/${p.id}`); load(); }}><Trash2 size={12} /></button>
+                  <MoneyDot state={p.status} />
+                  <button className="btn btn-ghost btn-sm row-icon-btn" onClick={() => setPaymentModal(p)} title="Edit payment" aria-label="Edit payment"><Edit2 size={12} /></button>
+                  <RowDelete title="Delete payment" onClick={() => askRowDelete({
+                    title: `Delete this ${fmt(p.amount)} payment?`,
+                    message: p.status === 'received' ? 'It is removed from the books for the month it was received.' : 'This cannot be undone.',
+                    run: () => api.del(`/projects/${id}/payments/${p.id}`),
+                  })} />
                 </div>
               </div>
             ))}
@@ -406,9 +562,13 @@ export default function ProjectDetail() {
                   <div className="text-xs text-2">{c.days}d × {<Private>{fmt(c.rate_per_day)}</Private>} = {<Private>{fmt(c.days * c.rate_per_day)}</Private>}</div>
                 </div>
                 <div className="flex-center gap-2">
-                  <span className={`badge ${c.paid_status === 'paid' ? 'badge-paid' : c.paid_status === 'partial' ? 'badge-partial' : 'badge-unpaid'}`}>{c.paid_status}</span>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setCrewModal(c)}><Edit2 size={12} /></button>
-                  <button className="btn btn-danger btn-sm" onClick={async () => { await api.del(`/projects/${id}/crew/${c.id}`); load(); }}><Trash2 size={12} /></button>
+                  <MoneyDot state={c.paid_status} />
+                  <button className="btn btn-ghost btn-sm row-icon-btn" onClick={() => setCrewModal(c)} title="Edit crew" aria-label="Edit crew"><Edit2 size={12} /></button>
+                  <RowDelete title="Remove crew" onClick={() => askRowDelete({
+                    title: `Remove ${c.crew_name} from this project?`,
+                    message: c.paid_status !== 'unpaid' ? 'Any crew payment recorded on it is removed from the books too.' : 'This cannot be undone.',
+                    run: () => api.del(`/projects/${id}/crew/${c.id}`),
+                  })} />
                 </div>
               </div>
             ))}
@@ -426,7 +586,7 @@ export default function ProjectDetail() {
             {/* Expense Link subsection */}
             <div style={{ marginBottom: '14px', paddingBottom: '14px', borderBottom: '1px solid var(--border)' }}>
               {project.status === 'completed' ? (
-                <div className="text-xs text-2">Project completed — expense link disabled</div>
+                <div className="text-xs text-2">Project completed. Expense link disabled.</div>
               ) : expenseLink === null ? (
                 <div className="text-xs text-2">Loading...</div>
               ) : !expenseLink.exists ? (
@@ -436,7 +596,7 @@ export default function ProjectDetail() {
                 </div>
               ) : !expenseLink.is_active ? (
                 <div className="flex-center gap-2">
-                  <span className="badge" style={{ background: 'var(--surface-input-fill)', color: 'var(--color-mid-gray)', fontSize: '11px' }}>Link revoked</span>
+                  <span className="text-2" title="Link revoked" aria-label="Link revoked" style={{ display: 'inline-flex' }}><Link2Off size={13} /></span>
                   <button className="btn btn-ghost btn-sm" onClick={generateLink} disabled={linkLoading}><Link2 size={12} /> Generate New Link</button>
                 </div>
               ) : (
@@ -451,17 +611,9 @@ export default function ProjectDetail() {
                     <a href={expenseLink.url} target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-sm">
                       <ExternalLink size={11} /> Open
                     </a>
-                    {!revokeConfirm ? (
-                      <button className="btn btn-danger btn-sm" onClick={() => setRevokeConfirm(true)} disabled={linkLoading}>
-                        <Link2Off size={11} /> Revoke
-                      </button>
-                    ) : (
-                      <div className="flex-center gap-1">
-                        <span className="text-xs text-2">Confirm?</span>
-                        <button className="btn btn-danger btn-sm" onClick={revokeLink}>Yes</button>
-                        <button className="btn btn-ghost btn-sm" onClick={() => setRevokeConfirm(false)}>No</button>
-                      </div>
-                    )}
+                    <button className="btn btn-ghost btn-sm" onClick={() => setRevokeConfirm(true)} disabled={linkLoading} title="Revoke link">
+                      <Link2Off size={11} style={{ color: 'var(--color-ember)' }} /> Revoke
+                    </button>
                   </div>
                   <div className="text-xs text-2" style={{ marginTop: '6px' }}>Share with your production manager to allow expense submissions</div>
                 </div>
@@ -489,10 +641,11 @@ export default function ProjectDetail() {
                         onClick={async () => { await api.post(`/projects/${id}/expenses/${pe.id}/approve`, {}); load(); }}>
                         Approve
                       </button>
-                      <button className="btn btn-danger btn-sm" style={{ fontSize: '11px' }}
-                        onClick={async () => { await api.del(`/projects/${id}/expenses/${pe.id}`); load(); }}>
-                        Reject
-                      </button>
+                      <RowDelete title="Reject" onClick={() => askRowDelete({
+                        title: `Reject this ${fmt(pe.amount)} expense?`,
+                        message: 'The submission and its attachment are deleted.',
+                        run: () => api.del(`/projects/${id}/expenses/${pe.id}`),
+                      })} />
                     </div>
                   </div>
                 ))}
@@ -547,8 +700,12 @@ export default function ProjectDetail() {
                 </div>
                 <div className="flex-center gap-2" style={{ flexShrink: 0, marginTop: '2px' }}>
                   <span className="text-bold text-sm">{<Private>{fmt(e.amount)}</Private>}</span>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setExpenseModal(e)}><Edit2 size={12} /></button>
-                  <button className="btn btn-danger btn-sm" onClick={async () => { await api.del(`/projects/${id}/expenses/${e.id}`); load(); }}><Trash2 size={12} /></button>
+                  <button className="btn btn-ghost btn-sm row-icon-btn" onClick={() => setExpenseModal(e)} title="Edit expense" aria-label="Edit expense"><Edit2 size={12} /></button>
+                  <RowDelete title="Delete expense" onClick={() => askRowDelete({
+                    title: `Delete this ${fmt(e.amount)} expense?`,
+                    message: 'It is removed from the books for the month it was dated.',
+                    run: () => api.del(`/projects/${id}/expenses/${e.id}`),
+                  })} />
                 </div>
               </div>
             ))}
@@ -619,7 +776,7 @@ export default function ProjectDetail() {
               <div className="fin-row">
                 <span>Profit Margin</span>
                 <span className={pnl.profitMargin !== null && pnl.profitMargin < 0 ? 'text-danger text-bold' : 'text-bold'}>
-                  {pnl.profitMargin === null ? '—' : `${pnl.profitMargin}%`}
+                  {pnl.profitMargin === null ? '-' : `${pnl.profitMargin}%`}
                 </span>
               </div>
             </div>
@@ -669,6 +826,28 @@ export default function ProjectDetail() {
       {lightboxSrc && (
         <ImageLightbox src={lightboxSrc.src} filename={lightboxSrc.filename} onClose={() => setLightboxSrc(null)} />
       )}
+      {revokeConfirm && (
+        <ConfirmDialog
+          title="Revoke the expense link?"
+          message="Anyone holding it can no longer submit expenses."
+          confirmLabel="Revoke"
+          tone="danger"
+          busy={linkLoading}
+          onConfirm={revokeLink}
+          onCancel={() => setRevokeConfirm(false)}
+        />
+      )}
+      {rowConfirm && (
+        <ConfirmDialog
+          title={rowConfirm.title}
+          message={rowConfirm.message}
+          confirmLabel="Delete"
+          tone="danger"
+          busy={rowBusy}
+          onConfirm={runRowDelete}
+          onCancel={() => setRowConfirm(null)}
+        />
+      )}
     </div>
   );
 }
@@ -692,7 +871,7 @@ function PhaseBlock({ phase, expanded, onToggle, onComplete, onReactivate, onAdd
           <span className="text-xs text-2">({phase.tasks.length} tasks)</span>
         </div>
         <div className="flex-center gap-2">
-          <PhaseStatusBadge status={phase.status} />
+          <PhaseStatusDot phase={phase} />
           {phase.status === 'active' && allDone && (
             <button className="btn btn-primary btn-sm" onClick={e => { e.stopPropagation(); onComplete(); }}>
               <Check size={12} /> Complete
@@ -774,7 +953,7 @@ function PhaseBlock({ phase, expanded, onToggle, onComplete, onReactivate, onAdd
               <div className="flex-center gap-1">
                 <button className="btn btn-ghost btn-sm" onClick={() => onEditTask(task)} style={{ padding: '4px 6px' }}><Edit2 size={12} /></button>
                 {!task.is_locked && (
-                  <button className="btn btn-danger btn-sm" onClick={() => onDeleteTask(task)} style={{ padding: '4px 6px' }}><Trash2 size={12} /></button>
+                  <RowDelete onClick={() => onDeleteTask(task)} title="Delete task" />
                 )}
               </div>
             </div>
@@ -790,6 +969,7 @@ function PhaseBlock({ phase, expanded, onToggle, onComplete, onReactivate, onAdd
 function PhaseCompleteModal({ projectId, project, currentPhase, nextPhase, crewList, onClose, onDone }) {
   const [tasks, setTasks] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
 
   useEffect(() => {
     if (project.category_name) {
@@ -810,7 +990,7 @@ function PhaseCompleteModal({ projectId, project, currentPhase, nextPhase, crewL
       }
       await api.put(`/projects/${projectId}/phases/${currentPhase.id}/complete`, {});
       onDone();
-    } catch (e) { alert(e.message); }
+    } catch (e) { setErr(e.message); }
     setSaving(false);
   }
 
@@ -828,6 +1008,7 @@ function PhaseCompleteModal({ projectId, project, currentPhase, nextPhase, crewL
         onRemoveCustom={(idx) => setTasks(prev => prev.filter((_, i) => i !== idx))}
         crewList={crewList}
       />
+      {err && <div className="error-msg">{err}</div>}
       <div className="modal-footer">
         <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
         <button className="btn btn-primary" onClick={confirm} disabled={saving}>
@@ -838,20 +1019,16 @@ function PhaseCompleteModal({ projectId, project, currentPhase, nextPhase, crewL
   );
 }
 
-function PhaseStatusBadge({ status }) {
-  const map = { active: 'badge-active', completed: 'badge-completed', pending: 'badge-pending' };
-  return <span className={`badge ${map[status] || 'badge-pending'}`}>{status}</span>;
-}
-
-function StatusBadge({ status }) {
-  const map = {
-    'development':     'badge-development',
-    'pre-production':  'badge-pre-production',
-    'production':      'badge-production',
-    'post-production': 'badge-post-production',
-    'completed':       'badge-completed',
-  };
-  return <span className={`badge ${map[status] || 'badge-pending'}`}>{status?.replace(/-/g, ' ')}</span>;
+// A phase's state as a dot: the phase's own status hue while active, green
+// once completed, hollow while still to come. The word is in the tooltip.
+function PhaseStatusDot({ phase }) {
+  const label = phase.status === 'active' ? 'Active' : phase.status === 'completed' ? 'Completed' : 'Pending';
+  if (phase.status === 'completed') return <Dot hue="var(--cat-6)" label={label} />;
+  if (phase.status === 'active') {
+    const slug = String(phase.phase_name || '').toLowerCase().replace(/ /g, '-');
+    return <Dot hue={PROJECT_STATUS_HUE[slug] || 'var(--color-ink)'} label={label} />;
+  }
+  return <Dot hollow label={label} />;
 }
 
 /* ---- Task Modal ---- */
@@ -908,7 +1085,7 @@ function TaskModal({ modal, projectId, phases, crewList, onClose, onSaved }) {
         </div>
         <div className="form-row">
           <label className="form-label">Due Date</label>
-          <input type="date" className="input" value={form.due_date} onChange={e => f('due_date', e.target.value)} />
+          <DateField value={form.due_date} onChange={v => f('due_date', v)} />
         </div>
       </div>
       {isEdit && (
@@ -935,7 +1112,7 @@ function PaymentModal({ payment, projectId, onClose, onSaved }) {
   const isEdit = !!payment?.id;
   const [form, setForm] = useState({
     amount: payment?.amount || '',
-    date: payment?.date || new Date().toISOString().slice(0, 10),
+    date: payment?.date || pristinaToday(),
     method: payment?.method || 'bank_transfer',
     notes: payment?.notes || '',
     status: payment?.status || 'pending',
@@ -947,7 +1124,7 @@ function PaymentModal({ payment, projectId, onClose, onSaved }) {
     setForm(p => {
       const next = { ...p, [k]: v };
       if (k === 'status' && v === 'received') {
-        next.date = new Date().toISOString().split('T')[0];
+        next.date = pristinaToday();
       }
       return next;
     });
@@ -976,7 +1153,7 @@ function PaymentModal({ payment, projectId, onClose, onSaved }) {
         </div>
         <div className="form-row">
           <label className="form-label">Date *</label>
-          <input type="date" className="input" value={form.date} onChange={e => f('date', e.target.value)} />
+          <DateField value={form.date} onChange={v => f('date', v)} />
         </div>
       </div>
       <div className="form-grid">
@@ -1026,7 +1203,7 @@ function CrewAssignModal({ assign, projectId, crewList, onClose, onSaved, onAddC
     setForm(p => {
       const next = { ...p, [k]: v };
       if (k === 'paid_status' && v === 'paid') {
-        next.payment_date = new Date().toISOString().split('T')[0];
+        next.payment_date = pristinaToday();
       }
       return next;
     });
@@ -1059,7 +1236,7 @@ function CrewAssignModal({ assign, projectId, crewList, onClose, onSaved, onAddC
             if (crew) { f('rate_per_day', crew.day_rate); f('role_on_project', crew.role || crew.service_type || ''); }
           }}>
             <option value="">Select crew</option>
-            {crewList.map(c => <option key={c.id} value={c.id}>{c.name}{c.is_company ? ' 🏢' : ''} — {c.service_type || c.role || 'No role'}</option>)}
+            {crewList.map(c => <option key={c.id} value={c.id}>{c.name}{c.is_company ? ' 🏢' : ''}, {c.service_type || c.role || 'No role'}</option>)}
           </select>
           {onAddCrew && <button type="button" className="btn btn-ghost btn-sm" style={{ marginTop: '6px', fontSize: '11px' }} onClick={onAddCrew}><Plus size={11} /> Add New Crew</button>}
         </div>
@@ -1092,7 +1269,7 @@ function CrewAssignModal({ assign, projectId, crewList, onClose, onSaved, onAddC
           <div className="form-grid">
             <div className="form-row">
               <label className="form-label">Payment Date</label>
-              <input type="date" className="input" value={form.payment_date} onChange={e => f('payment_date', e.target.value)} />
+              <DateField value={form.payment_date} onChange={v => f('payment_date', v)} />
             </div>
             <div className="form-row">
               <label className="form-label">Amount Paid (€)</label>
@@ -1123,7 +1300,7 @@ function ExpenseModal({ expense, projectId, expCats, invoiceBlobUrls, onClose, o
   const [form, setForm] = useState({
     category_id: expense?.category_id || '',
     amount: expense?.amount || '',
-    date: expense?.date || new Date().toISOString().slice(0, 10),
+    date: expense?.date || pristinaToday(),
     notes: expense?.notes || '',
   });
   const [file, setFile] = useState(null);
@@ -1184,7 +1361,7 @@ function ExpenseModal({ expense, projectId, expCats, invoiceBlobUrls, onClose, o
         </div>
         <div className="form-row">
           <label className="form-label">Date *</label>
-          <input type="date" className="input" value={form.date} onChange={e => f('date', e.target.value)} />
+          <DateField value={form.date} onChange={v => f('date', v)} />
         </div>
       </div>
       <div className="form-row">
@@ -1250,14 +1427,16 @@ function ImageLightbox({ src, filename, onClose }) {
 
 /* ---- Revision Modal ---- */
 function RevisionModal({ projectId, onClose, onSaved }) {
-  const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 10), notes: '' });
+  const [form, setForm] = useState({ date: pristinaToday(), notes: '' });
   const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
   function f(k, v) { setForm(p => ({ ...p, [k]: v })); }
 
   async function save() {
     setSaving(true);
+    setErr('');
     try { await api.post(`/projects/${projectId}/revisions`, form); onSaved(); onClose(); }
-    catch (e) { alert(e.message); }
+    catch (e) { setErr(e.message); }
     setSaving(false);
   }
 
@@ -1268,12 +1447,13 @@ function RevisionModal({ projectId, onClose, onSaved }) {
     </>}>
       <div className="form-row">
         <label className="form-label">Date</label>
-        <input type="date" className="input" value={form.date} onChange={e => f('date', e.target.value)} />
+        <DateField value={form.date} onChange={v => f('date', v)} />
       </div>
       <div className="form-row">
         <label className="form-label">Notes</label>
         <textarea className="input" value={form.notes} onChange={e => f('notes', e.target.value)} placeholder="Revision notes..." />
       </div>
+      {err && <div className="error-msg">{err}</div>}
     </Overlay>
   );
 }
@@ -1300,6 +1480,7 @@ function EditProjectModal({ project, projectId, onClose, onSaved }) {
     notes: project.notes || '',
   });
   const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
   const [showNewClient, setShowNewClient] = useState(false);
 
   useEffect(() => {
@@ -1336,7 +1517,7 @@ function EditProjectModal({ project, projectId, onClose, onSaved }) {
         location_lng: isProduction ? (form.location_lng || null) : null,
       });
       onSaved(); onClose();
-    } catch (e) { alert(e.message); }
+    } catch (e) { setErr(e.message); }
     setSaving(false);
   }
 
@@ -1399,14 +1580,14 @@ function EditProjectModal({ project, projectId, onClose, onSaved }) {
         </div>
         <div className="form-row">
           <label className="form-label">Deadline</label>
-          <input type="date" className="input" value={form.deadline} onChange={e => f('deadline', e.target.value)} />
+          <DateField value={form.deadline} onChange={v => f('deadline', v)} />
         </div>
         {isProduction && (
           <>
             <div className="form-grid">
               <div className="form-row">
                 <label className="form-label">Shoot Date</label>
-                <input type="date" className="input" value={form.shoot_date} onChange={e => f('shoot_date', e.target.value)} />
+                <DateField value={form.shoot_date} onChange={v => f('shoot_date', v)} />
               </div>
               <div className="form-row">
                 <label className="form-label">Shoot Days</label>
@@ -1438,6 +1619,7 @@ function EditProjectModal({ project, projectId, onClose, onSaved }) {
           <label className="form-label">Notes</label>
           <textarea className="input" value={form.notes} onChange={e => f('notes', e.target.value)} />
         </div>
+        {err && <div className="error-msg">{err}</div>}
       </Overlay>
       {showNewClient && (
         <Overlay title="New Client" onClose={() => setShowNewClient(false)}>

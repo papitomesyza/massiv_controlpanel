@@ -4,9 +4,10 @@ const fs = require('fs');
 const path = require('path');
 const { db } = require('../db/database');
 const { syncPayment, removePayment } = require('../lib/flowSync');
+const { syncTaskCalendarEvent, syncProjectCalendarEvents } = require('../lib/calendarSync');
+const { owedByProject } = require('../lib/financeFigures');
 
 const PHASES = ['Development', 'Pre-Production', 'Production', 'Post-Production'];
-const PRODUCTION_GROUPS = ['Video Production', 'Photography'];
 
 function validateMoney(val, name) {
   const n = Number(val);
@@ -96,6 +97,10 @@ function getProjectFull(id) {
   const realizedProfit = totalReceived - totalCrewCost - totalExpenses;
   // Margin = realized / received (only when received > 0)
   const profitMargin = totalReceived > 0 ? (realizedProfit / totalReceived) * 100 : null;
+  // What this project still owes, from the shared owed calculation, so the
+  // project page agrees with the Dashboard, the receivables and Invoices.
+  const owedRow = owedByProject().find(r => r.project_id === project.id);
+  const owed = owedRow ? owedRow.owed : 0;
 
   return {
     project, phases: phasesWithTasks, revisionRounds,
@@ -104,7 +109,7 @@ function getProjectFull(id) {
       agreedBudget: project.agreed_budget,
       clientBudget: project.client_budget || 0,
       totalReceived, totalCrewCost,
-      totalExpenses, expectedProfit, realizedProfit,
+      totalExpenses, expectedProfit, realizedProfit, owed,
       profitMargin: profitMargin !== null ? Math.round(profitMargin * 10) / 10 : null,
     },
   };
@@ -163,43 +168,6 @@ router.get('/', (req, res) => {
 
   res.json(projects);
 });
-
-function syncTaskCalendarEvent(taskId) {
-  db.prepare("DELETE FROM calendar_events WHERE event_type='task' AND task_id = ?").run(taskId);
-  const task = db.prepare(
-    'SELECT t.due_date, t.status, t.title, t.project_id, p.title AS project_title FROM tasks t LEFT JOIN projects p ON p.id = t.project_id WHERE t.id = ?'
-  ).get(taskId);
-  if (!task || !task.due_date || task.status === 'done') return;
-  const title = task.project_title ? `${task.project_title} — ${task.title}` : task.title;
-  // Colour is derived from event_type at render time, never stored. NULL is set
-  // explicitly so existing databases do not fall back to the old column default.
-  db.prepare(
-    "INSERT INTO calendar_events (project_id, task_id, title, event_type, start_date, color) VALUES (?, ?, ?, 'task', ?, NULL)"
-  ).run(task.project_id, taskId, title, task.due_date);
-}
-
-function syncProjectCalendarEvents(projectId, title, deadline, shootDate, shootLocation, shootStartTime, shootEndTime) {
-  db.prepare("DELETE FROM calendar_events WHERE project_id = ? AND event_type IN ('shoot', 'deadline')").run(projectId);
-
-  const catRow = db.prepare(
-    'SELECT pc.group_name FROM projects p LEFT JOIN project_categories pc ON pc.id = p.category_id WHERE p.id = ?'
-  ).get(projectId);
-  const groupName = catRow?.group_name || null;
-
-  // Colour is derived from event_type at render time, never stored. NULL is set
-  // explicitly so existing databases do not fall back to the old column default.
-  if (deadline) {
-    db.prepare(
-      "INSERT INTO calendar_events (project_id, title, event_type, start_date, color) VALUES (?, ?, 'deadline', ?, NULL)"
-    ).run(projectId, title, deadline);
-  }
-
-  if (shootDate && PRODUCTION_GROUPS.includes(groupName)) {
-    db.prepare(
-      "INSERT INTO calendar_events (project_id, title, event_type, start_date, location, start_time, end_time, color) VALUES (?, ?, 'shoot', ?, ?, ?, ?, NULL)"
-    ).run(projectId, title, shootDate, shootLocation || null, shootStartTime || null, shootEndTime || null);
-  }
-}
 
 // Create project
 router.post('/', (req, res) => {
