@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { db } = require('../db/database');
-const { crewAssignmentFigures, crewOwedSummary, validateMoney, round2 } = require('../lib/financeFigures');
+const { crewAssignmentFigures, crewOwedSummary, crewOwedByMember, validateMoney, round2 } = require('../lib/financeFigures');
 const { pristinaToday } = require('../lib/pristinaDate');
 
 const cleanName = v => (typeof v === 'string' ? v.trim() : '');
@@ -37,18 +37,11 @@ router.get('/', (req, res) => {
   };
   query += ' ' + (orderMap[sort] || 'ORDER BY name COLLATE NOCASE ASC');
 
-  // Owed to each member: unpaid project assignments from the shared crew owed
-  // helper, plus the unpaid ledger.
-  const assignOwed = {};
-  crewAssignmentFigures().forEach(r => {
-    assignOwed[r.crew_id] = round2((assignOwed[r.crew_id] || 0) + r.remaining);
-  });
-  const ledger = ledgerUnpaidMap();
-  let crew = db.prepare(query).all(...params).map(c => {
-    const owed_assignments = assignOwed[c.id] || 0;
-    const owed_ledger = ledger[c.id] || 0;
-    return { ...c, owed_assignments, owed_ledger, owed_total: round2(owed_assignments + owed_ledger) };
-  });
+  // Owed to each member: unpaid project assignments plus the unpaid ledger,
+  // from the same shared helper CrewDetail reads.
+  const owed = crewOwedByMember();
+  const none = { owed_assignments: 0, owed_ledger: 0, owed_total: 0 };
+  let crew = db.prepare(query).all(...params).map(c => ({ ...c, ...(owed[c.id] || none) }));
 
   if (sort === 'owed') crew = crew.sort((a, b) => b.owed_total - a.owed_total);
 
@@ -148,9 +141,9 @@ router.get('/payment-summary-pdf', (req, res) => {
         a.role_on_project || a.crew_role || '',
         `${a.days}d x ${fmtVal(a.rate_per_day)}`,
         `agreed ${fmtVal(a.agreed)}`,
-        `paid ${fmtVal(a.paid)}`,
+        a.unrecorded ? 'paid, no amount recorded' : `paid ${fmtVal(a.paid)}`,
         `remaining ${fmtVal(a.remaining)}`,
-        a.paid_status || '',
+        a.unrecorded ? '' : (a.paid_status || ''),
         a.payment_date || '',
         a.payment_method || '',
       ].filter(Boolean);
@@ -178,10 +171,13 @@ router.get('/:id', (req, res) => {
   // Agreed, paid and remaining per assignment from the shared crew owed helper.
   const summary = crewOwedSummary({}, { crewId: member.id });
   const assignments = [...summary.rows].reverse();
+  // owed is the same record the Crew card reads, so the two always agree.
+  const owed = crewOwedByMember()[member.id] || { owed_assignments: 0, owed_ledger: 0, owed_total: 0 };
   res.json({
     member,
     assignments,
-    totals: { agreed: summary.agreed, paid: summary.paid, remaining: summary.remaining },
+    totals: { agreed: summary.agreed, paid: summary.paid, remaining: summary.remaining, settled: summary.settled },
+    owed,
   });
 });
 

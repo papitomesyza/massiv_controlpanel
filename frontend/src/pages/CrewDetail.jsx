@@ -42,8 +42,14 @@ export default function CrewDetail() {
     setLoading(false);
   }
 
+  // Reloads the ledger and the member record together, so the headline owed
+  // total (assignments plus unpaid ledger) stays the server figure the Crew
+  // card shows.
   async function loadDebts() {
-    try { setDebts(await api.get(`/crew/${id}/debts`)); }
+    try {
+      const [d, dbs] = await Promise.all([api.get(`/crew/${id}`), api.get(`/crew/${id}/debts`)]);
+      setData(d); setDebts(dbs);
+    }
     catch (e) { setNotice({ title: 'Could not load the ledger', message: e.message }); }
   }
 
@@ -80,7 +86,7 @@ export default function CrewDetail() {
   if (loading) return <div className="loading">Loading...</div>;
   if (!data) return null;
 
-  const { member, assignments, totals } = data;
+  const { member, assignments, totals, owed } = data;
   const ledgerUnpaid = debts.filter(d => d.status === 'unpaid').reduce((s, d) => s + (Number(d.amount) || 0), 0);
   const isCompany = !!member.is_company;
   const sub = isCompany ? member.service_type : member.role;
@@ -115,7 +121,9 @@ export default function CrewDetail() {
       <div className="db-split" style={{ marginBottom: '16px' }}>
         <div className="card db-panel">
           <div className="db-summary">
-            <Ring value={totals.paid} max={totals.agreed} size={120} stroke={10} title={tip('Paid', totals.paid)} />
+            {/* The ring is settled against agreed: a row marked paid with no amount
+                recorded still counts as settled, so the ring closes. */}
+            <Ring value={totals.settled} max={totals.agreed} size={120} stroke={10} title={tip('Settled', totals.settled)} />
             <div className="db-figures">
               <div className="db-figure lead" title="Agreed">
                 <span className="db-money"><Private>{fmt(totals.agreed)}</Private></span>
@@ -127,6 +135,16 @@ export default function CrewDetail() {
               <div className="db-figure" title="Remaining">
                 <span className="db-dot" />
                 <span className={totals.remaining > 0 ? 'db-owed' : 'db-money'}><Private>{fmt(totals.remaining)}</Private></span>
+              </div>
+              {owed.owed_ledger > 0 && (
+                <div className="db-figure" title="Ledger">
+                  <NotebookPen size={14} style={{ color: 'var(--color-mid-gray)' }} />
+                  <span className="db-money"><Private>{fmt(owed.owed_ledger)}</Private></span>
+                </div>
+              )}
+              {/* One owed total, the same figure the Crew card shows. */}
+              <div className="db-figure db-figure-total" title="Owed">
+                <span className={owed.owed_total > 0 ? 'db-owed' : 'db-money'}><Private>{fmt(owed.owed_total)}</Private></span>
               </div>
             </div>
           </div>
@@ -163,7 +181,8 @@ export default function CrewDetail() {
                   <Link to={`/projects/${a.project_id}`}>{a.project_title}</Link>
                 </span>
                 <span className="db-chip">{a.days} x <Private>{fmt(a.rate_per_day)}</Private></span>
-                <Ring value={a.paid} max={a.agreed} size={22} title={tip('Paid', a.paid)} />
+                {a.unrecorded && <span className="db-dot muted" title="No amount recorded" aria-label="No amount recorded" />}
+                <Ring value={a.settled} max={a.agreed} size={22} title={a.unrecorded ? 'No amount recorded' : tip('Paid', a.paid)} />
                 <span style={{ minWidth: '84px', textAlign: 'right' }}>
                   {a.remaining > 0 && <span className="db-owed"><Private>{fmt(a.remaining)}</Private></span>}
                 </span>

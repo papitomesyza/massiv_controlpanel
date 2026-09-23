@@ -9,7 +9,7 @@ import { Private } from '../context/PrivacyContext';
 import Overlay from '../components/Overlay';
 import ConfirmDialog from '../components/ConfirmDialog';
 import DateField from '../components/DateField';
-import { waUrl, IconToggles, IconLink, useMoneyTip } from '../components/DbBits';
+import { waUrl, IconToggles, IconLink, useMoneyTip, useDebounced } from '../components/DbBits';
 import { pristinaToday } from '../lib/pristinaDate';
 
 const TYPES = [
@@ -37,6 +37,8 @@ export default function Crew() {
   const [showModal, setShowModal] = useState(false);
   const [showRoles, setShowRoles] = useState(false);
   const [search, setSearch] = useState('');
+  // The search term reloads 250 ms after typing stops.
+  const query = useDebounced(search, 250);
   const [sort, setSort] = useState('name');
   const [typeFilter, setTypeFilter] = useState('');
   const [pdfLoading, setPdfLoading] = useState(false);
@@ -47,7 +49,7 @@ export default function Crew() {
 
   async function load() {
     const params = new URLSearchParams();
-    if (search) params.set('search', search);
+    if (query) params.set('search', query);
     if (sort !== 'name') params.set('sort', sort);
     if (typeFilter) params.set('type', typeFilter);
     try {
@@ -57,7 +59,7 @@ export default function Crew() {
     setLoading(false);
   }
 
-  useEffect(() => { load(); }, [search, sort, typeFilter]);
+  useEffect(() => { load(); }, [query, sort, typeFilter]);
 
   async function restore(member) {
     try { await api.put(`/crew/${member.id}/archive`, {}); load(); }

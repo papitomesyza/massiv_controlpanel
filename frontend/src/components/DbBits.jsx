@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { fmt } from '../api';
 import { usePrivacy } from '../context/PrivacyContext';
 
@@ -29,6 +29,17 @@ export function socialUrl(socials) {
   if (/^https?:\/\//i.test(s)) return s;
   if (/^[\w.-]+\.[a-z]{2,}(\/\S*)?$/i.test(s)) return `https://${s}`;
   return null;
+}
+
+// A value that settles only after it has stopped changing for ms, so a search
+// box reloads once the typing pauses instead of on every keystroke.
+export function useDebounced(value, ms = 250) {
+  const [settled, setSettled] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setSettled(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return settled;
 }
 
 // Money inside a tooltip follows privacy mode like every Private figure: while

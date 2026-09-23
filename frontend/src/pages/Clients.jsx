@@ -7,7 +7,7 @@ import { api, fmt } from '../api';
 import { Private } from '../context/PrivacyContext';
 import Overlay from '../components/Overlay';
 import Ring from '../components/Ring';
-import { waUrl, mailUrl, IconToggles, IconLink, useMoneyTip } from '../components/DbBits';
+import { waUrl, mailUrl, IconToggles, IconLink, useMoneyTip, useDebounced } from '../components/DbBits';
 
 const SORTS = [
   { key: 'newest',      Icon: Clock,            title: 'Newest' },
@@ -28,11 +28,13 @@ export default function Clients() {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
   const [search, setSearch] = useState('');
+  // The search term reloads 250 ms after typing stops.
+  const query = useDebounced(search, 250);
   const [sort, setSort] = useState('newest');
 
   async function load() {
     const params = new URLSearchParams();
-    if (search) params.set('search', search);
+    if (query) params.set('search', query);
     if (sort !== 'newest') params.set('sort', sort);
     try {
       setClients(await api.get(`/clients?${params}`));
@@ -41,7 +43,7 @@ export default function Clients() {
     setLoading(false);
   }
 
-  useEffect(() => { load(); }, [search, sort]);
+  useEffect(() => { load(); }, [query, sort]);
 
   function f(k, v) { setForm(p => ({ ...p, [k]: v })); }
 

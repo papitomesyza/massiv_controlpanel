@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { db } = require('../db/database');
-const { owedSummary, round2 } = require('../lib/financeFigures');
+const { owedSummary, owedByClient, round2 } = require('../lib/financeFigures');
 
 const cleanName = v => (typeof v === 'string' ? v.trim() : '');
 
@@ -38,9 +38,12 @@ router.get('/', (req, res) => {
   };
   query += ' ' + (orderMap[sort] || 'ORDER BY c.created_at DESC, c.id DESC');
 
+  // One owed pass for every client, grouped by client_id, instead of one
+  // owedSummary call per client. Same arithmetic, same figures.
+  const owed = owedByClient();
   let rows = db.prepare(query).all(...params).map(c => {
-    const { owed_total, owed_pending, owed_upcoming } = clientOwed(c.id);
-    return { ...c, owed_total, owed_pending, owed_upcoming };
+    const s = owed.get(c.id);
+    return { ...c, owed_total: s ? s.total : 0, owed_pending: s ? s.pending : 0, owed_upcoming: s ? s.upcoming : 0 };
   });
   if (sort === 'outstanding') rows = rows.sort((a, b) => b.owed_total - a.owed_total);
 

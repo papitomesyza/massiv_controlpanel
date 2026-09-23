@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft, Edit2, Trash2, MessageCircle, Mail, Phone, AtSign, User, Building2, FolderOpen,
+  ArrowLeft, Edit2, Trash2, MessageCircle, Mail, Phone, AtSign, User, Building2, FolderOpen, Receipt,
 } from 'lucide-react';
 import { api, fmt } from '../api';
 import Overlay from '../components/Overlay';
@@ -54,7 +54,12 @@ export default function ClientDetail() {
   if (loading) return <div className="loading">Loading...</div>;
   if (!data) return null;
 
-  const { client, projects, owed, stats } = data;
+  const { client, projects, owed, stats, owedRows = [] } = data;
+  // Per project owed, straight from the owedRows the API returns. Invoices with
+  // no project have no row of their own, so they are listed after the projects.
+  const owedByProject = {};
+  owedRows.forEach(r => { if (r.project_id != null) owedByProject[r.project_id] = r; });
+  const invoiceOnly = owedRows.filter(r => r.project_id == null);
   const figures = { received: stats.totalRevenue, pending: owed.pending, upcoming: owed.upcoming };
   const slices = SLICES.map(s => ({ ...s, total: Number(figures[s.key]) || 0 }));
   const donutData = slices.filter(s => s.total > 0);
@@ -117,7 +122,7 @@ export default function ClientDetail() {
       </div>
 
       <div className="card">
-        {projects.length === 0 ? (
+        {projects.length === 0 && invoiceOnly.length === 0 ? (
           <div className="db-empty"><FolderOpen size={26} /></div>
         ) : (
           <div className="db-list">
@@ -134,12 +139,20 @@ export default function ClientDetail() {
                     size={22}
                     title={agreed > 0 ? tip('Received', p.total_received) : undefined}
                   />
-                  <span className={`db-money ${profit < 0 ? 'neg' : ''}`} style={{ minWidth: '90px', textAlign: 'right' }}>
+                  <span className={`db-money db-profit ${profit < 0 ? 'neg' : ''}`}>
                     <Private>{fmt(profit)}</Private>
                   </span>
+                  <OwedCell row={owedByProject[p.id]} tip={tip} />
                 </Link>
               );
             })}
+            {invoiceOnly.map(r => (
+              <Link key={`inv-${r.invoice_id}`} to={r.invoice_id ? `/invoices?id=${r.invoice_id}` : '/invoices'} className="db-row">
+                <Receipt size={14} style={{ color: 'var(--color-mid-gray)', flexShrink: 0 }} />
+                <span className="db-row-title">{r.project_title}</span>
+                <OwedCell row={r} tip={tip} />
+              </Link>
+            ))}
           </div>
         )}
       </div>
@@ -171,6 +184,26 @@ export default function ClientDetail() {
         />
       )}
     </div>
+  );
+}
+
+// What a project row still owes. Ember while any of it is due; muted when it is
+// only upcoming (a future shoot with nothing invoiced yet). A small ember ring
+// marks an overdue part, its amount in the tooltip and hidden in privacy mode.
+function OwedCell({ row, tip }) {
+  const owed = row ? Number(row.owed) || 0 : 0;
+  const upcomingOnly = !!row && !row.due && !(Number(row.invoiced_unpaid) > 0);
+  return (
+    <span className="db-owed-cell">
+      {row && row.overdue > 0 && (
+        <span className="db-dot-ring" title={tip('Overdue', row.overdue)} aria-label="Overdue" />
+      )}
+      {owed > 0 && (
+        <span className={upcomingOnly ? 'db-money db-muted-money' : 'db-owed'} title={upcomingOnly ? 'Upcoming' : 'Owed'}>
+          <Private>{fmt(owed)}</Private>
+        </span>
+      )}
+    </span>
   );
 }
 
