@@ -1,13 +1,21 @@
 const express = require('express');
 const router = express.Router();
 const { db } = require('../db/database');
+const { crewAssignmentFigures, crewOwedSummary, validateMoney, round2 } = require('../lib/financeFigures');
+const { pristinaToday } = require('../lib/pristinaDate');
 
-function validateMoney(val, name) {
-  const n = Number(val);
-  if (!Number.isFinite(n)) return `${name} must be a number`;
-  if (n < 0) return `${name} must be at least 0`;
-  if (n > 1000000) return `${name} must be at most 1,000,000`;
-  return null;
+const cleanName = v => (typeof v === 'string' ? v.trim() : '');
+
+// Unpaid crew ledger totals per crew member. The ledger is money owed outside
+// project assignments and stays out of the P&L and the Dashboard.
+function ledgerUnpaidMap() {
+  const map = {};
+  db.prepare(`
+    SELECT crew_id, SUM(amount) as total_unpaid
+    FROM crew_debts WHERE status = 'unpaid'
+    GROUP BY crew_id
+  `).all().forEach(r => { map[r.crew_id] = round2(r.total_unpaid); });
+  return map;
 }
 
 router.get('/', (req, res) => {
@@ -25,11 +33,24 @@ router.get('/', (req, res) => {
   const orderMap = {
     'rate_high': 'ORDER BY day_rate DESC',
     'rate_low': 'ORDER BY day_rate ASC',
-    'name': 'ORDER BY name ASC',
+    'name': 'ORDER BY name COLLATE NOCASE ASC',
   };
-  query += ' ' + (orderMap[sort] || 'ORDER BY name ASC');
+  query += ' ' + (orderMap[sort] || 'ORDER BY name COLLATE NOCASE ASC');
 
-  let crew = db.prepare(query).all(...params);
+  // Owed to each member: unpaid project assignments from the shared crew owed
+  // helper, plus the unpaid ledger.
+  const assignOwed = {};
+  crewAssignmentFigures().forEach(r => {
+    assignOwed[r.crew_id] = round2((assignOwed[r.crew_id] || 0) + r.remaining);
+  });
+  const ledger = ledgerUnpaidMap();
+  let crew = db.prepare(query).all(...params).map(c => {
+    const owed_assignments = assignOwed[c.id] || 0;
+    const owed_ledger = ledger[c.id] || 0;
+    return { ...c, owed_assignments, owed_ledger, owed_total: round2(owed_assignments + owed_ledger) };
+  });
+
+  if (sort === 'owed') crew = crew.sort((a, b) => b.owed_total - a.owed_total);
 
   if (sort === 'earned_high') {
     const earned = db.prepare(`
@@ -45,8 +66,11 @@ router.get('/', (req, res) => {
 });
 
 router.post('/', (req, res) => {
-  const { name, role, phone, email, location, day_rate, notes, is_company, service_type } = req.body;
+  const { role, phone, email, location, day_rate, notes, is_company, service_type } = req.body;
+  const name = cleanName(req.body.name);
   if (!name) return res.status(400).json({ error: 'Name is required' });
+  const rateErr = validateMoney(day_rate || 0, 'day_rate');
+  if (rateErr) return res.status(400).json({ error: rateErr });
   const result = db.prepare(
     'INSERT INTO crew (name, role, phone, email, location, day_rate, notes, is_company, service_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(name, role || null, phone || null, email || null, location || null, day_rate || 0, notes || null, is_company ? 1 : 0, service_type || null);
@@ -73,31 +97,16 @@ router.delete('/roles/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-// Debt summary — must be before /:id
+// Ledger summary, must be before /:id
 router.get('/debt-summary', (req, res) => {
-  const rows = db.prepare(`
-    SELECT crew_id, SUM(amount) as total_unpaid
-    FROM crew_debts WHERE status = 'unpaid'
-    GROUP BY crew_id
-  `).all();
-  const map = {};
-  rows.forEach(r => { map[r.crew_id] = r.total_unpaid; });
-  res.json(map);
+  res.json(ledgerUnpaidMap());
 });
 
-// Payment summary PDF — must be before /:id
+// Payment summary PDF, must be before /:id
 router.get('/payment-summary-pdf', (req, res) => {
   const PDFDocument = require('pdfkit');
 
-  const assignments = db.prepare(`
-    SELECT ca.*, cr.name as crew_name, cr.role as crew_role, cr.is_company,
-           cr.service_type, p.title as project_title,
-           (ca.days * ca.rate_per_day) as total_cost
-    FROM crew_assignments ca
-    JOIN crew cr ON cr.id = ca.crew_id
-    JOIN projects p ON p.id = ca.project_id
-    ORDER BY cr.name, p.created_at
-  `).all();
+  const assignments = crewAssignmentFigures();
 
   const doc = new PDFDocument({ size: 'A4', margin: 50 });
   res.setHeader('Content-Type', 'application/pdf');
@@ -105,7 +114,11 @@ router.get('/payment-summary-pdf', (req, res) => {
   doc.pipe(res);
 
   const fmtVal = v => `€${Number(v || 0).toFixed(2)}`;
-  const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  // The document date is today in Pristina, formatted from the calendar date
+  // itself so no clock zone can move it.
+  const [ty, tm, td] = pristinaToday().split('-').map(Number);
+  const today = new Date(Date.UTC(ty, tm - 1, td))
+    .toLocaleDateString('en-GB', { timeZone: 'UTC', day: '2-digit', month: 'short', year: 'numeric' });
 
   doc.fontSize(18).font('Helvetica-Bold').fillColor('#000').text('MASSIV TV', { align: 'center' });
   doc.fontSize(11).font('Helvetica').fillColor('#666').text('Crew Payment Summary', { align: 'center' });
@@ -116,34 +129,43 @@ router.get('/payment-summary-pdf', (req, res) => {
 
   const byCrewId = {};
   assignments.forEach(a => {
-    if (!byCrewId[a.crew_id]) byCrewId[a.crew_id] = { name: a.crew_name, rows: [], subtotal: 0 };
-    byCrewId[a.crew_id].rows.push(a);
-    byCrewId[a.crew_id].subtotal += (a.total_cost || 0);
+    if (!byCrewId[a.crew_id]) byCrewId[a.crew_id] = { name: a.crew_name, rows: [], agreed: 0, paid: 0, remaining: 0 };
+    const c = byCrewId[a.crew_id];
+    c.rows.push(a);
+    c.agreed += a.agreed; c.paid += a.paid; c.remaining += a.remaining;
   });
 
-  let grandTotal = 0;
+  const grand = { agreed: 0, paid: 0, remaining: 0 };
+  const totalsLine = t => `Agreed ${fmtVal(t.agreed)}   Paid ${fmtVal(t.paid)}   Remaining ${fmtVal(t.remaining)}`;
 
   Object.values(byCrewId).forEach(crew => {
     doc.fontSize(10).font('Helvetica-Bold').fillColor('#000').text(crew.name);
     doc.moveDown(0.2);
     crew.rows.forEach(a => {
-      const role = a.role_on_project || a.crew_role || '—';
-      const cost = fmtVal(a.total_cost);
-      const payDate = a.payment_date || '—';
-      const method = a.payment_method || '—';
-      doc.fontSize(8).font('Helvetica').fillColor('#444')
-        .text(`  ${a.project_title}  |  ${role}  |  ${a.days}d × ${fmtVal(a.rate_per_day)} = ${cost}  |  ${a.paid_status}  |  ${payDate}  |  ${method}`);
+      // Empty values stay empty: a part with nothing to say is left out.
+      const parts = [
+        a.project_title,
+        a.role_on_project || a.crew_role || '',
+        `${a.days}d x ${fmtVal(a.rate_per_day)}`,
+        `agreed ${fmtVal(a.agreed)}`,
+        `paid ${fmtVal(a.paid)}`,
+        `remaining ${fmtVal(a.remaining)}`,
+        a.paid_status || '',
+        a.payment_date || '',
+        a.payment_method || '',
+      ].filter(Boolean);
+      doc.fontSize(8).font('Helvetica').fillColor('#444').text(`  ${parts.join('  |  ')}`);
     });
     doc.fontSize(9).font('Helvetica-Bold').fillColor('#000')
-      .text(`  Subtotal: ${fmtVal(crew.subtotal)}`, { align: 'right' });
-    grandTotal += crew.subtotal;
+      .text(`  ${totalsLine(crew)}`, { align: 'right' });
+    grand.agreed += crew.agreed; grand.paid += crew.paid; grand.remaining += crew.remaining;
     doc.moveDown(0.6);
   });
 
   doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke('#ccc');
   doc.moveDown(0.3);
-  doc.fontSize(12).font('Helvetica-Bold').fillColor('#000')
-    .text(`Grand Total: ${fmtVal(grandTotal)}`, { align: 'right' });
+  doc.fontSize(11).font('Helvetica-Bold').fillColor('#000')
+    .text(`Total   ${totalsLine(grand)}`, { align: 'right' });
   doc.moveDown(2);
   doc.fontSize(8).fillColor('#999').text('built by year28', { align: 'center' });
 
@@ -153,22 +175,26 @@ router.get('/payment-summary-pdf', (req, res) => {
 router.get('/:id', (req, res) => {
   const member = db.prepare('SELECT * FROM crew WHERE id = ?').get(req.params.id);
   if (!member) return res.status(404).json({ error: 'Not found' });
-  const assignments = db.prepare(`
-    SELECT ca.*, p.title as project_title, p.shoot_date, p.status as project_status,
-           (ca.days * ca.rate_per_day) as total_cost
-    FROM crew_assignments ca
-    JOIN projects p ON p.id = ca.project_id
-    WHERE ca.crew_id = ?
-    ORDER BY p.created_at DESC
-  `).all(req.params.id);
-  res.json({ member, assignments });
+  // Agreed, paid and remaining per assignment from the shared crew owed helper.
+  const summary = crewOwedSummary({}, { crewId: member.id });
+  const assignments = [...summary.rows].reverse();
+  res.json({
+    member,
+    assignments,
+    totals: { agreed: summary.agreed, paid: summary.paid, remaining: summary.remaining },
+  });
 });
 
 router.put('/:id', (req, res) => {
-  const { name, role, phone, email, location, day_rate, notes, is_company, service_type } = req.body;
-  db.prepare(
+  const { role, phone, email, location, day_rate, notes, is_company, service_type } = req.body;
+  const name = cleanName(req.body.name);
+  if (!name) return res.status(400).json({ error: 'Name is required' });
+  const rateErr = validateMoney(day_rate || 0, 'day_rate');
+  if (rateErr) return res.status(400).json({ error: rateErr });
+  const result = db.prepare(
     'UPDATE crew SET name=?, role=?, phone=?, email=?, location=?, day_rate=?, notes=?, is_company=?, service_type=? WHERE id=?'
   ).run(name, role || null, phone || null, email || null, location || null, day_rate || 0, notes || null, is_company ? 1 : 0, service_type || null, req.params.id);
+  if (result.changes === 0) return res.status(404).json({ error: 'Not found' });
   res.json({ ok: true });
 });
 
@@ -182,17 +208,23 @@ router.put('/:id/archive', (req, res) => {
 router.delete('/:id', (req, res) => {
   const assignCount = db.prepare('SELECT COUNT(*) as n FROM crew_assignments WHERE crew_id = ?').get(req.params.id).n;
   const taskCount = db.prepare('SELECT COUNT(*) as n FROM tasks WHERE assigned_crew_id = ?').get(req.params.id).n;
-  const total = assignCount + taskCount;
-  if (total > 0) {
-    return res.status(400).json({
-      error: `Cannot delete: this crew member has ${assignCount > 0 ? `${assignCount} project assignment${assignCount > 1 ? 's' : ''}` : ''}${assignCount > 0 && taskCount > 0 ? ' and ' : ''}${taskCount > 0 ? `${taskCount} task assignment${taskCount > 1 ? 's' : ''}` : ''}. Archive them instead.`,
+  // Unpaid ledger entries would be removed with the member, so they block too.
+  const ledgerCount = db.prepare("SELECT COUNT(*) as n FROM crew_debts WHERE crew_id = ? AND status = 'unpaid'").get(req.params.id).n;
+  const reasons = [];
+  if (assignCount > 0) reasons.push(`${assignCount} project assignment${assignCount > 1 ? 's' : ''}`);
+  if (taskCount > 0) reasons.push(`${taskCount} task assignment${taskCount > 1 ? 's' : ''}`);
+  if (ledgerCount > 0) reasons.push(`${ledgerCount} unpaid ledger entr${ledgerCount > 1 ? 'ies' : 'y'}`);
+  if (reasons.length > 0) {
+    return res.status(409).json({
+      error: `This crew member has ${reasons.join(' and ')}. Keep them archived instead.`,
     });
   }
   db.prepare('DELETE FROM crew WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
 
-// --- CREW DEBTS ---
+// Crew ledger (crew_debts): money owed to a crew member outside project
+// assignments. Kept out of the P&L and the Dashboard.
 router.get('/:id/debts', (req, res) => {
   const debts = db.prepare(
     'SELECT * FROM crew_debts WHERE crew_id = ? ORDER BY date_incurred DESC, created_at DESC'
@@ -202,24 +234,28 @@ router.get('/:id/debts', (req, res) => {
 
 router.post('/:id/debts', (req, res) => {
   const { description, amount, date_incurred, notes, status } = req.body;
-  if (!description || amount === undefined) return res.status(400).json({ error: 'Description and amount required' });
+  const desc = typeof description === 'string' ? description.trim() : '';
+  if (!desc || amount === undefined || amount === '') return res.status(400).json({ error: 'Description and amount required' });
   const err = validateMoney(amount, 'amount');
   if (err) return res.status(400).json({ error: err });
   const result = db.prepare(
     'INSERT INTO crew_debts (crew_id, description, amount, date_incurred, notes, status) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(req.params.id, description, amount, date_incurred || new Date().toISOString().slice(0, 10), notes || null, status || 'unpaid');
+  ).run(req.params.id, desc, Number(amount), date_incurred || pristinaToday(), notes || null, status === 'paid' ? 'paid' : 'unpaid');
   res.json({ id: result.lastInsertRowid });
 });
 
 router.put('/:id/debts/:debtId', (req, res) => {
   const { description, amount, date_incurred, status, payment_date, notes } = req.body;
-  if (amount !== undefined) {
-    const err = validateMoney(amount, 'amount');
-    if (err) return res.status(400).json({ error: err });
-  }
-  db.prepare(
+  const desc = typeof description === 'string' ? description.trim() : '';
+  if (!desc || amount === undefined || amount === '') return res.status(400).json({ error: 'Description and amount required' });
+  const err = validateMoney(amount, 'amount');
+  if (err) return res.status(400).json({ error: err });
+  const paid = status === 'paid';
+  const result = db.prepare(
     'UPDATE crew_debts SET description=?, amount=?, date_incurred=?, status=?, payment_date=?, notes=? WHERE id=? AND crew_id=?'
-  ).run(description, amount, date_incurred, status || 'unpaid', payment_date || null, notes || null, req.params.debtId, req.params.id);
+  ).run(desc, Number(amount), date_incurred || pristinaToday(), paid ? 'paid' : 'unpaid',
+    paid ? (payment_date || pristinaToday()) : null, notes || null, req.params.debtId, req.params.id);
+  if (result.changes === 0) return res.status(404).json({ error: 'Not found' });
   res.json({ ok: true });
 });
 

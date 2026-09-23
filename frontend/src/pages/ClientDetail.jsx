@@ -1,16 +1,23 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Edit2, AlertCircle, MessageCircle } from 'lucide-react';
+import {
+  ArrowLeft, Edit2, Trash2, MessageCircle, Mail, Phone, AtSign, User, Building2, FolderOpen,
+} from 'lucide-react';
 import { api, fmt } from '../api';
 import Overlay from '../components/Overlay';
-import StatCard from '../components/StatCard';
+import ConfirmDialog from '../components/ConfirmDialog';
+import Donut from '../components/Donut';
+import Ring from '../components/Ring';
 import { Private } from '../context/PrivacyContext';
+import { waUrl, mailUrl, telUrl, socialUrl, StatusDot, IconLink, useMoneyTip } from '../components/DbBits';
+import { ClientFormFields } from './Clients';
 
-function waUrl(phone) {
-  if (!phone) return null;
-  const clean = phone.replace(/\D/g, '');
-  return clean ? `https://wa.me/${clean}` : null;
-}
+// Slice colours: received in ink, pending in ember, upcoming muted.
+const SLICES = [
+  { key: 'received', name: 'Received', color: 'var(--color-ink)' },
+  { key: 'pending',  name: 'Pending',  color: 'var(--color-ember)' },
+  { key: 'upcoming', name: 'Upcoming', color: 'var(--color-hairline-strong)' },
+];
 
 export default function ClientDetail() {
   const { id } = useParams();
@@ -18,145 +25,153 @@ export default function ClientDetail() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editModal, setEditModal] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [notice, setNotice] = useState('');
+  const tip = useMoneyTip();
 
   async function load() {
     try {
-      const d = await api.get(`/clients/${id}`);
-      setData(d);
+      setData(await api.get(`/clients/${id}`));
     } catch { navigate('/clients'); }
     setLoading(false);
   }
 
   useEffect(() => { load(); }, [id]);
 
+  async function doDelete() {
+    setDeleting(true);
+    try {
+      await api.del(`/clients/${id}`);
+      navigate('/clients');
+    } catch (e) {
+      setConfirmDelete(false);
+      setNotice(e.message);
+    }
+    setDeleting(false);
+  }
+
   if (loading) return <div className="loading">Loading...</div>;
   if (!data) return null;
 
-  const { client, projects, outstandingPayments, stats } = data;
-  const totalOutstanding = (outstandingPayments || []).reduce((s, p) => s + p.amount, 0);
-  const wa = waUrl(client.phone);
+  const { client, projects, owed, stats } = data;
+  const figures = { received: stats.totalRevenue, pending: owed.pending, upcoming: owed.upcoming };
+  const slices = SLICES.map(s => ({ ...s, total: Number(figures[s.key]) || 0 }));
+  const donutData = slices.filter(s => s.total > 0);
+  const social = socialUrl(client.socials);
 
   return (
     <div>
-      <div className="flex-between mb-4" style={{ flexWrap: 'wrap', gap: '12px' }}>
-        <div className="flex-center gap-2">
-          <Link to="/clients" className="btn btn-ghost btn-sm"><ArrowLeft size={14} /></Link>
-          <div>
-            <div className="page-title">{client.name}</div>
-            {client.company && <div className="text-2 text-sm">{client.company}</div>}
-          </div>
+      <div className="db-head">
+        <Link to="/clients" className="db-iconbtn lg" title="Clients" aria-label="Back to clients"><ArrowLeft size={16} /></Link>
+        <span className="db-avatar">{client.company ? <Building2 size={18} /> : <User size={18} />}</span>
+        <div className="db-main">
+          <div className="page-title">{client.name}</div>
+          {client.company && <div className="db-title-sub">{client.company}</div>}
         </div>
-        <button className="btn btn-ghost btn-sm" onClick={() => setEditModal(true)}><Edit2 size={14} /> Edit</button>
+        <div className="db-actions">
+          <IconLink href={waUrl(client.phone)} title="WhatsApp"><MessageCircle size={16} /></IconLink>
+          <IconLink href={mailUrl(client.email)} title="Email" external={false}><Mail size={16} /></IconLink>
+          <button className="db-iconbtn" onClick={() => setEditModal(true)} title="Edit" aria-label="Edit"><Edit2 size={16} /></button>
+          <button className="db-iconbtn danger" onClick={() => setConfirmDelete(true)} title="Delete" aria-label="Delete"><Trash2 size={16} /></button>
+        </div>
       </div>
 
-      <div className="stats-grid" style={{ marginBottom: '16px' }}>
-        <StatCard label="Total Projects" value={stats.totalProjects} />
-        <StatCard label="Total Revenue" value={<Private>{fmt(stats.totalRevenue)}</Private>} />
-        <StatCard label="Total Profit" value={<Private>{fmt(stats.totalProfit)}</Private>} danger={stats.totalProfit < 0} />
-      </div>
-
-      {/* Outstanding Balance Alert — per project (agreed_budget minus received) */}
-      {totalOutstanding > 0 && (
-        <div className="outstanding-alert" style={{ marginBottom: '20px' }}>
-          <div className="flex-center gap-2" style={{ marginBottom: '10px' }}>
-            <AlertCircle size={16} style={{ color: 'var(--danger)', flexShrink: 0 }} />
-            <span className="text-bold text-danger">Pending Payments: <Private>{fmt(totalOutstanding)}</Private></span>
-          </div>
-          {outstandingPayments.map(p => (
-            <div key={p.project_id} className="flex-between text-sm" style={{ padding: '4px 0' }}>
-              <span className="text-2">{p.project_title}</span>
-              <span className="text-danger"><Private>{fmt(p.amount)}</Private></span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="two-col">
-        <div>
-          <div className="card card-pad">
-            <div className="section-title mb-3" style={{ marginBottom: '12px' }}>Contact Info</div>
-            {client.phone && (
-              <div className="fin-row">
-                <span className="text-2 text-sm">Phone</span>
-                <div className="flex-center gap-1">
-                  <span className="text-sm">{client.phone}</span>
-                  {wa && (
-                    <a href={wa} target="_blank" rel="noopener noreferrer" className="wa-btn" title="WhatsApp">
-                      <MessageCircle size={14} />
-                    </a>
-                  )}
+      <div className="db-split" style={{ marginBottom: '16px' }}>
+        <div className="card db-panel">
+          <div className="db-summary">
+            {donutData.length > 0 ? (
+              <Donut data={donutData} colorFor={(i, e) => e.color} height={220} />
+            ) : (
+              <Ring value={0} max={0} size={120} stroke={10} />
+            )}
+            <div className="db-figures">
+              {slices.map(s => (
+                <div key={s.key} className="db-figure" title={s.name}>
+                  <span className="db-dot" style={{ background: s.color }} />
+                  <span className={s.key === 'pending' && s.total > 0 ? 'db-owed' : 'db-money'}>
+                    <Private>{fmt(s.total)}</Private>
+                  </span>
                 </div>
-              </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="card db-panel">
+          <div className="db-contact">
+            {client.phone && (
+              <IconLink href={telUrl(client.phone)} title={client.phone} external={false}><Phone size={16} /></IconLink>
             )}
             {client.email && (
-              <div className="fin-row">
-                <span className="text-2 text-sm">Email</span>
-                <span className="text-sm">{client.email}</span>
-              </div>
+              <IconLink href={mailUrl(client.email)} title={client.email} external={false}><Mail size={16} /></IconLink>
             )}
-            {client.socials && (
-              <div className="fin-row">
-                <span className="text-2 text-sm">Social</span>
-                <span className="text-sm">{client.socials}</span>
-              </div>
-            )}
-            {client.notes && (
-              <div style={{ marginTop: '12px' }}>
-                <div className="text-xs text-2" style={{ marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Notes</div>
-                <div className="text-sm" style={{ color: 'var(--color-ink-soft)' }}>{client.notes}</div>
-              </div>
-            )}
+            {client.socials && (social ? (
+              <IconLink href={social} title={client.socials}><AtSign size={16} /></IconLink>
+            ) : (
+              <span className="db-iconbtn" title={client.socials} aria-label={client.socials}><AtSign size={16} /></span>
+            ))}
           </div>
+          {client.notes && <div className="db-notes">{client.notes}</div>}
         </div>
+      </div>
 
-        <div>
-          <div className="section-title mb-3" style={{ marginBottom: '12px' }}>Projects</div>
-          {projects.length === 0 ? (
-            <div className="card card-pad empty">No projects</div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {projects.map(p => {
-                const profit = p.total_received - p.total_crew_cost - p.total_expenses;
-                return (
-                  <Link key={p.id} to={`/projects/${p.id}`} style={{ textDecoration: 'none' }}>
-                    <div className="card card-pad-sm">
-                      <div className="flex-between mb-2">
-                        <span className="text-bold">{p.title}</span>
-                        <StatusBadge status={p.status} />
-                      </div>
-                      <div className="flex-between text-sm text-2">
-                        <span>{p.category_name || '—'}</span>
-                        <span><Private>{fmt(p.agreed_budget)}</Private> budget</span>
-                      </div>
-                      <div className="flex-between text-sm mt-1">
-                        <span className="text-2">Received: <Private>{fmt(p.total_received)}</Private></span>
-                        <span className={profit < 0 ? 'text-danger' : ''}><Private>{fmt(profit)}</Private> profit</span>
-                      </div>
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
-          )}
-        </div>
+      <div className="card">
+        {projects.length === 0 ? (
+          <div className="db-empty"><FolderOpen size={26} /></div>
+        ) : (
+          <div className="db-list">
+            {projects.map(p => {
+              const profit = p.total_received - p.total_crew_cost - p.total_expenses;
+              const agreed = Number(p.agreed_budget) || 0;
+              return (
+                <Link key={p.id} to={`/projects/${p.id}`} className="db-row">
+                  <StatusDot status={p.status} />
+                  <span className="db-row-title">{p.title}</span>
+                  <Ring
+                    value={p.total_received}
+                    max={agreed}
+                    size={22}
+                    title={agreed > 0 ? tip('Received', p.total_received) : undefined}
+                  />
+                  <span className={`db-money ${profit < 0 ? 'neg' : ''}`} style={{ minWidth: '90px', textAlign: 'right' }}>
+                    <Private>{fmt(profit)}</Private>
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {editModal && (
         <EditClientModal client={client} clientId={id} onClose={() => setEditModal(false)} onSaved={load} />
       )}
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title={`Delete ${client.name}?`}
+          message="This cannot be undone."
+          confirmLabel="Delete"
+          tone="danger"
+          busy={deleting}
+          onConfirm={doDelete}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      )}
+
+      {notice && (
+        <ConfirmDialog
+          title="Cannot delete"
+          message={notice}
+          confirmLabel="OK"
+          cancelLabel={null}
+          onConfirm={() => setNotice('')}
+          onCancel={() => setNotice('')}
+        />
+      )}
     </div>
   );
-}
-
-function StatusBadge({ status }) {
-  const map = {
-    'development':     'badge-development',
-    'pre-production':  'badge-pre-production',
-    'production':      'badge-production',
-    'post-production': 'badge-post-production',
-    'completed':       'badge-completed',
-  };
-  return <span className={`badge ${map[status] || 'badge-pending'}`}>{status?.replace(/-/g, ' ')}</span>;
 }
 
 function EditClientModal({ client, clientId, onClose, onSaved }) {
@@ -169,12 +184,16 @@ function EditClientModal({ client, clientId, onClose, onSaved }) {
     notes: client.notes || '',
   });
   const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
   function f(k, v) { setForm(p => ({ ...p, [k]: v })); }
 
   async function save() {
+    if (!form.name.trim()) return setErr('Name is required');
     setSaving(true);
-    try { await api.put(`/clients/${clientId}`, form); onSaved(); onClose(); }
-    catch (e) { alert(e.message); }
+    try {
+      await api.put(`/clients/${clientId}`, { ...form, name: form.name.trim() });
+      onSaved(); onClose();
+    } catch (e) { setErr(e.message); }
     setSaving(false);
   }
 
@@ -183,32 +202,8 @@ function EditClientModal({ client, clientId, onClose, onSaved }) {
       <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
       <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
     </>}>
-      <div className="form-row">
-        <label className="form-label">Name *</label>
-        <input className="input" value={form.name} onChange={e => f('name', e.target.value)} />
-      </div>
-      <div className="form-row">
-        <label className="form-label">Company</label>
-        <input className="input" value={form.company} onChange={e => f('company', e.target.value)} />
-      </div>
-      <div className="form-grid">
-        <div className="form-row">
-          <label className="form-label">Phone</label>
-          <input className="input" value={form.phone} onChange={e => f('phone', e.target.value)} />
-        </div>
-        <div className="form-row">
-          <label className="form-label">Email</label>
-          <input type="email" className="input" value={form.email} onChange={e => f('email', e.target.value)} />
-        </div>
-      </div>
-      <div className="form-row">
-        <label className="form-label">Socials</label>
-        <input className="input" value={form.socials} onChange={e => f('socials', e.target.value)} />
-      </div>
-      <div className="form-row">
-        <label className="form-label">Notes</label>
-        <textarea className="input" value={form.notes} onChange={e => f('notes', e.target.value)} />
-      </div>
+      <ClientFormFields form={form} f={f} />
+      {err && <div className="error-msg">{err}</div>}
     </Overlay>
   );
 }

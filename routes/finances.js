@@ -4,6 +4,7 @@ const { db } = require('../db/database');
 const { pristinaToday, pristinaMonth, pristinaYear, addMonths } = require('../lib/pristinaDate');
 const {
   readFilter, projectFilterSql, monthlyFigures, projectProfitForMonth, owedSummary, receivableRows,
+  crewOwedSummary, crewAssignmentFigures,
 } = require('../lib/financeFigures');
 
 function validateMoney(val, name) {
@@ -26,12 +27,8 @@ router.get('/stats', (req, res) => {
   const m = monthlyFigures([month], f)[0];
   const owed = owedSummary(f);
 
-  // Unpaid crew: remaining owed (days x rate minus what was paid, never below 0)
-  const unpaidCrew = db.prepare(`
-    SELECT COALESCE(SUM(MAX(0, ca.days * ca.rate_per_day - COALESCE(ca.payment_amount, 0))), 0) as total
-    FROM crew_assignments ca JOIN projects p ON p.id = ca.project_id
-    WHERE ca.paid_status IN ('unpaid', 'partial')${pf.sql}
-  `).get(...pf.params).total;
+  // Unpaid crew, from the shared crew owed helper.
+  const unpaidCrew = crewOwedSummary(f).remaining;
 
   // Distinct projects completed in the month, the month read in Pristina time.
   // changed_at is stored in UTC, so the rows around the edges are fetched and
@@ -172,18 +169,7 @@ router.get('/details/upcoming', (req, res) => {
 });
 
 router.get('/details/unpaid-crew', (req, res) => {
-  const pf = projectFilterSql(readFilter(req.query));
-  const rows = db.prepare(`
-    SELECT ca.*, cr.name as crew_name, p.title as project_title, p.id as project_id,
-           (ca.days * ca.rate_per_day) as total_cost,
-           MAX(0, ca.days * ca.rate_per_day - COALESCE(ca.payment_amount, 0)) as remaining
-    FROM crew_assignments ca
-    JOIN crew cr ON cr.id = ca.crew_id
-    JOIN projects p ON p.id = ca.project_id
-    WHERE ca.paid_status IN ('unpaid', 'partial')${pf.sql}
-    ORDER BY cr.name
-  `).all(...pf.params);
-  res.json(rows);
+  res.json(crewAssignmentFigures(readFilter(req.query), { unpaidOnly: true }));
 });
 
 router.get('/details/profit', (req, res) => {

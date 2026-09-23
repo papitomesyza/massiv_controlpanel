@@ -1,16 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Edit2, Archive, Building2, MessageCircle, DollarSign, Plus, Trash2, CheckCircle, Receipt, X } from 'lucide-react';
+import {
+  ArrowLeft, Edit2, Archive, ArchiveRestore, Building2, User, MessageCircle, Mail, Phone, MapPin,
+  Plus, Trash2, Check, X, NotebookPen, FolderOpen,
+} from 'lucide-react';
 import { api, fmt, fmtDate } from '../api';
 import Overlay from '../components/Overlay';
-import StatCard from '../components/StatCard';
+import ConfirmDialog from '../components/ConfirmDialog';
+import DateField from '../components/DateField';
+import Ring from '../components/Ring';
 import { Private } from '../context/PrivacyContext';
-
-function waUrl(phone) {
-  if (!phone) return null;
-  const clean = phone.replace(/\D/g, '');
-  return clean ? `https://wa.me/${clean}` : null;
-}
+import { waUrl, mailUrl, telUrl, StatusDot, IconLink, IconToggles, useMoneyTip } from '../components/DbBits';
+import { CrewFormFields } from './Crew';
+import { pristinaToday } from '../lib/pristinaDate';
 
 export default function CrewDetail() {
   const { id } = useParams();
@@ -22,7 +24,11 @@ export default function CrewDetail() {
   const [debts, setDebts] = useState([]);
   const [debtModal, setDebtModal] = useState(null);
   const [markPaidId, setMarkPaidId] = useState(null);
-  const [markPaidDate, setMarkPaidDate] = useState(new Date().toISOString().slice(0, 10));
+  const [markPaidDate, setMarkPaidDate] = useState(pristinaToday());
+  const [deleteDebt, setDeleteDebt] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState(null);
+  const tip = useMoneyTip();
 
   async function load() {
     try {
@@ -37,236 +43,231 @@ export default function CrewDetail() {
   }
 
   async function loadDebts() {
-    try {
-      const dbs = await api.get(`/crew/${id}/debts`);
-      setDebts(dbs);
-    } catch (_) {}
+    try { setDebts(await api.get(`/crew/${id}/debts`)); }
+    catch (e) { setNotice({ title: 'Could not load the ledger', message: e.message }); }
   }
 
   useEffect(() => { load(); }, [id]);
 
   async function toggleArchive() {
-    await api.put(`/crew/${id}/archive`, {});
-    load();
+    try { await api.put(`/crew/${id}/archive`, {}); load(); }
+    catch (e) { setNotice({ title: 'Could not update', message: e.message }); }
+  }
+
+  async function markPaid(debt) {
+    setBusy(true);
+    try {
+      await api.put(`/crew/${id}/debts/${debt.id}`, { ...debt, status: 'paid', payment_date: markPaidDate });
+      setMarkPaidId(null);
+      loadDebts();
+    } catch (e) { setNotice({ title: 'Could not mark paid', message: e.message }); }
+    setBusy(false);
+  }
+
+  async function confirmDeleteDebt() {
+    setBusy(true);
+    try {
+      await api.del(`/crew/${id}/debts/${deleteDebt.id}`);
+      setDeleteDebt(null);
+      loadDebts();
+    } catch (e) {
+      setDeleteDebt(null);
+      setNotice({ title: 'Could not delete', message: e.message });
+    }
+    setBusy(false);
   }
 
   if (loading) return <div className="loading">Loading...</div>;
   if (!data) return null;
 
-  const { member, assignments } = data;
-  const totalEarned = assignments.reduce((s, a) => s + a.total_cost, 0);
-  const unpaidTotal = debts.filter(d => d.status === 'unpaid').reduce((s, d) => s + d.amount, 0);
-  const paidTotal = debts.filter(d => d.status === 'paid').reduce((s, d) => s + d.amount, 0);
+  const { member, assignments, totals } = data;
+  const ledgerUnpaid = debts.filter(d => d.status === 'unpaid').reduce((s, d) => s + (Number(d.amount) || 0), 0);
   const isCompany = !!member.is_company;
-  const wa = waUrl(member.phone);
+  const sub = isCompany ? member.service_type : member.role;
 
   return (
     <div>
-      <div className="flex-between mb-4" style={{ flexWrap: 'wrap', gap: '12px' }}>
-        <div className="flex-center gap-2">
-          <Link to="/crew" className="btn btn-ghost btn-sm"><ArrowLeft size={14} /></Link>
-          <div>
-            <div className="flex-center gap-2">
-              {isCompany && <Building2 size={16} style={{ color: 'var(--color-mid-gray)' }} />}
-              <div className="page-title">{member.name}</div>
-            </div>
-            {isCompany
-              ? <div className="text-2 text-sm">{member.service_type || 'Company'}</div>
-              : member.role && <div className="text-2 text-sm">{member.role}</div>
-            }
+      <div className="db-head">
+        <Link to="/crew" className="db-iconbtn lg" title="Crew" aria-label="Back to crew"><ArrowLeft size={16} /></Link>
+        <span className="db-avatar">{isCompany ? <Building2 size={18} /> : <User size={18} />}</span>
+        <div className="db-main">
+          <div className="page-title">
+            {member.name}
+            {!!member.archived && <Archive size={16} style={{ color: 'var(--color-mid-gray)' }} aria-label="Archived" />}
           </div>
+          {sub && <div className="db-title-sub">{sub}</div>}
         </div>
-        <div className="flex-center gap-2">
-          {member.archived && <span className="badge badge-danger">Archived</span>}
-          <button className="btn btn-ghost btn-sm" onClick={() => setEditModal(true)}><Edit2 size={14} /> Edit</button>
-          <button className="btn btn-ghost btn-sm" onClick={toggleArchive}><Archive size={14} /> {member.archived ? 'Restore' : 'Archive'}</button>
-        </div>
-      </div>
-
-      <div className="stats-grid" style={{ marginBottom: '20px' }}>
-        <StatCard label="Total Earnings" value={<Private>{fmt(totalEarned)}</Private>} icon={<DollarSign size={18} />} />
-        <StatCard label="Projects" value={assignments.length} />
-        <StatCard label="Paid" value={assignments.filter(a => a.paid_status === 'paid').length + ' / ' + assignments.length} />
-      </div>
-
-      <div className="two-col">
-        <div>
-          <div className="card card-pad">
-            <div className="section-title mb-3" style={{ marginBottom: '12px' }}>Contact Info</div>
-            {member.phone && (
-              <div className="fin-row">
-                <span className="text-2 text-sm">{isCompany ? 'Phone' : 'Phone'}</span>
-                <div className="flex-center gap-1">
-                  <span className="text-sm">{member.phone}</span>
-                  {wa && (
-                    <a href={wa} target="_blank" rel="noopener noreferrer" className="wa-btn" title="WhatsApp">
-                      <MessageCircle size={14} />
-                    </a>
-                  )}
-                </div>
-              </div>
-            )}
-            {[
-              [isCompany ? 'Service Type' : 'Role', isCompany ? member.service_type : member.role],
-              ['Email', member.email],
-              ['Location', member.location],
-              [isCompany ? 'Rate (€)' : 'Day Rate', member.day_rate ? <Private>{fmt(member.day_rate)}</Private> : null],
-            ].filter(([, v]) => v).map(([label, val]) => (
-              <div key={label} className="fin-row">
-                <span className="text-2 text-sm">{label}</span>
-                <span className="text-sm">{val}</span>
-              </div>
-            ))}
-            {member.notes && (
-              <div style={{ marginTop: '12px' }}>
-                <div className="text-xs text-2" style={{ marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Notes</div>
-                <div className="text-sm" style={{ color: 'var(--color-ink-soft)' }}>{member.notes}</div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div>
-          <div className="section-title mb-3" style={{ marginBottom: '12px' }}>Project History</div>
-          {assignments.length === 0 ? (
-            <div className="card card-pad empty">No project assignments</div>
-          ) : (
-            <div className="card">
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Project</th>
-                      <th>Role</th>
-                      <th>Days</th>
-                      <th>Rate</th>
-                      <th>Total</th>
-                      <th>Paid</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {assignments.map(a => (
-                      <tr key={a.id}>
-                        <td><Link to={`/projects/${a.project_id}`} className="link text-bold text-sm">{a.project_title}</Link></td>
-                        <td className="text-2 text-sm">{a.role_on_project || a.crew_role || '—'}</td>
-                        <td className="text-sm">{a.days}</td>
-                        <td className="text-sm"><Private>{fmt(a.rate_per_day)}</Private></td>
-                        <td className="text-bold text-sm"><Private>{fmt(a.total_cost)}</Private></td>
-                        <td><span className={`badge ${a.paid_status === 'paid' ? 'badge-paid' : a.paid_status === 'partial' ? 'badge-partial' : 'badge-unpaid'}`}>{a.paid_status}</span></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Transactions & Debts */}
-      <div style={{ marginTop: '24px' }}>
-        <div className="section-header" style={{ marginBottom: '12px' }}>
-          <span className="section-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Receipt size={15} style={{ color: 'var(--color-mid-gray)' }} />
-            Transactions &amp; Debts
-            {unpaidTotal > 0 && (
-              <span style={{ background: 'var(--color-ember)', color: 'var(--color-ink)', fontSize: '10px', fontWeight: 700, borderRadius: '18px', padding: '2px 8px', lineHeight: 1.4 }}>
-                <Private>{fmt(unpaidTotal)}</Private> owed
-              </span>
-            )}
-          </span>
-          <button className="btn btn-primary btn-sm" onClick={() => setDebtModal({})}>
-            <Plus size={13} /> Add Transaction
+        <div className="db-actions">
+          <IconLink href={waUrl(member.phone)} title="WhatsApp"><MessageCircle size={16} /></IconLink>
+          <IconLink href={mailUrl(member.email)} title="Email" external={false}><Mail size={16} /></IconLink>
+          <button className="db-iconbtn" onClick={() => setEditModal(true)} title="Edit" aria-label="Edit"><Edit2 size={16} /></button>
+          <button
+            className="db-iconbtn"
+            onClick={toggleArchive}
+            title={member.archived ? 'Restore' : 'Archive'}
+            aria-label={member.archived ? 'Restore' : 'Archive'}
+          >
+            {member.archived ? <ArchiveRestore size={16} /> : <Archive size={16} />}
           </button>
         </div>
+      </div>
 
-        <div className="stats-grid-3" style={{ marginBottom: '16px' }}>
-          <StatCard label="Total Owed" value={<Private>{fmt(unpaidTotal)}</Private>} danger={unpaidTotal > 0} />
-          <StatCard label="Total Paid" value={<Private>{fmt(paidTotal)}</Private>} />
-          <StatCard label="Total Transactions" value={debts.length} />
+      <div className="db-split" style={{ marginBottom: '16px' }}>
+        <div className="card db-panel">
+          <div className="db-summary">
+            <Ring value={totals.paid} max={totals.agreed} size={120} stroke={10} title={tip('Paid', totals.paid)} />
+            <div className="db-figures">
+              <div className="db-figure lead" title="Agreed">
+                <span className="db-money"><Private>{fmt(totals.agreed)}</Private></span>
+              </div>
+              <div className="db-figure" title="Paid">
+                <span className="db-dot ink" />
+                <span className="db-money"><Private>{fmt(totals.paid)}</Private></span>
+              </div>
+              <div className="db-figure" title="Remaining">
+                <span className="db-dot" />
+                <span className={totals.remaining > 0 ? 'db-owed' : 'db-money'}><Private>{fmt(totals.remaining)}</Private></span>
+              </div>
+            </div>
+          </div>
         </div>
 
-        {debts.length === 0 ? (
-          <div className="card card-pad empty">No transactions recorded</div>
+        <div className="card db-panel">
+          <div className="db-contact">
+            {member.phone && (
+              <IconLink href={telUrl(member.phone)} title={member.phone} external={false}><Phone size={16} /></IconLink>
+            )}
+            {member.email && (
+              <IconLink href={mailUrl(member.email)} title={member.email} external={false}><Mail size={16} /></IconLink>
+            )}
+            {member.location && (
+              <span className="db-iconbtn" title={member.location} aria-label={member.location}><MapPin size={16} /></span>
+            )}
+            {Number(member.day_rate) > 0 && (
+              <span className="db-chip" title="Day rate" style={{ alignSelf: 'center' }}><Private>{fmt(member.day_rate)}</Private></span>
+            )}
+          </div>
+          {member.notes && <div className="db-notes">{member.notes}</div>}
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: '20px' }}>
+        {assignments.length === 0 ? (
+          <div className="db-empty"><FolderOpen size={26} /></div>
         ) : (
-          <div className="card">
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr><th>Date</th><th>Description</th><th>Amount</th><th>Status</th><th>Notes</th><th></th></tr>
-                </thead>
-                <tbody>
-                  {debts.map(debt => (
-                    <tr key={debt.id}>
-                      <td className="text-sm text-2">{fmtDate(debt.date_incurred)}</td>
-                      <td className="text-sm text-bold">{debt.description}</td>
-                      <td className="text-bold"><Private>{fmt(debt.amount)}</Private></td>
-                      <td>
-                        <span className={`badge ${debt.status === 'paid' ? 'badge-paid' : 'badge-unpaid'}`}>
-                          {debt.status === 'paid' ? 'Paid' : 'Unpaid'}
-                        </span>
-                      </td>
-                      <td className="text-2 text-xs">{debt.notes || '—'}</td>
-                      <td>
-                        <div className="flex-center gap-1">
-                          {debt.status !== 'paid' && (
-                            markPaidId === debt.id ? (
-                              <div className="flex-center gap-1">
-                                <input
-                                  type="date"
-                                  className="input"
-                                  style={{ fontSize: '11px', padding: '3px 6px', width: '130px' }}
-                                  value={markPaidDate}
-                                  onChange={e => setMarkPaidDate(e.target.value)}
-                                />
-                                <button className="btn btn-primary btn-sm" style={{ fontSize: '11px' }} onClick={async () => {
-                                  await api.put(`/crew/${id}/debts/${debt.id}`, { ...debt, status: 'paid', payment_date: markPaidDate });
-                                  setMarkPaidId(null);
-                                  loadDebts();
-                                }}>Confirm</button>
-                                <button className="btn btn-ghost btn-sm" style={{ fontSize: '11px' }} onClick={() => setMarkPaidId(null)}>✕</button>
-                              </div>
-                            ) : (
-                              <button
-                                className="btn btn-ghost btn-sm"
-                                style={{ fontSize: '11px', color: 'var(--color-ink)' }}
-                                onClick={() => { setMarkPaidId(debt.id); setMarkPaidDate(new Date().toISOString().slice(0, 10)); }}
-                                title="Mark as Paid"
-                              >
-                                <CheckCircle size={13} /> Mark Paid
-                              </button>
-                            )
-                          )}
-                          <button className="btn btn-ghost btn-sm" onClick={() => setDebtModal(debt)} style={{ padding: '4px 6px' }}><Edit2 size={12} /></button>
-                          <button className="btn btn-danger btn-sm" onClick={async () => {
-                            await api.del(`/crew/${id}/debts/${debt.id}`);
-                            loadDebts();
-                          }} style={{ padding: '4px 6px' }}><Trash2 size={12} /></button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          <div className="db-list">
+            {assignments.map(a => (
+              <div key={a.id} className="db-row">
+                <StatusDot status={a.project_status} />
+                <span className="db-row-title">
+                  <Link to={`/projects/${a.project_id}`}>{a.project_title}</Link>
+                </span>
+                <span className="db-chip">{a.days} x <Private>{fmt(a.rate_per_day)}</Private></span>
+                <Ring value={a.paid} max={a.agreed} size={22} title={tip('Paid', a.paid)} />
+                <span style={{ minWidth: '84px', textAlign: 'right' }}>
+                  {a.remaining > 0 && <span className="db-owed"><Private>{fmt(a.remaining)}</Private></span>}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="db-section-head">
+        <span className="section-title"><NotebookPen size={15} style={{ color: 'var(--color-mid-gray)' }} /> Ledger</span>
+        {ledgerUnpaid > 0 && (
+          <span className="db-owed" title={tip('Unpaid', ledgerUnpaid)}><span className="db-dot" /><Private>{fmt(ledgerUnpaid)}</Private></span>
+        )}
+        <span className="spacer" />
+        <button className="db-iconbtn lg" onClick={() => setDebtModal({})} title="New entry" aria-label="New ledger entry">
+          <Plus size={16} />
+        </button>
+      </div>
+
+      <div className="card">
+        {debts.length === 0 ? (
+          <div className="db-empty"><NotebookPen size={24} /></div>
+        ) : (
+          <div className="db-list">
+            {debts.map(debt => {
+              const paid = debt.status === 'paid';
+              return (
+                <div key={debt.id} className={`db-row ${paid ? 'is-paid' : ''}`}>
+                  <span className="db-row-date">{fmtDate(debt.date_incurred)}</span>
+                  <span className="db-row-title" title={debt.notes || undefined}>{debt.description}</span>
+                  <span className="db-money"><Private>{fmt(debt.amount)}</Private></span>
+                  <span
+                    className={`db-dot ${paid ? 'ink' : ''}`}
+                    title={paid ? `Paid ${fmtDate(debt.payment_date)}`.trim() : 'Unpaid'}
+                  />
+                  <div className="db-actions">
+                    {!paid && (markPaidId === debt.id ? (
+                      <>
+                        <DateField value={markPaidDate} onChange={setMarkPaidDate} aria-label="Payment date" wrapClassName="db-inline-date" />
+                        <button className="db-iconbtn" onClick={() => markPaid(debt)} disabled={busy || !markPaidDate} title="Confirm paid" aria-label="Confirm paid">
+                          <Check size={15} />
+                        </button>
+                        <button className="db-iconbtn" onClick={() => setMarkPaidId(null)} title="Cancel" aria-label="Cancel">
+                          <X size={15} />
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        className="db-iconbtn"
+                        onClick={() => { setMarkPaidId(debt.id); setMarkPaidDate(pristinaToday()); }}
+                        title="Mark paid"
+                        aria-label="Mark paid"
+                      >
+                        <Check size={15} />
+                      </button>
+                    ))}
+                    <button className="db-iconbtn" onClick={() => setDebtModal(debt)} title="Edit" aria-label="Edit"><Edit2 size={14} /></button>
+                    <button className="db-iconbtn danger" onClick={() => setDeleteDebt(debt)} title="Delete" aria-label="Delete"><Trash2 size={14} /></button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
 
       {editModal && <EditCrewModal member={member} crewId={id} roles={roles} onClose={() => setEditModal(false)} onSaved={load} />}
       {debtModal !== null && (
-        <DebtModal debt={debtModal} crewId={id} onClose={() => setDebtModal(null)} onSaved={() => { setDebtModal(null); loadDebts(); }} />
+        <LedgerModal debt={debtModal} crewId={id} onClose={() => setDebtModal(null)} onSaved={() => { setDebtModal(null); loadDebts(); }} />
+      )}
+
+      {deleteDebt && (
+        <ConfirmDialog
+          title={`Delete ${deleteDebt.description}?`}
+          message="This cannot be undone."
+          confirmLabel="Delete"
+          tone="danger"
+          busy={busy}
+          onConfirm={confirmDeleteDebt}
+          onCancel={() => setDeleteDebt(null)}
+        />
+      )}
+
+      {notice && (
+        <ConfirmDialog
+          title={notice.title}
+          message={notice.message}
+          confirmLabel="OK"
+          cancelLabel={null}
+          onConfirm={() => setNotice(null)}
+          onCancel={() => setNotice(null)}
+        />
       )}
     </div>
   );
 }
 
-function DebtModal({ debt, crewId, onClose, onSaved }) {
+function LedgerModal({ debt, crewId, onClose, onSaved }) {
   const isEdit = !!debt?.id;
   const [form, setForm] = useState({
     description: debt?.description || '',
-    amount: debt?.amount || '',
-    date_incurred: debt?.date_incurred || new Date().toISOString().slice(0, 10),
+    amount: debt?.amount ?? '',
+    date_incurred: debt?.date_incurred || pristinaToday(),
     status: debt?.status || 'unpaid',
     payment_date: debt?.payment_date || '',
     notes: debt?.notes || '',
@@ -276,7 +277,7 @@ function DebtModal({ debt, crewId, onClose, onSaved }) {
   function f(k, v) { setForm(p => ({ ...p, [k]: v })); }
 
   async function save() {
-    if (!form.description || !form.amount) return setErr('Description and amount required');
+    if (!form.description.trim() || form.amount === '') return setErr('Description and amount required');
     setSaving(true);
     try {
       if (isEdit) await api.put(`/crew/${crewId}/debts/${debt.id}`, form);
@@ -287,44 +288,60 @@ function DebtModal({ debt, crewId, onClose, onSaved }) {
   }
 
   return (
-    <Overlay title={isEdit ? 'Edit Transaction' : 'Add Transaction'} onClose={onClose} footer={<>
-      <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-      <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
-    </>}>
+    <Overlay
+      title={<span className="flex-center gap-2"><NotebookPen size={16} /> Ledger</span>}
+      label={isEdit ? 'Edit ledger entry' : 'New ledger entry'}
+      onClose={onClose}
+      footer={<>
+        <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
+      </>}
+    >
       <div className="form-row">
         <label className="form-label">Description *</label>
-        <input className="input" value={form.description} onChange={e => f('description', e.target.value)} placeholder="Description" autoFocus />
+        <input className="input" value={form.description} onChange={e => f('description', e.target.value)} autoFocus />
       </div>
       <div className="form-grid">
         <div className="form-row">
           <label className="form-label">Amount € *</label>
-          <input type="number" className="input" value={form.amount} onChange={e => f('amount', e.target.value)} placeholder="0.00" />
+          <input type="number" min="0" step="0.01" className="input" value={form.amount} onChange={e => f('amount', e.target.value)} placeholder="0.00" />
         </div>
         <div className="form-row">
-          <label className="form-label">Date Incurred</label>
-          <input type="date" className="input" value={form.date_incurred} onChange={e => f('date_incurred', e.target.value)} />
+          <label className="form-label">Date</label>
+          <DateField value={form.date_incurred} onChange={v => f('date_incurred', v)} />
         </div>
       </div>
-      <div className="form-row">
-        <label className="form-label">Status</label>
-        <select className="select" value={form.status} onChange={e => f('status', e.target.value)}>
-          <option value="unpaid">Unpaid</option>
-          <option value="paid">Paid</option>
-        </select>
-      </div>
-      {form.status === 'paid' && (
+      <div className="form-grid">
         <div className="form-row">
-          <label className="form-label">Payment Date</label>
-          <input type="date" className="input" value={form.payment_date} onChange={e => f('payment_date', e.target.value)} />
+          <IconToggles
+            options={[
+              { key: 'unpaid', Icon: CircleDotEmber, title: 'Unpaid' },
+              { key: 'paid', Icon: Check, title: 'Paid' },
+            ]}
+            value={form.status}
+            onChange={k => setForm(p => ({ ...p, status: k, payment_date: k === 'paid' ? (p.payment_date || pristinaToday()) : '' }))}
+            label="Status"
+          />
         </div>
-      )}
+        {form.status === 'paid' && (
+          <div className="form-row">
+            <label className="form-label">Paid on</label>
+            <DateField value={form.payment_date} onChange={v => f('payment_date', v)} />
+          </div>
+        )}
+      </div>
       <div className="form-row">
         <label className="form-label">Notes</label>
-        <textarea className="input" value={form.notes} onChange={e => f('notes', e.target.value)} placeholder="Notes..." />
+        <textarea className="input" value={form.notes} onChange={e => f('notes', e.target.value)} />
       </div>
       {err && <div className="error-msg">{err}</div>}
     </Overlay>
   );
+}
+
+// The unpaid glyph for the status toggle: the same ember dot the rows use.
+function CircleDotEmber() {
+  return <span className="db-dot" />;
 }
 
 function EditCrewModal({ member, crewId, roles, onClose, onSaved }) {
@@ -336,76 +353,28 @@ function EditCrewModal({ member, crewId, roles, onClose, onSaved }) {
     service_type: member.service_type || '',
   });
   const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
   function f(k, v) { setForm(p => ({ ...p, [k]: v })); }
 
   async function save() {
+    if (!form.name.trim()) return setErr('Name is required');
     setSaving(true);
     try {
-      await api.put(`/crew/${crewId}`, { ...form, is_company: isCompany, day_rate: parseFloat(form.day_rate) || 0 });
+      await api.put(`/crew/${crewId}`, {
+        ...form, name: form.name.trim(), is_company: isCompany, day_rate: parseFloat(form.day_rate) || 0,
+      });
       onSaved(); onClose();
-    } catch (e) { alert(e.message); }
+    } catch (e) { setErr(e.message); }
     setSaving(false);
   }
 
   return (
-    <Overlay title="Edit Crew Member" onClose={onClose} footer={<>
+    <Overlay title="Edit Crew" onClose={onClose} footer={<>
       <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
       <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
     </>}>
-      <div className="form-row">
-        <div className="toggle-group">
-          <button type="button" className={`toggle-btn ${!isCompany ? 'active' : ''}`} onClick={() => setIsCompany(false)}>Individual</button>
-          <button type="button" className={`toggle-btn ${isCompany ? 'active' : ''}`} onClick={() => setIsCompany(true)}>Company</button>
-        </div>
-      </div>
-      <div className="form-row">
-        <label className="form-label">{isCompany ? 'Company Name *' : 'Name *'}</label>
-        <input className="input" value={form.name} onChange={e => f('name', e.target.value)} />
-      </div>
-      {isCompany ? (
-        <>
-          <div className="form-row">
-            <label className="form-label">Service Type</label>
-            <input className="input" value={form.service_type} onChange={e => f('service_type', e.target.value)} placeholder="e.g. Rental House..." />
-          </div>
-          <div className="form-row">
-            <label className="form-label">Rate (€)</label>
-            <input type="number" className="input" value={form.day_rate} onChange={e => f('day_rate', e.target.value)} />
-          </div>
-        </>
-      ) : (
-        <div className="form-grid">
-          <div className="form-row">
-            <label className="form-label">Role</label>
-            <select className="select" value={form.role} onChange={e => f('role', e.target.value)}>
-              <option value="">Select role</option>
-              {roles.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
-            </select>
-          </div>
-          <div className="form-row">
-            <label className="form-label">Day Rate (€)</label>
-            <input type="number" className="input" value={form.day_rate} onChange={e => f('day_rate', e.target.value)} />
-          </div>
-        </div>
-      )}
-      <div className="form-grid">
-        <div className="form-row">
-          <label className="form-label">Phone</label>
-          <input className="input" value={form.phone} onChange={e => f('phone', e.target.value)} />
-        </div>
-        <div className="form-row">
-          <label className="form-label">Email</label>
-          <input type="email" className="input" value={form.email} onChange={e => f('email', e.target.value)} />
-        </div>
-      </div>
-      <div className="form-row">
-        <label className="form-label">Location</label>
-        <input className="input" value={form.location} onChange={e => f('location', e.target.value)} />
-      </div>
-      <div className="form-row">
-        <label className="form-label">Notes</label>
-        <textarea className="input" value={form.notes} onChange={e => f('notes', e.target.value)} />
-      </div>
+      <CrewFormFields form={form} f={f} isCompany={isCompany} setIsCompany={setIsCompany} roles={roles} />
+      {err && <div className="error-msg">{err}</div>}
     </Overlay>
   );
 }

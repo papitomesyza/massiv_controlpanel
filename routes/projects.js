@@ -205,7 +205,7 @@ router.post('/', (req, res) => {
   }
 });
 
-// Custom task suggestions — must come before /:id
+// Custom task suggestions, must come before /:id
 router.get('/custom-task-suggestions', (req, res) => {
   const { category } = req.query;
   if (!category) return res.json([]);
@@ -287,7 +287,7 @@ router.put('/:id/phases/:phaseId/complete', (req, res) => {
   res.json({ ok: true });
 });
 
-// Reactivate a phase — keeps state consistent
+// Reactivate a phase, keeping state consistent
 router.put('/:id/phases/:phaseId/reactivate', (req, res) => {
   const { id, phaseId } = req.params;
   const phase = db.prepare('SELECT * FROM project_phases WHERE id = ? AND project_id = ?').get(phaseId, id);
@@ -307,7 +307,7 @@ router.put('/:id/phases/:phaseId/reactivate', (req, res) => {
   res.json({ ok: true });
 });
 
-// Duplicate project — copies location fields
+// Duplicate project, copying location fields
 router.post('/:id/duplicate', (req, res) => {
   const { title } = req.body;
   if (!title || !title.trim()) return res.status(400).json({ error: 'Title required' });
@@ -450,7 +450,7 @@ router.delete('/:id/tasks/:taskId', (req, res) => {
   res.json({ ok: true });
 });
 
-// Batch task insert — continues sort_order from each phase's current max
+// Batch task insert, continuing sort_order from each phase's current max
 router.post('/:id/tasks/batch', (req, res) => {
   const { tasks } = req.body;
   if (!Array.isArray(tasks) || tasks.length === 0) return res.json({ ok: true });
@@ -619,7 +619,7 @@ router.post('/:id/expenses/:expId/approve', (req, res) => {
   res.json({ ok: true });
 });
 
-// Reject a pending expense — deletes it and its file
+// Reject a pending expense, deleting it and its file
 router.post('/:id/expenses/:expId/reject', (req, res) => {
   const expense = db.prepare('SELECT * FROM expenses WHERE id = ? AND project_id = ? AND status = ?').get(req.params.expId, req.params.id, 'pending');
   if (!expense) return res.status(404).json({ error: 'Pending expense not found' });
@@ -691,9 +691,11 @@ router.get('/:id/pdf', (req, res) => {
     ['Total Expenses', fmt(pnl.totalExpenses)],
     ['Expected Profit', fmt(pnl.expectedProfit)],
     ['Realized Profit', fmt(pnl.realizedProfit)],
-    ['Profit Margin', pnl.profitMargin !== null ? `${pnl.profitMargin}%` : '—'],
+    ['Profit Margin', pnl.profitMargin != null ? `${pnl.profitMargin}%` : ''],
   ];
   pnlRows.forEach(([label, val]) => {
+    // A figure with no value prints its label alone.
+    if (!val) { doc.fontSize(10).font('Helvetica').fillColor('#333').text(label); return; }
     doc.fontSize(10).font('Helvetica').fillColor('#333').text(label, { continued: true, width: 250 });
     doc.fillColor('#000').text(val, { align: 'right' });
   });
@@ -702,7 +704,7 @@ router.get('/:id/pdf', (req, res) => {
   if (clientPayments.length > 0) {
     doc.fontSize(12).font('Helvetica-Bold').fillColor('#000').text('Client Payments');
     doc.moveDown(0.3).fontSize(9).font('Helvetica').fillColor('#333');
-    clientPayments.forEach(p => doc.text(`${p.date}  ${fmt(p.amount)}  ${p.status}  ${p.method || ''}${p.notes ? `  — ${p.notes}` : ''}`));
+    clientPayments.forEach(p => doc.text(`${p.date}  ${fmt(p.amount)}  ${p.status}${p.method ? `  ${p.method}` : ''}${p.notes ? `  |  ${p.notes}` : ''}`));
     doc.moveDown();
   }
 
@@ -711,7 +713,8 @@ router.get('/:id/pdf', (req, res) => {
     doc.moveDown(0.3).fontSize(9).font('Helvetica').fillColor('#333');
     crewAssignments.forEach(c => {
       const cost = c.days * c.rate_per_day;
-      doc.text(`${c.crew_name}  |  ${c.role_on_project || c.crew_role || ''}  |  ${c.days}d × ${fmt(c.rate_per_day)} = ${fmt(cost)}  |  ${c.paid_status}`);
+      const parts = [c.crew_name, c.role_on_project || c.crew_role || '', `${c.days}d x ${fmt(c.rate_per_day)} = ${fmt(cost)}`, c.paid_status || ''];
+      doc.text(parts.filter(Boolean).join('  |  '));
     });
     doc.moveDown();
   }
@@ -719,7 +722,7 @@ router.get('/:id/pdf', (req, res) => {
   if (expenses.length > 0) {
     doc.fontSize(12).font('Helvetica-Bold').fillColor('#000').text('Expenses');
     doc.moveDown(0.3).fontSize(9).font('Helvetica').fillColor('#333');
-    expenses.forEach(e => doc.text(`${e.date}  ${e.category_name || 'Uncategorized'}  ${fmt(e.amount)}${e.notes ? `  — ${e.notes}` : ''}`));
+    expenses.forEach(e => doc.text(`${e.date}  ${e.category_name || 'Uncategorized'}  ${fmt(e.amount)}${e.notes ? `  |  ${e.notes}` : ''}`));
     doc.moveDown();
   }
 
@@ -731,7 +734,7 @@ router.get('/:id/pdf', (req, res) => {
       if (ph.tasks && ph.tasks.length > 0) {
         ph.tasks.forEach(t => {
           doc.fontSize(9).font('Helvetica').fillColor('#444')
-            .text(`  • ${t.title}  [${t.status}]${t.crew_name ? ` — ${t.crew_name}` : ''}${t.due_date ? ` — due ${t.due_date}` : ''}`);
+            .text(`  • ${t.title}  [${t.status}]${t.crew_name ? `  |  ${t.crew_name}` : ''}${t.due_date ? `  |  due ${t.due_date}` : ''}`);
         });
       }
     });
@@ -741,7 +744,7 @@ router.get('/:id/pdf', (req, res) => {
   if (revisionRounds.length > 0) {
     doc.fontSize(12).font('Helvetica-Bold').fillColor('#000').text('Revision Rounds');
     doc.moveDown(0.3).fontSize(9).font('Helvetica').fillColor('#333');
-    revisionRounds.forEach(r => doc.text(`Round ${r.round_number}  |  ${r.date}${r.notes ? `  — ${r.notes}` : ''}`));
+    revisionRounds.forEach(r => doc.text(`Round ${r.round_number}  |  ${r.date}${r.notes ? `  |  ${r.notes}` : ''}`));
     doc.moveDown();
   }
 

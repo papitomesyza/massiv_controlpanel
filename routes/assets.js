@@ -1,6 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const { db } = require('../db/database');
+const { validateMoney } = require('../lib/financeFigures');
+
+const cleanName = v => (typeof v === 'string' ? v.trim() : '');
 
 // GET /api/assets/providers
 router.get('/providers', (req, res) => {
@@ -31,7 +34,8 @@ router.get('/providers/:id', (req, res) => {
 
 // POST /api/assets/providers
 router.post('/providers', (req, res) => {
-  const { name, type, phone, email, location, notes } = req.body;
+  const { type, phone, email, location, notes } = req.body;
+  const name = cleanName(req.body.name);
   if (!name) return res.status(400).json({ error: 'Name required' });
   const result = db.prepare(`
     INSERT INTO asset_providers (name, type, phone, email, location, notes)
@@ -42,10 +46,13 @@ router.post('/providers', (req, res) => {
 
 // PUT /api/assets/providers/:id
 router.put('/providers/:id', (req, res) => {
-  const { name, type, phone, email, location, notes } = req.body;
-  db.prepare(`
+  const { type, phone, email, location, notes } = req.body;
+  const name = cleanName(req.body.name);
+  if (!name) return res.status(400).json({ error: 'Name required' });
+  const result = db.prepare(`
     UPDATE asset_providers SET name=?, type=?, phone=?, email=?, location=?, notes=? WHERE id=?
   `).run(name, type || 'Rental House', phone || null, email || null, location || null, notes || null, req.params.id);
+  if (result.changes === 0) return res.status(404).json({ error: 'Provider not found' });
   res.json({ ok: true });
 });
 
@@ -55,7 +62,7 @@ router.put('/providers/:id/restore', (req, res) => {
   res.json({ ok: true });
 });
 
-// DELETE /api/assets/providers/:id — archive
+// DELETE /api/assets/providers/:id archives the provider
 router.delete('/providers/:id', (req, res) => {
   db.prepare('UPDATE asset_providers SET archived=1 WHERE id=?').run(req.params.id);
   res.json({ ok: true });
@@ -69,7 +76,8 @@ router.get('/items', (req, res) => {
 
 // POST /api/assets/items
 router.post('/items', (req, res) => {
-  const { name, category, description } = req.body;
+  const { category, description } = req.body;
+  const name = cleanName(req.body.name);
   if (!name) return res.status(400).json({ error: 'Name required' });
   const result = db.prepare(`
     INSERT INTO asset_items (name, category, description) VALUES (?, ?, ?)
@@ -79,16 +87,18 @@ router.post('/items', (req, res) => {
 
 // PUT /api/assets/items/:id
 router.put('/items/:id', (req, res) => {
-  const { name, category, description } = req.body;
+  const { category, description } = req.body;
+  const name = cleanName(req.body.name);
+  if (!name) return res.status(400).json({ error: 'Name required' });
   db.prepare('UPDATE asset_items SET name=?, category=?, description=? WHERE id=?')
     .run(name, category || 'Other', description || null, req.params.id);
   res.json({ ok: true });
 });
 
-// DELETE /api/assets/items/:id — only if not referenced
+// DELETE /api/assets/items/:id, only when no provider lists the item
 router.delete('/items/:id', (req, res) => {
   const refs = db.prepare('SELECT COUNT(*) as c FROM asset_provider_items WHERE item_id=?').get(req.params.id);
-  if (refs.c > 0) return res.status(400).json({ error: 'Item is used by one or more providers' });
+  if (refs.c > 0) return res.status(409).json({ error: `Item is listed by ${refs.c} provider${refs.c > 1 ? 's' : ''}` });
   db.prepare('DELETE FROM asset_items WHERE id=?').run(req.params.id);
   res.json({ ok: true });
 });
@@ -109,11 +119,13 @@ router.get('/provider-items/:providerId', (req, res) => {
 router.post('/provider-items', (req, res) => {
   const { provider_id, item_id, daily_rate, notes } = req.body;
   if (!provider_id || !item_id) return res.status(400).json({ error: 'provider_id and item_id required' });
+  const rateErr = validateMoney(daily_rate == null || daily_rate === '' ? 0 : daily_rate, 'daily_rate');
+  if (rateErr) return res.status(400).json({ error: rateErr });
   try {
     const result = db.prepare(`
       INSERT INTO asset_provider_items (provider_id, item_id, daily_rate, notes)
       VALUES (?, ?, ?, ?)
-    `).run(provider_id, item_id, daily_rate || 0, notes || null);
+    `).run(provider_id, item_id, Number(daily_rate) || 0, notes || null);
     res.json({ id: result.lastInsertRowid });
   } catch (e) {
     if (e.message && e.message.includes('UNIQUE')) {
@@ -126,8 +138,10 @@ router.post('/provider-items', (req, res) => {
 // PUT /api/assets/provider-items/:id
 router.put('/provider-items/:id', (req, res) => {
   const { daily_rate, notes } = req.body;
+  const rateErr = validateMoney(daily_rate == null || daily_rate === '' ? 0 : daily_rate, 'daily_rate');
+  if (rateErr) return res.status(400).json({ error: rateErr });
   db.prepare('UPDATE asset_provider_items SET daily_rate=?, notes=? WHERE id=?')
-    .run(daily_rate != null ? daily_rate : 0, notes || null, req.params.id);
+    .run(Number(daily_rate) || 0, notes || null, req.params.id);
   res.json({ ok: true });
 });
 
@@ -137,7 +151,7 @@ router.delete('/provider-items/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-// GET /api/assets/all-items — for Investment Estimation wizard
+// GET /api/assets/all-items, for the Investment Estimation wizard
 router.get('/all-items', (req, res) => {
   const rows = db.prepare(`
     SELECT api.*, ai.name as item_name, ai.category, ap.name as provider_name

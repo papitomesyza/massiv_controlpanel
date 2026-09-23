@@ -1,10 +1,36 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { Plus, Edit2, Archive, RotateCcw, Trash2, MapPin, Package, ChevronDown, ChevronRight, Phone, X } from 'lucide-react';
-import { api } from '../api';
+import React, { useEffect, useState } from 'react';
+import {
+  Plus, Edit2, Archive, RotateCcw, Trash2, MapPin, Package, ChevronDown, ChevronRight, Phone,
+  Warehouse, User, Clapperboard, Film, Store, MessageCircle,
+} from 'lucide-react';
+import { api, fmt } from '../api';
 import { Private } from '../context/PrivacyContext';
 import Overlay from '../components/Overlay';
+import ConfirmDialog from '../components/ConfirmDialog';
+import { assetCategoryVisual } from '../lib/categoryIcons';
+import { waUrl, telUrl, IconLink } from '../components/DbBits';
 
 const TYPE_SUGGESTIONS = ['Rental House', 'Freelancer', 'Studio', 'Post House', 'Other'];
+
+// Provider types read as a glyph; an unknown type falls back to a store.
+const TYPE_ICON = {
+  'rental house': Warehouse,
+  'freelancer': User,
+  'studio': Clapperboard,
+  'post house': Film,
+};
+function providerTypeIcon(type) {
+  return TYPE_ICON[String(type || 'Rental House').toLowerCase()] || Store;
+}
+
+function AssetIcon({ category }) {
+  const { Icon, known } = assetCategoryVisual(category);
+  return (
+    <span className="db-avatar sm" title={category || undefined} style={known ? { color: 'var(--color-ink-soft)' } : undefined}>
+      <Icon size={15} />
+    </span>
+  );
+}
 
 export default function Assets() {
   const [providers, setProviders] = useState([]);
@@ -19,6 +45,9 @@ export default function Assets() {
   const [showAddItemModal, setShowAddItemModal] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState('');
   const [editingRate, setEditingRate] = useState(null);
+  const [removeItem, setRemoveItem] = useState(null);
+  const [removing, setRemoving] = useState(false);
+  const [notice, setNotice] = useState(null);
 
   async function loadProviders() {
     const all = await api.get('/assets/providers?all=1');
@@ -27,18 +56,18 @@ export default function Assets() {
   }
 
   async function loadAllItems() {
-    const items = await api.get('/assets/items');
-    setAllItems(items);
+    setAllItems(await api.get('/assets/items'));
   }
 
   useEffect(() => {
-    Promise.all([loadProviders(), loadAllItems()]).finally(() => setLoading(false));
+    Promise.all([loadProviders(), loadAllItems()])
+      .catch(e => setNotice({ title: 'Could not load assets', message: e.message }))
+      .finally(() => setLoading(false));
   }, []);
 
   async function loadProviderItems(providerId) {
     try {
-      const items = await api.get(`/assets/provider-items/${providerId}`);
-      setProviderItems(items);
+      setProviderItems(await api.get(`/assets/provider-items/${providerId}`));
     } catch (_) { setProviderItems([]); }
   }
 
@@ -57,14 +86,14 @@ export default function Assets() {
         setProviderItems([]);
       }
       loadProviders();
-    } catch (e) { alert(e.message); }
+    } catch (e) { setNotice({ title: 'Could not archive', message: e.message }); }
   }
 
   async function restoreProvider(provider) {
     try {
       await api.put(`/assets/providers/${provider.id}/restore`, {});
       loadProviders();
-    } catch (e) { alert(e.message); }
+    } catch (e) { setNotice({ title: 'Could not restore', message: e.message }); }
   }
 
   async function handleSaveProvider(data) {
@@ -83,32 +112,33 @@ export default function Assets() {
 
   async function saveRate(providerItemId, newRate) {
     const item = providerItems.find(i => i.id === providerItemId);
-    try {
-      await api.put(`/assets/provider-items/${providerItemId}`, {
-        daily_rate: parseFloat(newRate) || 0,
-        notes: item?.notes || null,
-      });
-      setProviderItems(prev => prev.map(i =>
-        i.id === providerItemId ? { ...i, daily_rate: parseFloat(newRate) || 0 } : i
-      ));
-    } catch (e) { alert(e.message); }
+    const rate = newRate === '' ? 0 : Number(newRate);
     setEditingRate(null);
+    try {
+      await api.put(`/assets/provider-items/${providerItemId}`, { daily_rate: rate, notes: item?.notes || null });
+      setProviderItems(prev => prev.map(i => (i.id === providerItemId ? { ...i, daily_rate: rate } : i)));
+    } catch (e) { setNotice({ title: 'Rate not saved', message: e.message }); }
   }
 
-  async function deleteProviderItem(id) {
-    if (!window.confirm('Remove this item from the provider?')) return;
+  async function confirmRemoveItem() {
+    setRemoving(true);
     try {
-      await api.del(`/assets/provider-items/${id}`);
-      setProviderItems(prev => prev.filter(i => i.id !== id));
+      await api.del(`/assets/provider-items/${removeItem.id}`);
+      setProviderItems(prev => prev.filter(i => i.id !== removeItem.id));
+      setRemoveItem(null);
       loadProviders();
-    } catch (e) { alert(e.message); }
+    } catch (e) {
+      setRemoveItem(null);
+      setNotice({ title: 'Could not remove', message: e.message });
+    }
+    setRemoving(false);
   }
 
   async function handleAddItem(itemId, dailyRate, notes) {
     await api.post('/assets/provider-items', {
       provider_id: selectedProvider.id,
       item_id: itemId,
-      daily_rate: parseFloat(dailyRate) || 0,
+      daily_rate: dailyRate === '' ? 0 : Number(dailyRate),
       notes: notes || null,
     });
     await loadProviderItems(selectedProvider.id);
@@ -118,8 +148,8 @@ export default function Assets() {
 
   async function handleCreateAndAddItem(name, category, dailyRate, notes) {
     const newItem = await api.post('/assets/items', { name, category: category || 'Other' });
-    await handleAddItem(newItem.id, dailyRate, notes);
     await loadAllItems();
+    await handleAddItem(newItem.id, dailyRate, notes);
   }
 
   const categories = [...new Set(providerItems.map(i => i.category).filter(Boolean))];
@@ -130,28 +160,21 @@ export default function Assets() {
   return (
     <div>
       <div className="page-header">
-        <div>
-          <div className="page-title">Assets</div>
-          <div className="page-subtitle">Equipment providers, rental houses, and item rates</div>
-        </div>
-        <button className="btn btn-primary" onClick={() => { setEditingProvider(null); setShowProviderModal(true); }}>
-          <Plus size={15} /> Add Provider
+        <div className="page-title">Assets</div>
+        <button
+          className="btn btn-primary"
+          onClick={() => { setEditingProvider(null); setShowProviderModal(true); }}
+          title="Add provider"
+          aria-label="Add provider"
+        >
+          <Plus size={16} />
         </button>
       </div>
 
       <div className="assets-layout" style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
-
-        {/* Left panel — Providers */}
         <div className="assets-providers-panel" style={{ width: '38%', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {providers.length === 0 && archivedProviders.length === 0 && (
-            <div className="card" style={{ padding: '48px 24px', textAlign: 'center' }}>
-              <Package size={36} color="var(--color-hairline-strong)" style={{ margin: '0 auto 12px' }} />
-              <div style={{ color: 'var(--color-ink)', fontWeight: 600, marginBottom: '8px' }}>No providers yet</div>
-              <div style={{ color: 'var(--color-mid-gray)', fontSize: '13px', marginBottom: '20px' }}>Add your first asset provider to get started.</div>
-              <button className="btn btn-primary" onClick={() => setShowProviderModal(true)}>
-                <Plus size={14} /> Add Provider
-              </button>
-            </div>
+            <div className="card db-empty"><Package size={28} /></div>
           )}
 
           {providers.map(provider => (
@@ -166,26 +189,17 @@ export default function Assets() {
           ))}
 
           {archivedProviders.length > 0 && (
-            <div style={{ marginTop: '4px' }}>
-              <button
-                onClick={() => setShowArchived(p => !p)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '6px',
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  color: 'var(--color-mid-gray)', fontSize: '12px', padding: '6px 2px', width: '100%',
-                }}
-              >
-                {showArchived ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-                Archived ({archivedProviders.length})
+            <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <button className="db-archived-toggle" onClick={() => setShowArchived(p => !p)} aria-expanded={showArchived}>
+                {showArchived ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                <Archive size={13} />
+                <span className="db-count"><span className="db-dot" />{archivedProviders.length}</span>
               </button>
               {showArchived && archivedProviders.map(provider => (
                 <ProviderCard
                   key={provider.id}
                   provider={provider}
                   isSelected={false}
-                  onSelect={() => {}}
-                  onEdit={() => {}}
-                  onArchive={() => {}}
                   onRestore={() => restoreProvider(provider)}
                   archived
                 />
@@ -194,170 +208,91 @@ export default function Assets() {
           )}
         </div>
 
-        {/* Right panel — Items */}
-        <div className="card" style={{ flex: 1, minHeight: '420px', display: 'flex', flexDirection: 'column' }}>
+        <div className="card" style={{ flex: 1, minHeight: '420px', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           {!selectedProvider ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, padding: '64px 24px', color: 'var(--color-mid-gray)' }}>
-              <Package size={40} color="var(--color-hairline-strong)" style={{ marginBottom: '12px' }} />
-              <div style={{ fontSize: '14px' }}>Select a provider to view their items</div>
-            </div>
+            <div className="db-empty" style={{ flex: 1, alignItems: 'center' }}><Package size={36} /></div>
           ) : (
             <>
-              {/* Panel header */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid var(--border)', gap: '12px', flexWrap: 'wrap' }}>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: '15px' }}>{selectedProvider.name}</div>
-                  <div style={{ fontSize: '12px', color: 'var(--color-mid-gray)', marginTop: '2px' }}>{selectedProvider.type}</div>
+              <div style={{ display: 'flex', alignItems: 'center', padding: '14px 18px', borderBottom: '1px solid var(--color-hairline)', gap: '12px', flexWrap: 'wrap' }}>
+                <div className="db-main">
+                  <div className="db-name"><span>{selectedProvider.name}</span></div>
                 </div>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  {categories.length > 1 && (
-                    <select
-                      className="select"
-                      style={{ fontSize: '12px', padding: '5px 8px', height: 'auto' }}
-                      value={categoryFilter}
-                      onChange={e => setCategoryFilter(e.target.value)}
+                {categories.length > 1 && (
+                  <div className="toggle-group" role="group" aria-label="Category">
+                    <button
+                      type="button"
+                      className={`toggle-btn toggle-icon ${categoryFilter === '' ? 'active' : ''}`}
+                      onClick={() => setCategoryFilter('')}
+                      title="All"
+                      aria-label="All"
                     >
-                      <option value="">All categories</option>
-                      {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  )}
-                  <button className="btn btn-primary btn-sm" onClick={() => setShowAddItemModal(true)}>
-                    <Plus size={13} /> Add Item
-                  </button>
-                </div>
-              </div>
-
-              {/* Items — desktop table */}
-              <div className="assets-items-table-wrap" style={{ flex: 1, overflowY: 'auto' }}>
-                {filteredItems.length === 0 ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px 24px', color: 'var(--color-mid-gray)' }}>
-                    <div style={{ fontSize: '13px', marginBottom: '16px' }}>
-                      {categoryFilter ? `No items in "${categoryFilter}"` : 'No items yet for this provider'}
-                    </div>
-                    {!categoryFilter && (
-                      <button className="btn btn-ghost btn-sm" onClick={() => setShowAddItemModal(true)}>
-                        <Plus size={13} /> Add first item
-                      </button>
-                    )}
+                      <Package size={14} />
+                    </button>
+                    {categories.map(c => {
+                      const { Icon } = assetCategoryVisual(c);
+                      return (
+                        <button
+                          key={c}
+                          type="button"
+                          className={`toggle-btn toggle-icon ${categoryFilter === c ? 'active' : ''}`}
+                          onClick={() => setCategoryFilter(c)}
+                          title={c}
+                          aria-label={c}
+                        >
+                          <Icon size={14} />
+                        </button>
+                      );
+                    })}
                   </div>
-                ) : (
-                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead>
-                      <tr>
-                        <th style={{ textAlign: 'left', padding: '10px 20px', fontSize: '11px', color: 'var(--color-mid-gray)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--border)' }}>Item Name</th>
-                        <th style={{ textAlign: 'left', padding: '10px 12px', fontSize: '11px', color: 'var(--color-mid-gray)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--border)' }}>Category</th>
-                        <th style={{ textAlign: 'right', padding: '10px 12px', fontSize: '11px', color: 'var(--color-mid-gray)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--border)' }}>Daily Rate €</th>
-                        <th style={{ textAlign: 'left', padding: '10px 12px', fontSize: '11px', color: 'var(--color-mid-gray)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--border)', width: '160px' }}>Notes</th>
-                        <th style={{ width: '44px', borderBottom: '1px solid var(--border)' }} />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredItems.map(item => (
-                        <tr key={item.id} style={{ borderBottom: '1px solid var(--color-hairline)' }}>
-                          <td style={{ padding: '10px 20px', fontSize: '13px', fontWeight: 500 }}>{item.item_name}</td>
-                          <td style={{ padding: '10px 12px' }}>
-                            {item.category ? (
-                              <span style={{ background: 'var(--overlay-03)', padding: '2px 8px', borderRadius: '6px', fontSize: '11px', color: 'var(--color-mid-gray)' }}>{item.category}</span>
-                            ) : <span style={{ color: 'var(--color-mid-gray)' }}>—</span>}
-                          </td>
-                          <td style={{ padding: '10px 12px', textAlign: 'right' }}>
-                            {editingRate?.id === item.id ? (
-                              <input
-                                type="number"
-                                className="input"
-                                style={{ width: '80px', padding: '3px 8px', fontSize: '13px', textAlign: 'right', display: 'inline-block' }}
-                                value={editingRate.value}
-                                autoFocus
-                                onChange={e => setEditingRate(p => ({ ...p, value: e.target.value }))}
-                                onBlur={() => saveRate(item.id, editingRate.value)}
-                                onKeyDown={e => {
-                                  if (e.key === 'Enter') saveRate(item.id, editingRate.value);
-                                  if (e.key === 'Escape') setEditingRate(null);
-                                }}
-                              />
-                            ) : (
-                              <span
-                                title="Click to edit"
-                                onClick={() => setEditingRate({ id: item.id, value: String(item.daily_rate || 0) })}
-                                style={{ cursor: 'pointer', fontWeight: 600, fontSize: '13px', padding: '3px 10px', borderRadius: '6px', background: 'var(--overlay-02)', display: 'inline-block' }}
-                              >
-                                <Private>€{Number(item.daily_rate || 0).toFixed(0)}</Private>
-                              </span>
-                            )}
-                          </td>
-                          <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--color-mid-gray)', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {item.notes || <span style={{ color: 'var(--color-hairline-strong)' }}>—</span>}
-                          </td>
-                          <td style={{ padding: '10px 12px' }}>
-                            <button
-                              className="btn-icon"
-                              style={{ color: 'var(--color-ember)' }}
-                              title="Remove from provider"
-                              onClick={() => deleteProviderItem(item.id)}
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
                 )}
+                <button className="db-iconbtn lg" onClick={() => setShowAddItemModal(true)} title="Add item" aria-label="Add item">
+                  <Plus size={16} />
+                </button>
               </div>
 
-              {/* Items — mobile cards */}
-              <div className="assets-items-cards-wrap">
+              <div style={{ flex: 1, overflowY: 'auto' }}>
                 {filteredItems.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--color-mid-gray)', fontSize: '13px' }}>
-                    {categoryFilter ? `No items in "${categoryFilter}"` : 'No items yet'}
-                  </div>
+                  <div className="db-empty"><Package size={26} /></div>
                 ) : (
                   filteredItems.map(item => (
-                    <div key={item.id} className="assets-item-card">
-                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--color-ink)', marginBottom: '4px' }}>{item.item_name}</div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                            {item.category && (
-                              <span style={{ background: 'var(--overlay-03)', padding: '2px 8px', borderRadius: '6px', fontSize: '11px', color: 'var(--color-mid-gray)' }}>{item.category}</span>
-                            )}
-                            {editingRate?.id === item.id ? (
-                              <input
-                                type="number"
-                                className="input"
-                                style={{ width: '90px', padding: '3px 8px', fontSize: '13px', display: 'inline-block' }}
-                                value={editingRate.value}
-                                autoFocus
-                                onChange={e => setEditingRate(p => ({ ...p, value: e.target.value }))}
-                                onBlur={() => saveRate(item.id, editingRate.value)}
-                                onKeyDown={e => {
-                                  if (e.key === 'Enter') saveRate(item.id, editingRate.value);
-                                  if (e.key === 'Escape') setEditingRate(null);
-                                }}
-                              />
-                            ) : (
-                              <span
-                                title="Tap to edit rate"
-                                onClick={() => setEditingRate({ id: item.id, value: String(item.daily_rate || 0) })}
-                                style={{ cursor: 'pointer', fontWeight: 700, fontSize: '13px', color: 'var(--accent)' }}
-                              >
-                                <Private>€{Number(item.daily_rate || 0).toFixed(0)}/day</Private>
-                              </span>
-                            )}
-                          </div>
-                          {item.notes && (
-                            <div style={{ fontSize: '12px', color: 'var(--color-mid-gray)', marginTop: '4px' }}>{item.notes}</div>
-                          )}
-                        </div>
-                        <button
-                          className="btn-icon"
-                          style={{ color: 'var(--color-ember)', flexShrink: 0 }}
-                          title="Remove from provider"
-                          onClick={() => deleteProviderItem(item.id)}
-                        >
-                          <Trash2 size={13} />
-                        </button>
+                    <div key={item.id} className="asset-item-row">
+                      <AssetIcon category={item.category} />
+                      <div className="db-main">
+                        <div className="db-row-title">{item.item_name}</div>
+                        {item.notes && <div className="asset-item-note">{item.notes}</div>}
                       </div>
+                      {editingRate?.id === item.id ? (
+                        <input
+                          type="number"
+                          min="0"
+                          className="input asset-rate-input"
+                          value={editingRate.value}
+                          autoFocus
+                          onChange={e => setEditingRate(p => ({ ...p, value: e.target.value }))}
+                          onBlur={() => saveRate(item.id, editingRate.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') saveRate(item.id, editingRate.value);
+                            if (e.key === 'Escape') setEditingRate(null);
+                          }}
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          className="db-chip"
+                          title="Day rate"
+                          onClick={() => setEditingRate({ id: item.id, value: String(item.daily_rate || 0) })}
+                        >
+                          <Private>{fmt(item.daily_rate)}</Private>
+                        </button>
+                      )}
+                      <button
+                        className="db-iconbtn danger"
+                        title="Remove"
+                        aria-label={`Remove ${item.item_name}`}
+                        onClick={() => setRemoveItem(item)}
+                      >
+                        <Trash2 size={14} />
+                      </button>
                     </div>
                   ))
                 )}
@@ -384,78 +319,78 @@ export default function Assets() {
           onClose={() => setShowAddItemModal(false)}
         />
       )}
+
+      {removeItem && (
+        <ConfirmDialog
+          title={`Remove ${removeItem.item_name}?`}
+          message={selectedProvider ? `It will no longer be listed by ${selectedProvider.name}.` : undefined}
+          confirmLabel="Remove"
+          tone="danger"
+          busy={removing}
+          onConfirm={confirmRemoveItem}
+          onCancel={() => setRemoveItem(null)}
+        />
+      )}
+
+      {notice && (
+        <ConfirmDialog
+          title={notice.title}
+          message={notice.message}
+          confirmLabel="OK"
+          cancelLabel={null}
+          onConfirm={() => setNotice(null)}
+          onCancel={() => setNotice(null)}
+        />
+      )}
     </div>
   );
 }
 
 function ProviderCard({ provider, isSelected, onSelect, onEdit, onArchive, onRestore, archived }) {
-  const waNumber = provider.phone ? provider.phone.replace(/[^0-9+]/g, '').replace(/^\+/, '') : null;
-  const waLink = waNumber ? `https://wa.me/${waNumber}` : null;
-
+  const TypeIcon = providerTypeIcon(provider.type);
+  const count = Number(provider.item_count) || 0;
   return (
     <div
+      className={`db-card provider-card ${isSelected ? 'is-selected' : ''} ${archived ? 'is-muted' : ''}`}
+      role={archived ? undefined : 'button'}
+      tabIndex={archived ? undefined : 0}
       onClick={archived ? undefined : onSelect}
-      style={{
-        background: isSelected ? 'var(--overlay-04)' : 'var(--overlay-01)',
-        border: `1px solid ${isSelected ? 'var(--color-ink)' : 'var(--border)'}`,
-        borderRadius: '10px',
-        padding: '14px 16px',
-        cursor: archived ? 'default' : 'pointer',
-        opacity: archived ? 0.55 : 1,
-        transition: 'border-color 0.15s, background 0.15s',
-      }}
+      onKeyDown={archived ? undefined : e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(); } }}
+      style={archived ? { cursor: 'default' } : undefined}
     >
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: '5px' }}>{provider.name}</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-            <span style={{
-              fontSize: '10px', fontWeight: 600, padding: '2px 8px', borderRadius: '24px',
-              background: 'var(--overlay-04)', color: 'var(--accent)',
-              textTransform: 'uppercase', letterSpacing: '0.04em',
-            }}>
-              {provider.type || 'Rental House'}
-            </span>
-            <span style={{ fontSize: '11px', color: 'var(--color-mid-gray)' }}>
-              {provider.item_count} item{provider.item_count !== 1 ? 's' : ''}
-            </span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <span className="db-avatar" title={provider.type || 'Rental House'}><TypeIcon size={17} /></span>
+        <div className="db-main">
+          <div className="db-name"><span>{provider.name}</span></div>
+          <div className="db-meta" style={{ marginTop: '5px' }}>
+            <span className="db-count" title={`${count} item${count === 1 ? '' : 's'}`}><span className="db-dot" />{count}</span>
+            {provider.location && (
+              <span className="db-iconbtn" style={{ width: 22, height: 22 }} title={provider.location} aria-label={provider.location}>
+                <MapPin size={13} />
+              </span>
+            )}
+            {provider.phone && (
+              <IconLink href={telUrl(provider.phone)} title={provider.phone} external={false} className="sm">
+                <Phone size={13} />
+              </IconLink>
+            )}
+            {provider.phone && (
+              <IconLink href={waUrl(provider.phone)} title="WhatsApp" className="sm"><MessageCircle size={13} /></IconLink>
+            )}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+        <div className="db-actions" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
           {!archived && (
             <>
-              <button className="btn-icon" title="Edit" onClick={onEdit}><Edit2 size={13} /></button>
-              <button className="btn-icon" title="Archive" onClick={onArchive}><Archive size={13} /></button>
+              <button className="db-iconbtn" title="Edit" aria-label="Edit" onClick={onEdit}><Edit2 size={14} /></button>
+              <button className="db-iconbtn" title="Archive" aria-label="Archive" onClick={onArchive}><Archive size={14} /></button>
             </>
           )}
           {archived && (
-            <button className="btn-icon" title="Restore" onClick={onRestore}><RotateCcw size={13} /></button>
+            <button className="db-iconbtn" title="Restore" aria-label="Restore" onClick={onRestore}><RotateCcw size={14} /></button>
           )}
         </div>
       </div>
-
-      {(provider.location || provider.phone) && (
-        <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
-          {provider.location && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: 'var(--color-mid-gray)' }}>
-              <MapPin size={11} />
-              {provider.location}
-            </div>
-          )}
-          {waLink && (
-            <a
-              href={waLink}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: 'var(--color-ink-soft)', textDecoration: 'none' }}
-              onClick={e => e.stopPropagation()}
-            >
-              <Phone size={11} />
-              {provider.phone}
-            </a>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -483,49 +418,51 @@ function ProviderModal({ provider, onSave, onClose }) {
   }
 
   return (
-    <Overlay title={provider ? 'Edit Provider' : 'Add Provider'} onClose={onClose} width={480}>
-      <div className="modal-body">
-        <div className="form-row">
-          <label className="form-label">Name *</label>
-          <input className="input" value={form.name} onChange={e => f('name', e.target.value)} autoFocus placeholder="e.g. Camera House Berlin" />
-        </div>
-        <div className="form-row">
-          <label className="form-label">Type</label>
-          <input
-            className="input"
-            value={form.type}
-            onChange={e => f('type', e.target.value)}
-            list="provider-type-list"
-            placeholder="Rental House"
-          />
-          <datalist id="provider-type-list">
-            {TYPE_SUGGESTIONS.map(t => <option key={t} value={t} />)}
-          </datalist>
-        </div>
-        <div className="form-grid">
-          <div className="form-row">
-            <label className="form-label">Phone</label>
-            <input className="input" value={form.phone} onChange={e => f('phone', e.target.value)} placeholder="+49 123 456789" />
-          </div>
-          <div className="form-row">
-            <label className="form-label">Email</label>
-            <input className="input" type="email" value={form.email} onChange={e => f('email', e.target.value)} placeholder="contact@example.com" />
-          </div>
-        </div>
-        <div className="form-row">
-          <label className="form-label">Location</label>
-          <input className="input" value={form.location} onChange={e => f('location', e.target.value)} placeholder="City, Country" />
-        </div>
-        <div className="form-row">
-          <label className="form-label">Notes</label>
-          <textarea className="input" rows={2} value={form.notes} onChange={e => f('notes', e.target.value)} placeholder="Optional notes..." />
-        </div>
-        {err && <div className="error-msg">{err}</div>}
-      </div>
-      <div className="modal-footer">
+    <Overlay
+      title={provider ? 'Edit Provider' : 'Add Provider'}
+      onClose={onClose}
+      width={480}
+      footer={<>
         <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
         <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
+      </>}
+    >
+      <div className="form-row">
+        <label className="form-label">Name *</label>
+        <input className="input" value={form.name} onChange={e => f('name', e.target.value)} autoFocus />
       </div>
+      <div className="form-row">
+        <label className="form-label">Type</label>
+        <input
+          className="input"
+          value={form.type}
+          onChange={e => f('type', e.target.value)}
+          list="provider-type-list"
+          placeholder="Rental House"
+        />
+        <datalist id="provider-type-list">
+          {TYPE_SUGGESTIONS.map(t => <option key={t} value={t} />)}
+        </datalist>
+      </div>
+      <div className="form-grid">
+        <div className="form-row">
+          <label className="form-label">Phone</label>
+          <input className="input" value={form.phone} onChange={e => f('phone', e.target.value)} />
+        </div>
+        <div className="form-row">
+          <label className="form-label">Email</label>
+          <input className="input" type="email" value={form.email} onChange={e => f('email', e.target.value)} />
+        </div>
+      </div>
+      <div className="form-row">
+        <label className="form-label">Location</label>
+        <input className="input" value={form.location} onChange={e => f('location', e.target.value)} placeholder="City, Country" />
+      </div>
+      <div className="form-row">
+        <label className="form-label">Notes</label>
+        <textarea className="input" rows={2} value={form.notes} onChange={e => f('notes', e.target.value)} />
+      </div>
+      {err && <div className="error-msg">{err}</div>}
     </Overlay>
   );
 }
@@ -565,7 +502,7 @@ function AddItemModal({ allItems, existingItemIds, onAdd, onCreate, onClose }) {
   async function handleSave() {
     setErr('');
     if (!query.trim()) { setErr('Item name required'); return; }
-    if (!createNew && !selectedItem) { setErr('Select an item from the list or type to create a new one'); return; }
+    if (!createNew && !selectedItem) { setErr('Pick an item from the list or create a new one'); return; }
     setSaving(true);
     try {
       if (createNew) {
@@ -576,83 +513,88 @@ function AddItemModal({ allItems, existingItemIds, onAdd, onCreate, onClose }) {
     } catch (e) { setErr(e.message); setSaving(false); }
   }
 
+  const pickedVisual = createNew ? assetCategoryVisual(newCategory) : selectedItem ? assetCategoryVisual(selectedItem.category) : null;
+
   return (
-    <Overlay title="Add Item to Provider" onClose={onClose} width={420}>
-      <div className="modal-body">
-        <div className="form-row" style={{ position: 'relative' }}>
-          <label className="form-label">Item *</label>
-          <input
-            className="input"
-            value={query}
-            autoFocus
-            placeholder="Search or type new item name..."
-            onChange={e => { setQuery(e.target.value); setSelectedItem(null); setCreateNew(false); setDropdownOpen(true); }}
-            onFocus={() => setDropdownOpen(true)}
-            onBlur={() => setTimeout(() => setDropdownOpen(false), 150)}
-          />
-          {dropdownOpen && (filtered.length > 0 || showCreateOption) && (
-            <div style={{
-              position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 200,
-              background: 'var(--color-surface-alt)', border: '1px solid var(--border)', borderRadius: '10px',
-              boxShadow: '0 8px 24px var(--scrim)', marginTop: '4px', overflow: 'hidden',
-            }}>
-              {filtered.map(item => (
-                <div
-                  key={item.id}
-                  onMouseDown={() => pick(item)}
-                  style={{ padding: '9px 14px', cursor: 'pointer', fontSize: '13px', borderBottom: '1px solid var(--color-hairline)', display: 'flex', alignItems: 'center', gap: '8px' }}
-                >
-                  <span style={{ flex: 1 }}>{item.name}</span>
-                  {item.category && <span style={{ color: 'var(--color-mid-gray)', fontSize: '11px' }}>{item.category}</span>}
-                </div>
-              ))}
-              {showCreateOption && (
-                <div
-                  onMouseDown={pickCreateNew}
-                  style={{ padding: '9px 14px', cursor: 'pointer', fontSize: '13px', color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '6px' }}
-                >
-                  <Plus size={13} />
-                  Create new: "{query.trim()}"
-                </div>
-              )}
-            </div>
-          )}
-          {(selectedItem || createNew) && (
-            <div style={{ marginTop: '4px', fontSize: '11px', color: createNew ? 'var(--accent)' : 'var(--color-ink)' }}>
-              {createNew ? `Will create new item "${query.trim()}"` : 'Existing item selected'}
-            </div>
-          )}
-        </div>
-
-        {createNew && (
-          <div className="form-row">
-            <label className="form-label">Category</label>
-            <input className="input" value={newCategory} onChange={e => setNewCategory(e.target.value)} placeholder="e.g. Camera, Lighting, Audio" />
-          </div>
-        )}
-
-        <div className="form-row">
-          <label className="form-label">Daily Rate €</label>
-          <input type="number" className="input" value={dailyRate} min="0" onChange={e => setDailyRate(e.target.value)} placeholder="0" />
-        </div>
-
-        <div className="form-row">
-          <label className="form-label">Notes</label>
-          <input className="input" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional notes..." />
-        </div>
-
-        {err && <div className="error-msg">{err}</div>}
-      </div>
-      <div className="modal-footer">
+    <Overlay
+      title="Add Item"
+      onClose={onClose}
+      width={420}
+      footer={<>
         <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
         <button
           className="btn btn-primary"
           onClick={handleSave}
           disabled={saving || (!selectedItem && !createNew)}
         >
-          {saving ? 'Adding...' : 'Add Item'}
+          {saving ? 'Adding...' : 'Add'}
         </button>
+      </>}
+    >
+      <div className="form-row" style={{ position: 'relative' }}>
+        <label className="form-label">Item *</label>
+        <div className="flex-center gap-2">
+          {pickedVisual && <span className="db-avatar sm"><pickedVisual.Icon size={15} /></span>}
+          <input
+            className="input"
+            value={query}
+            autoFocus
+            placeholder="Search or type a new item"
+            onChange={e => { setQuery(e.target.value); setSelectedItem(null); setCreateNew(false); setDropdownOpen(true); }}
+            onFocus={() => setDropdownOpen(true)}
+            onBlur={() => setTimeout(() => setDropdownOpen(false), 150)}
+          />
+        </div>
+        {dropdownOpen && (filtered.length > 0 || showCreateOption) && (
+          <div style={{
+            position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 200,
+            background: 'var(--color-surface-alt)', border: '1px solid var(--border)', borderRadius: '10px',
+            boxShadow: '0 8px 24px var(--scrim)', marginTop: '4px', overflow: 'hidden',
+          }}>
+            {filtered.map(item => {
+              const { Icon } = assetCategoryVisual(item.category);
+              return (
+                <div
+                  key={item.id}
+                  onMouseDown={() => pick(item)}
+                  style={{ padding: '9px 14px', cursor: 'pointer', fontSize: '13px', borderBottom: '1px solid var(--color-hairline)', display: 'flex', alignItems: 'center', gap: '10px' }}
+                >
+                  <Icon size={14} style={{ color: 'var(--color-mid-gray)' }} />
+                  <span style={{ flex: 1 }}>{item.name}</span>
+                </div>
+              );
+            })}
+            {showCreateOption && (
+              <div
+                onMouseDown={pickCreateNew}
+                style={{ padding: '9px 14px', cursor: 'pointer', fontSize: '13px', color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '8px' }}
+              >
+                <Plus size={13} />
+                {query.trim()}
+              </div>
+            )}
+          </div>
+        )}
       </div>
+
+      {createNew && (
+        <div className="form-row">
+          <label className="form-label">Category</label>
+          <input className="input" value={newCategory} onChange={e => setNewCategory(e.target.value)} placeholder="Camera, Lighting, Audio" />
+        </div>
+      )}
+
+      <div className="form-row">
+        <label className="form-label">Day Rate €</label>
+        <input type="number" className="input" value={dailyRate} min="0" onChange={e => setDailyRate(e.target.value)} placeholder="0" />
+      </div>
+
+      <div className="form-row">
+        <label className="form-label">Notes</label>
+        <input className="input" value={notes} onChange={e => setNotes(e.target.value)} />
+      </div>
+
+      {err && <div className="error-msg">{err}</div>}
     </Overlay>
   );
 }

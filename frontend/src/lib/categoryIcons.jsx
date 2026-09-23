@@ -5,6 +5,8 @@ import {
   Scissors, Contrast, Sparkles, Mic, Sliders, Captions,
   Palette, Hash, PenTool, LayoutTemplate, Shapes,
   Film, Tag,
+  Lightbulb, Aperture, Plane, Monitor, Battery, Truck, Grip, Headphones,
+  Cable, HardDrive, Armchair,
 } from 'lucide-react';
 
 // One category icon system for the whole app. The Projects rows, the estimate
@@ -104,4 +106,29 @@ export function CategoryTile({ categoryName, groupName, size = 38, className = '
       <Icon size={glyph} />
     </span>
   );
+}
+
+// Asset item categories are free text typed by the user (Camera, Lighting,
+// Audio...), so they are read by keyword rather than by exact name. Anything
+// unrecognised takes the neutral package glyph, drawn grey by the caller.
+const ASSET_ICON_RULES = [
+  [/lens|optic|glass/i, Aperture],
+  [/camera|body|cine/i, Camera],
+  [/light|lamp|led|flash/i, Lightbulb],
+  [/audio|sound|mic/i, Mic],
+  [/headphone|monitoring/i, Headphones],
+  [/drone|aerial/i, Plane],
+  [/monitor|screen|display/i, Monitor],
+  [/power|battery|generator/i, Battery],
+  [/grip|rig|stand|tripod|dolly|gimbal/i, Grip],
+  [/cable|wire/i, Cable],
+  [/storage|drive|card|media/i, HardDrive],
+  [/vehicle|van|truck|transport/i, Truck],
+  [/prop|furniture|set/i, Armchair],
+  [/studio|space|location/i, Building],
+];
+
+export function assetCategoryVisual(category) {
+  const rule = ASSET_ICON_RULES.find(([re]) => re.test(category || ''));
+  return rule ? { Icon: rule[1], known: true } : { Icon: Package, known: false };
 }

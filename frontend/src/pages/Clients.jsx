@@ -1,33 +1,43 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Plus, MessageCircle, User, Building2, X, ChevronRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import {
+  Plus, MessageCircle, Mail, User, Building2, Users, Clock, ArrowDownAZ, TrendingUp, CircleDollarSign,
+} from 'lucide-react';
 import { api, fmt } from '../api';
 import { Private } from '../context/PrivacyContext';
 import Overlay from '../components/Overlay';
+import Ring from '../components/Ring';
+import { waUrl, mailUrl, IconToggles, IconLink, useMoneyTip } from '../components/DbBits';
 
-function waUrl(phone) {
-  if (!phone) return null;
-  const clean = phone.replace(/\D/g, '');
-  return clean ? `https://wa.me/${clean}` : null;
-}
+const SORTS = [
+  { key: 'newest',      Icon: Clock,            title: 'Newest' },
+  { key: 'name',        Icon: ArrowDownAZ,      title: 'A to Z' },
+  { key: 'revenue',     Icon: TrendingUp,       title: 'Revenue' },
+  { key: 'outstanding', Icon: CircleDollarSign, title: 'Owed' },
+];
+
+const EMPTY_FORM = { name: '', company: '', phone: '', email: '', socials: '', notes: '' };
 
 export default function Clients() {
+  const navigate = useNavigate();
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadErr, setLoadErr] = useState('');
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ name:'', company:'', phone:'', email:'', socials:'', notes:'' });
+  const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState('newest');
-  const [detailClient, setDetailClient] = useState(null);
 
   async function load() {
     const params = new URLSearchParams();
     if (search) params.set('search', search);
     if (sort !== 'newest') params.set('sort', sort);
-    const data = await api.get(`/clients?${params}`);
-    setClients(data);
+    try {
+      setClients(await api.get(`/clients?${params}`));
+      setLoadErr('');
+    } catch (e) { setLoadErr(e.message); }
     setLoading(false);
   }
 
@@ -35,15 +45,15 @@ export default function Clients() {
 
   function f(k, v) { setForm(p => ({ ...p, [k]: v })); }
 
+  function closeModal() { setShowModal(false); setErr(''); setForm(EMPTY_FORM); }
+
   async function create() {
-    if (!form.name) return setErr('Name is required');
+    if (!form.name.trim()) return setErr('Name is required');
     setSaving(true);
     try {
-      await api.post('/clients', form);
-      setShowModal(false);
-      setForm({ name:'', company:'', phone:'', email:'', socials:'', notes:'' });
-      setErr('');
-      load();
+      const { id } = await api.post('/clients', { ...form, name: form.name.trim() });
+      closeModal();
+      navigate(`/clients/${id}`);
     } catch (e) { setErr(e.message); }
     setSaving(false);
   }
@@ -53,148 +63,42 @@ export default function Clients() {
   return (
     <div>
       <div className="page-header">
-        <div>
-          <div className="page-title">Clients</div>
-          <div className="page-subtitle">{clients.length} client{clients.length !== 1 ? 's' : ''}</div>
-        </div>
-        <button className="btn btn-primary" onClick={() => setShowModal(true)}><Plus size={15} /> New Client</button>
+        <div className="page-title">Clients</div>
+        <button className="btn btn-primary" onClick={() => setShowModal(true)} title="New client" aria-label="New client">
+          <Plus size={16} />
+        </button>
       </div>
 
-      <div className="filter-bar">
+      <div className="db-toolbar">
         <input
           className="input"
-          style={{ maxWidth: '240px' }}
-          placeholder="Search by name or company..."
+          placeholder="Search"
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
-        <select className="select" value={sort} onChange={e => setSort(e.target.value)}>
-          <option value="newest">Newest First</option>
-          <option value="name">Name A–Z</option>
-          <option value="revenue">Revenue High → Low</option>
-          <option value="projects">Most Projects</option>
-          <option value="outstanding">Outstanding Balance</option>
-        </select>
+        <IconToggles options={SORTS} value={sort} onChange={setSort} label="Sort" />
       </div>
 
+      {loadErr && <div className="error-msg" style={{ marginBottom: '12px' }}>{loadErr}</div>}
+
       {clients.length === 0 ? (
-        <div className="card card-pad empty">No clients found</div>
+        <div className="card db-empty"><Users size={28} /></div>
       ) : (
-        <>
-          {/* Desktop table */}
-          <div className="card desktop-table-only">
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th></th>
-                    <th>Name</th>
-                    <th>Company</th>
-                    <th>Phone</th>
-                    <th>Email</th>
-                    <th>Projects</th>
-                    <th>Revenue</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {clients.map(c => {
-                    const wa = waUrl(c.phone);
-                    return (
-                      <tr key={c.id}>
-                        <td>
-                          {c.company
-                            ? <Building2 size={14} style={{ color: 'var(--color-mid-gray)' }} />
-                            : <User size={14} style={{ color: 'var(--color-mid-gray)' }} />}
-                        </td>
-                        <td><Link to={`/clients/${c.id}`} className="link text-bold">{c.name}</Link></td>
-                        <td className="text-2">{c.company || '—'}</td>
-                        <td>
-                          <div className="flex-center gap-1">
-                            <span className="text-2 text-sm">{c.phone || '—'}</span>
-                            {wa && (
-                              <a href={wa} target="_blank" rel="noopener noreferrer" className="wa-btn" title="WhatsApp">
-                                <MessageCircle size={14} />
-                              </a>
-                            )}
-                          </div>
-                        </td>
-                        <td className="text-2 text-sm">{c.email || '—'}</td>
-                        <td>{c.total_projects}</td>
-                        <td>{<Private>{fmt(c.total_revenue)}</Private>}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Mobile compact 2-per-row grid */}
-          <div className="card mobile-people-grid-wrap">
-            <div className="mobile-people-grid">
-              {clients.map(c => (
-                <button
-                  key={c.id}
-                  className="people-mini-card"
-                  onClick={() => setDetailClient(c)}
-                >
-                  <div className="people-mini-name">
-                    {c.company
-                      ? <Building2 size={11} style={{ color: 'var(--color-mid-gray)', flexShrink: 0 }} />
-                      : <User size={11} style={{ color: 'var(--color-mid-gray)', flexShrink: 0 }} />}
-                    {c.name}
-                  </div>
-                  {c.company && <div className="people-mini-sub">{c.company}</div>}
-                  {!c.company && c.total_projects > 0 && (
-                    <div className="people-mini-sub">{c.total_projects} project{c.total_projects !== 1 ? 's' : ''}</div>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* Client detail sheet (mobile) */}
-      {detailClient && (
-        <ClientDetailSheet client={detailClient} onClose={() => setDetailClient(null)} />
+        <div className="db-grid">
+          {clients.map(c => <ClientCard key={c.id} c={c} onOpen={() => navigate(`/clients/${c.id}`)} />)}
+        </div>
       )}
 
       {showModal && (
         <Overlay
           title="New Client"
-          onClose={() => { setShowModal(false); setErr(''); }}
+          onClose={closeModal}
           footer={<>
-            <button className="btn btn-ghost" onClick={() => setShowModal(false)}>Cancel</button>
+            <button className="btn btn-ghost" onClick={closeModal}>Cancel</button>
             <button className="btn btn-primary" onClick={create} disabled={saving}>{saving ? 'Saving...' : 'Create'}</button>
           </>}
         >
-          <div className="form-row">
-            <label className="form-label">Name *</label>
-            <input className="input" value={form.name} onChange={e => f('name', e.target.value)} placeholder="Full name" />
-          </div>
-          <div className="form-row">
-            <label className="form-label">Company</label>
-            <input className="input" value={form.company} onChange={e => f('company', e.target.value)} placeholder="Company name" />
-          </div>
-          <div className="form-grid">
-            <div className="form-row">
-              <label className="form-label">Phone</label>
-              <input className="input" value={form.phone} onChange={e => f('phone', e.target.value)} />
-            </div>
-            <div className="form-row">
-              <label className="form-label">Email</label>
-              <input type="email" className="input" value={form.email} onChange={e => f('email', e.target.value)} />
-            </div>
-          </div>
-          <div className="form-row">
-            <label className="form-label">Social Media</label>
-            <input className="input" value={form.socials} onChange={e => f('socials', e.target.value)} placeholder="Instagram, LinkedIn, etc." />
-          </div>
-          <div className="form-row">
-            <label className="form-label">Notes</label>
-            <textarea className="input" value={form.notes} onChange={e => f('notes', e.target.value)} placeholder="Notes..." />
-          </div>
+          <ClientFormFields form={form} f={f} />
           {err && <div className="error-msg">{err}</div>}
         </Overlay>
       )}
@@ -202,61 +106,76 @@ export default function Clients() {
   );
 }
 
-function ClientDetailSheet({ client, onClose }) {
-  const wa = waUrl(client.phone);
+function ClientCard({ c, onOpen }) {
+  const received = Number(c.total_revenue) || 0;
+  const owed = Number(c.owed_total) || 0;
+  const pending = Number(c.owed_pending) || 0;
+  const tip = useMoneyTip();
   return (
-    <Overlay
-      size="sheet"
-      onClose={onClose}
-      guard={false}
-      title={
-      <div>
-        <div style={{ fontWeight: 700, fontSize: '18px', color: 'var(--color-ink)', lineHeight: 1.2 }}>{client.name}</div>
-        {client.company && <div style={{ fontSize: '13px', color: 'var(--color-mid-gray)', marginTop: '3px' }}>{client.company}</div>}
-      </div>
-      }
+    <div
+      className="db-card"
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); } }}
     >
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
-        {client.phone && (
-          <div className="fin-row" style={{ padding: '10px 0' }}>
-            <span className="text-2" style={{ fontSize: '12px' }}>Phone</span>
-            <div className="flex-center gap-1">
-              <span style={{ fontSize: '13px' }}>{client.phone}</span>
-              {wa && (
-                <a href={wa} target="_blank" rel="noopener noreferrer" className="wa-btn">
-                  <MessageCircle size={12} /> WA
-                </a>
-              )}
-            </div>
-          </div>
-        )}
-        {client.email && (
-          <div className="fin-row" style={{ padding: '10px 0' }}>
-            <span className="text-2" style={{ fontSize: '12px' }}>Email</span>
-            <span style={{ fontSize: '13px' }}>{client.email}</span>
-          </div>
-        )}
-        <div className="fin-row" style={{ padding: '10px 0' }}>
-          <span className="text-2" style={{ fontSize: '12px' }}>Projects</span>
-          <span style={{ fontSize: '13px' }}>{client.total_projects}</span>
+      <span className="db-avatar">{c.company ? <Building2 size={17} /> : <User size={17} />}</span>
+      <div className="db-main">
+        <div className="db-name">
+          <span>{c.name}</span>
+          {pending > 0 && <span className="db-dot" title={tip('Pending', pending)} />}
         </div>
-        <div className="fin-row" style={{ padding: '10px 0', borderBottom: 'none' }}>
-          <span className="text-2" style={{ fontSize: '12px' }}>Revenue</span>
-          <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-ink)' }}>{<Private>{fmt(client.total_revenue)}</Private>}</span>
+        {c.company && <div className="db-sub">{c.company}</div>}
+        <div className="db-meta">
+          <span className="db-count" title={`${c.total_projects} project${c.total_projects === 1 ? '' : 's'}`}>
+            <span className="db-dot" />{c.total_projects}
+          </span>
+          <span className="db-money"><Private>{fmt(received)}</Private></span>
         </div>
       </div>
-
-      <div style={{ marginTop: '16px' }}>
-        <Link
-          to={`/clients/${client.id}`}
-          className="btn btn-primary"
-          style={{ width: '100%', justifyContent: 'center' }}
-          onClick={onClose}
-        >
-          View Full Profile <ChevronRight size={15} />
-        </Link>
+      <div className="db-actions">
+        <IconLink href={waUrl(c.phone)} title="WhatsApp"><MessageCircle size={15} /></IconLink>
+        <IconLink href={mailUrl(c.email)} title="Email" external={false}><Mail size={15} /></IconLink>
+        <Ring
+          value={received}
+          max={received + owed}
+          size={26}
+          title={owed > 0 ? tip('Owed', owed) : undefined}
+        />
       </div>
-    </Overlay>
+    </div>
+  );
+}
+
+export function ClientFormFields({ form, f }) {
+  return (
+    <>
+      <div className="form-row">
+        <label className="form-label">Name *</label>
+        <input className="input" value={form.name} onChange={e => f('name', e.target.value)} placeholder="Full name" autoFocus />
+      </div>
+      <div className="form-row">
+        <label className="form-label">Company</label>
+        <input className="input" value={form.company} onChange={e => f('company', e.target.value)} placeholder="Company name" />
+      </div>
+      <div className="form-grid">
+        <div className="form-row">
+          <label className="form-label">Phone</label>
+          <input className="input" value={form.phone} onChange={e => f('phone', e.target.value)} />
+        </div>
+        <div className="form-row">
+          <label className="form-label">Email</label>
+          <input type="email" className="input" value={form.email} onChange={e => f('email', e.target.value)} />
+        </div>
+      </div>
+      <div className="form-row">
+        <label className="form-label">Social Media</label>
+        <input className="input" value={form.socials} onChange={e => f('socials', e.target.value)} placeholder="Instagram, LinkedIn, website" />
+      </div>
+      <div className="form-row">
+        <label className="form-label">Notes</label>
+        <textarea className="input" value={form.notes} onChange={e => f('notes', e.target.value)} />
+      </div>
+    </>
   );
 }
