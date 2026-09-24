@@ -1,35 +1,46 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Plus, Edit2, Trash2, FolderKanban, Library, Clapperboard, User, X,
-  Archive, ArchiveRestore, Search, Link2, FileText, GripVertical,
-  Instagram, Music2, Star, Share2, Copy, Check,
+  Plus, Edit2, Trash2, FolderKanban, Library, Clapperboard, User,
+  Archive, ArchiveRestore, Link2, Link2Off, FileText, GripVertical,
+  Instagram, Music2, Star, Share2, Copy, Check, Unlink, RefreshCw,
+  Clock, History, ArrowDownAZ,
 } from 'lucide-react';
-import Overlay from '../components/Overlay';
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors,
 } from '@dnd-kit/core';
 import { SortableContext, useSortable, rectSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { api } from '../api';
+import Overlay from '../components/Overlay';
+import ConfirmDialog from '../components/ConfirmDialog';
+import IconMenu from '../components/IconMenu';
+import { IconToggles, useDebounced } from '../components/DbBits';
+import '../styles/mind.css';
 
-// ── Kind metadata ─────────────────────────────────────────────────────────────
+// ── Kinds, sorts and tabs ─────────────────────────────────────────────────────
 
+const KINDS = ['project', 'studio', 'personal'];
 const KIND_META = {
-  project:  { label: 'Project Collections', icon: FolderKanban, emptyMsg: 'No project collections yet. Link one to a project.' },
-  studio:   { label: 'Studio',              icon: Clapperboard,  emptyMsg: 'No Studio collections yet. Add creative references for the agency.' },
-  personal: { label: 'Personal',            icon: User,          emptyMsg: 'No Personal collections yet. Save ideas and personal inspiration here.' },
+  project:  { title: 'Project', Icon: FolderKanban },
+  studio:   { title: 'Studio', Icon: Clapperboard },
+  personal: { title: 'Personal', Icon: User },
 };
+const KIND_TOGGLES = KINDS.map(key => ({ key, Icon: KIND_META[key].Icon, title: KIND_META[key].title }));
 
-// ── Sort helpers ──────────────────────────────────────────────────────────────
-
-const SORT_OPTIONS = [
-  { value: 'latest', label: 'Latest added' },
-  { value: 'oldest', label: 'Oldest added' },
-  { value: 'name',   label: 'Name A–Z' },
-  { value: 'custom', label: 'Custom order' },
+const SORTS = [
+  { key: 'latest', Icon: Clock,        title: 'Newest' },
+  { key: 'oldest', Icon: History,      title: 'Oldest' },
+  { key: 'name',   Icon: ArrowDownAZ,  title: 'A to Z' },
+  { key: 'custom', Icon: GripVertical, title: 'Custom order' },
 ];
 
+const TABS = [
+  { key: 'active', Icon: Library, title: 'Active' },
+  { key: 'archived', Icon: Archive, title: 'Archived' },
+];
+
+// Starred first, then the chosen order inside each group.
 function applySortMode(list, mode) {
   const starred = list.filter(c => c.starred);
   const rest = list.filter(c => !c.starred);
@@ -42,142 +53,97 @@ function applySortMode(list, mode) {
   return [...sortGroup(starred), ...sortGroup(rest)];
 }
 
-function SortSelector({ value, onChange }) {
-  return (
-    <select
-      className="select"
-      value={value}
-      onChange={e => onChange(e.target.value)}
-      style={{ fontSize: '12px', padding: '5px 10px', height: 'auto', width: 'auto' }}
-    >
-      {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
-  );
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (_) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  }
 }
 
 // ── Collection tile ───────────────────────────────────────────────────────────
 
-function CollectionTile({ collection, onEdit, onDelete, onArchive, onStar, onClick }) {
-  const isProject = collection.kind === 'project';
+function TileCover({ collection }) {
   const [imgFailed, setImgFailed] = useState(false);
-  const hasCover = !!collection.cover_thumbnail && !imgFailed;
-  const isInstagramCover = !hasCover && collection.cover_source === 'instagram';
-  const isTikTokCover = !hasCover && collection.cover_source === 'tiktok';
-  const isStarred = !!collection.starred;
+  if (collection.cover_thumbnail && !imgFailed) {
+    return (
+      <div className="coll-cover">
+        <img src={collection.cover_thumbnail} alt="" loading="lazy" onError={() => setImgFailed(true)} />
+      </div>
+    );
+  }
+  const Icon = collection.cover_source === 'instagram' ? Instagram
+    : collection.cover_source === 'tiktok' ? Music2
+    : Library;
+  return <div className="coll-cover"><Icon size={26} strokeWidth={1.5} /></div>;
+}
 
+function CollectionTile({ collection, grip, onOpen, onEdit, onDelete, onArchive, onStar }) {
+  const isStarred = !!collection.starred;
+  const isProject = collection.kind === 'project';
   return (
     <div
-      className="card"
-      style={{
-        cursor: 'pointer', overflow: 'hidden', display: 'flex', flexDirection: 'column',
-        position: 'relative', opacity: collection.archived ? 0.75 : 1,
-        border: isStarred ? '2px solid var(--color-hairline-strong)' : undefined,
-        boxShadow: isStarred ? '0 0 0 2px var(--color-ink)' : undefined,
-      }}
-      onClick={onClick}
+      className={`coll-tile ${collection.archived ? 'is-muted' : ''} ${isStarred ? 'card-starred' : ''}`}
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); } }}
     >
-      {/* Cover image / placeholder */}
-      <div style={{ width: '100%', height: '118px', background: 'var(--overlay-01)', flexShrink: 0 }}>
-        {hasCover ? (
-          <img
-            src={collection.cover_thumbnail}
-            alt=""
-            onError={() => setImgFailed(true)}
-            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-            loading="lazy"
-          />
-        ) : isInstagramCover ? (
-          <div style={{
-            width: '100%', height: '100%',
-            background: 'linear-gradient(135deg, var(--color-mid-gray) 0%, var(--color-ember) 50%, var(--color-mid-gray) 100%)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <Instagram size={30} color="var(--color-ink)" strokeWidth={1.5} />
-          </div>
-        ) : isTikTokCover ? (
-          <div style={{
-            width: '100%', height: '100%', background: 'var(--surface-input-fill)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <Music2 size={30} color="var(--color-ink)" strokeWidth={1.5} />
-          </div>
-        ) : (
-          <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Library size={28} color="var(--text-muted)" style={{ opacity: 0.28 }} />
-          </div>
-        )}
-      </div>
-
-      {/* Content area */}
-      <div style={{ padding: '12px 14px 14px', display: 'flex', flexDirection: 'column', gap: '5px', flex: 1 }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '6px' }}>
-          <span style={{ fontWeight: 600, fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-            {collection.name}
-          </span>
-          <div style={{ display: 'flex', gap: '2px', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-            <button
-              className="btn-ghost"
-              style={{ padding: '3px 5px', color: isStarred ? 'var(--color-ink-soft)' : undefined }}
-              title={isStarred ? 'Unstar' : 'Star'}
-              onClick={() => onStar(collection)}
-            >
-              <Star size={12} fill={isStarred ? 'var(--color-ink-soft)' : 'none'} />
-            </button>
-            {!isProject && !collection.archived && (
-              <button className="btn-ghost" style={{ padding: '3px 5px' }} title="Edit" onClick={() => onEdit(collection)}>
-                <Edit2 size={12} />
-              </button>
-            )}
-            <button className="btn-ghost" style={{ padding: '3px 5px' }} title={collection.archived ? 'Unarchive' : 'Archive'} onClick={() => onArchive(collection)}>
-              {collection.archived ? <ArchiveRestore size={12} /> : <Archive size={12} />}
-            </button>
-            <button className="btn-ghost" style={{ padding: '3px 5px', color: 'var(--danger)' }} title="Delete" onClick={() => onDelete(collection)}>
-              <Trash2 size={12} />
-            </button>
+      {grip}
+      <TileCover collection={collection} />
+      <div className="coll-body">
+        <div className="db-main">
+          <div className="coll-name">{collection.name}</div>
+          <div className="coll-meta">
+            <span className="db-count" title={`${collection.card_count} card${collection.card_count === 1 ? '' : 's'}`}>
+              <span className="db-dot" />{collection.card_count}
+            </span>
+            {isStarred && <span className="coll-star" title="Starred"><Star size={11} fill="currentColor" /></span>}
+            {isProject && (collection.project_id && collection.project_title ? (
+              <span className="db-sub" title={collection.project_title}>{collection.project_title}</span>
+            ) : (
+              <span className="source-icon" title="No project" aria-label="No project" style={{ color: 'var(--color-hairline-strong)' }}>
+                <Unlink size={11} />
+              </span>
+            ))}
           </div>
         </div>
-
-        {collection.description && (
-          <p style={{
-            fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.4, margin: 0,
-            overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-          }}>
-            {collection.description}
-          </p>
-        )}
-
-        {isProject && collection.project_title && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <FolderKanban size={11} color="var(--text-muted)" />
-            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{collection.project_title}</span>
-          </div>
-        )}
-
-        <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '1px' }}>
-          {collection.card_count} {collection.card_count === 1 ? 'card' : 'cards'}
+        <span onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
+          <IconMenu items={[
+            { key: 'star', Icon: Star, title: isStarred ? 'Unstar' : 'Star', active: isStarred, onClick: () => onStar(collection) },
+            { key: 'edit', Icon: Edit2, title: 'Edit', onClick: () => onEdit(collection) },
+            collection.archived
+              ? { key: 'unarchive', Icon: ArchiveRestore, title: 'Unarchive', onClick: () => onArchive(collection) }
+              : { key: 'archive', Icon: Archive, title: 'Archive', onClick: () => onArchive(collection) },
+            { key: 'delete', Icon: Trash2, title: 'Delete', danger: true, onClick: () => onDelete(collection) },
+          ]} />
         </span>
       </div>
-
-      {isStarred && (
-        <div style={{
-          position: 'absolute', bottom: 8, left: 8,
-          background: 'var(--color-ink-soft)', borderRadius: '50%',
-          width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          pointerEvents: 'none',
-        }}>
-          <Star size={10} fill="var(--accent-contrast)" color="var(--accent-contrast)" />
-        </div>
-      )}
     </div>
   );
 }
-
-// ── Sortable tile wrapper ─────────────────────────────────────────────────────
 
 function SortableCollectionTile(props) {
   const { collection } = props;
   const isStarred = !!collection.starred;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: collection.id });
+  const grip = (
+    <span
+      className={`coll-grip ${isStarred ? 'is-off' : ''}`}
+      title={isStarred ? 'Starred' : 'Drag'}
+      onClick={e => e.stopPropagation()}
+      {...(isStarred ? {} : listeners)}
+    >
+      <GripVertical size={12} />
+    </span>
+  );
   return (
     <div
       ref={setNodeRef}
@@ -185,34 +151,73 @@ function SortableCollectionTile(props) {
         transform: CSS.Transform.toString(transform),
         transition,
         opacity: isDragging ? 0.45 : 1,
-        zIndex: isDragging ? 999 : undefined,
+        zIndex: isDragging ? 20 : undefined,
         position: 'relative',
       }}
       {...attributes}
     >
-      {/* Drag handle — hidden for starred (pinned) tiles */}
-      <div
-        {...(isStarred ? {} : listeners)}
-        onClick={e => e.stopPropagation()}
-        title={isStarred ? 'Starred — unstar to reorder' : 'Drag to reorder'}
-        style={{
-          position: 'absolute', top: 7, left: 7, zIndex: 20,
-          cursor: isStarred ? 'default' : (isDragging ? 'grabbing' : 'grab'),
-          background: 'var(--scrim-strong)', borderRadius: 6, padding: '3px 5px',
-          color: '#ffffff', touchAction: 'none', display: 'flex', alignItems: 'center',
-          opacity: isStarred ? 0.25 : 1,
-        }}
-      >
-        <GripVertical size={11} />
-      </div>
-      <CollectionTile {...props} />
+      <CollectionTile {...props} grip={grip} />
     </div>
   );
 }
 
-// ── Edit modal ────────────────────────────────────────────────────────────────
+// ── Section: kind icon, count dot, tiles ──────────────────────────────────────
 
-function EditModal({ collection, onSave, onClose }) {
+function CollectionSection({ kind, list, archived, sortable, onReorder, tileProps }) {
+  const { Icon, title } = KIND_META[kind];
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
+  );
+
+  function handleDragEnd({ active, over }) {
+    if (!over || active.id === over.id) return;
+    const activeItem = list.find(c => c.id === active.id);
+    const overItem = list.find(c => c.id === over.id);
+    if (activeItem?.starred || overItem?.starred) return;
+    const oldIndex = list.findIndex(c => c.id === active.id);
+    const newIndex = list.findIndex(c => c.id === over.id);
+    onReorder(kind, list, arrayMove(list, oldIndex, newIndex));
+  }
+
+  const tile = c => ({ key: c.id, collection: c, ...tileProps(c) });
+
+  let body;
+  if (list.length === 0) {
+    body = <div className="card db-empty"><Icon size={24} /></div>;
+  } else if (sortable) {
+    body = (
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={list.map(c => c.id)} strategy={rectSortingStrategy}>
+          <div className="collections-tile-grid">
+            {list.map(c => { const { key, ...p } = tile(c); return <SortableCollectionTile key={key} {...p} />; })}
+          </div>
+        </SortableContext>
+      </DndContext>
+    );
+  } else {
+    body = (
+      <div className="collections-tile-grid">
+        {list.map(c => { const { key, ...p } = tile(c); return <CollectionTile key={key} {...p} />; })}
+      </div>
+    );
+  }
+
+  return (
+    <section className="mind-section">
+      <div className="mind-section-head" title={title}>
+        <Icon size={16} />
+        {archived && <Archive size={14} className="muted" />}
+        <span className="db-count"><span className="db-dot" />{list.length}</span>
+      </div>
+      {body}
+    </section>
+  );
+}
+
+// ── Edit overlay ──────────────────────────────────────────────────────────────
+
+export function EditCollectionModal({ collection, onSave, onClose }) {
   const [name, setName] = useState(collection.name);
   const [description, setDescription] = useState(collection.description || '');
   const [saving, setSaving] = useState(false);
@@ -227,480 +232,269 @@ function EditModal({ collection, onSave, onClose }) {
       onClose();
     } catch (err) {
       setError(err.message || 'Failed to save');
-    } finally {
       setSaving(false);
     }
   }
 
   return (
-    <Overlay title="Edit Collection" onClose={onClose} width={480}>
-      <form onSubmit={handleSubmit}>
+    <Overlay
+      title="Edit Collection"
+      onClose={onClose}
+      width={460}
+      footer={<>
+        <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+        <button type="submit" form="collection-edit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
+      </>}
+    >
+      <form id="collection-edit" onSubmit={handleSubmit}>
         <div className="form-row">
           <label className="form-label">Name *</label>
           <input className="input" value={name} onChange={e => setName(e.target.value)} autoFocus />
         </div>
         <div className="form-row">
           <label className="form-label">Description</label>
-          <input className="input" value={description} onChange={e => setDescription(e.target.value)} placeholder="Optional description" />
+          <input className="input" value={description} onChange={e => setDescription(e.target.value)} />
         </div>
-        {error && <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 12px' }}>{error}</p>}
-        <div className="modal-footer">
-          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save Changes'}</button>
-        </div>
+        {error && <div className="error-msg">{error}</div>}
       </form>
     </Overlay>
   );
 }
 
-// ── New Collection modal (3 types) ───────────────────────────────────────────
+// ── New collection overlay ────────────────────────────────────────────────────
 
 function NewCollectionModal({ projects, onClose, onCreated }) {
-  const [step, setStep] = useState('type');
-  const [selectedProjectId, setSelectedProjectId] = useState('');
-  const [projName, setProjName] = useState('');
-  const [projDesc, setProjDesc] = useState('');
-  const [studioName, setStudioName] = useState('');
-  const [studioDesc, setStudioDesc] = useState('');
-  const [personalName, setPersonalName] = useState('');
-  const [personalDesc, setPersonalDesc] = useState('');
+  const [kind, setKind] = useState('studio');
+  const [projectId, setProjectId] = useState('');
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  function pickType(type) { setStep(type); setError(''); }
-
   function onProjectChange(pid) {
-    setSelectedProjectId(pid);
+    setProjectId(pid);
     const proj = projects.find(p => String(p.id) === String(pid));
-    setProjName(proj ? proj.title : '');
+    if (proj && !name.trim()) setName(proj.title);
   }
 
-  async function handleCreateProject(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
-    if (!selectedProjectId) { setError('Select a project'); return; }
-    if (!projName.trim()) { setError('Name is required'); return; }
-    setSaving(true); setError('');
+    if (kind === 'project' && !projectId) { setError('Select a project'); return; }
+    if (!name.trim()) { setError('Name is required'); return; }
+    setSaving(true);
+    setError('');
     try {
-      const res = await api.post('/collections', {
-        name: projName.trim(), description: projDesc.trim() || undefined,
-        project_id: Number(selectedProjectId), kind: 'project',
-      });
-      onCreated(res, !!res.alreadyExisted);
-    } catch (err) { setError(err.message || 'Failed to create'); setSaving(false); }
+      const body = { name: name.trim(), description: description.trim() || undefined, kind };
+      if (kind === 'project') body.project_id = Number(projectId);
+      onCreated(await api.post('/collections', body));
+    } catch (err) {
+      setError(err.message || 'Failed to create');
+      setSaving(false);
+    }
   }
-
-  async function handleCreateStudio(e) {
-    e.preventDefault();
-    if (!studioName.trim()) { setError('Name is required'); return; }
-    setSaving(true); setError('');
-    try {
-      const res = await api.post('/collections', { name: studioName.trim(), description: studioDesc.trim() || undefined, kind: 'studio' });
-      onCreated(res);
-    } catch (err) { setError(err.message || 'Failed to create'); setSaving(false); }
-  }
-
-  async function handleCreatePersonal(e) {
-    e.preventDefault();
-    if (!personalName.trim()) { setError('Name is required'); return; }
-    setSaving(true); setError('');
-    try {
-      const res = await api.post('/collections', { name: personalName.trim(), description: personalDesc.trim() || undefined, kind: 'personal' });
-      onCreated(res);
-    } catch (err) { setError(err.message || 'Failed to create'); setSaving(false); }
-  }
-
-  const typeCardBase = {
-    width: '100%', textAlign: 'left', cursor: 'pointer',
-    background: 'var(--bg-secondary)', border: '1px solid var(--border-default)',
-    borderRadius: 10, padding: '16px 18px',
-    color: 'var(--text-primary)', fontFamily: 'var(--font)',
-    transition: 'border-color 0.15s, background 0.15s',
-  };
-
-  const typeOptions = [
-    {
-      key: 'project',
-      icon: <FolderKanban size={18} color="var(--accent)" />,
-      title: 'Project Collection',
-      sub: 'Linked to a specific project. One per project.',
-    },
-    {
-      key: 'studio',
-      icon: <Clapperboard size={18} color="var(--accent)" />,
-      title: 'Studio',
-      sub: 'Creative agency references — Music Videos, Commercials, Directors…',
-    },
-    {
-      key: 'personal',
-      icon: <User size={18} color="var(--accent)" />,
-      title: 'Personal',
-      sub: 'Personal inspiration — ideas, moodboards, anything for you.',
-    },
-  ];
 
   return (
-    <Overlay title="New Collection" onClose={onClose} width={480}>
-
-      {step === 'type' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '0 0 6px' }}>
-            What kind of collection?
-          </p>
-          {typeOptions.map(opt => (
-            <button
-              key={opt.key}
-              style={typeCardBase}
-              onClick={() => pickType(opt.key)}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = 'var(--overlay-02)'; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-default)'; e.currentTarget.style.background = 'var(--bg-secondary)'; }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '13px' }}>
-                <div style={{ width: 38, height: 38, borderRadius: 10, background: 'var(--overlay-04)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  {opt.icon}
-                </div>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: 3 }}>{opt.title}</div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{opt.sub}</div>
-                </div>
-              </div>
-            </button>
-          ))}
-          <div className="modal-footer">
-            <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          </div>
+    <Overlay
+      title="New Collection"
+      onClose={onClose}
+      width={460}
+      footer={<>
+        <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+        <button type="submit" form="collection-new" className="btn btn-primary" disabled={saving}>{saving ? 'Creating...' : 'Create'}</button>
+      </>}
+    >
+      <form id="collection-new" onSubmit={handleSubmit}>
+        <div className="form-row">
+          <IconToggles options={KIND_TOGGLES} value={kind} onChange={k => { setKind(k); setError(''); }} label="Kind" />
         </div>
-      )}
-
-      {step === 'project' && (
-        <form onSubmit={handleCreateProject}>
+        {kind === 'project' && (
           <div className="form-row">
             <label className="form-label">Project *</label>
-            <select className="select" value={selectedProjectId} onChange={e => onProjectChange(e.target.value)} autoFocus>
-              <option value="">Select a project</option>
+            <select className="select" value={projectId} onChange={e => onProjectChange(e.target.value)}>
+              <option value="" />
               {projects.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
             </select>
           </div>
-          <div className="form-row">
-            <label className="form-label">Collection Name *</label>
-            <input className="input" value={projName} onChange={e => setProjName(e.target.value)} placeholder="Defaults to project title" />
-          </div>
-          <div className="form-row">
-            <label className="form-label">Description</label>
-            <input className="input" value={projDesc} onChange={e => setProjDesc(e.target.value)} placeholder="Optional description" />
-          </div>
-          {error && <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 10px' }}>{error}</p>}
-          <div className="modal-footer">
-            <button type="button" className="btn btn-ghost" onClick={() => { setStep('type'); setError(''); }}>Back</button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Creating…' : 'Create'}</button>
-          </div>
-        </form>
-      )}
-
-      {step === 'studio' && (
-        <form onSubmit={handleCreateStudio}>
-          <div className="form-row">
-            <label className="form-label">Name *</label>
-            <input className="input" value={studioName} onChange={e => setStudioName(e.target.value)} placeholder="e.g. Music Video References" autoFocus />
-          </div>
-          <div className="form-row">
-            <label className="form-label">Description</label>
-            <input className="input" value={studioDesc} onChange={e => setStudioDesc(e.target.value)} placeholder="Optional description" />
-          </div>
-          {error && <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 10px' }}>{error}</p>}
-          <div className="modal-footer">
-            <button type="button" className="btn btn-ghost" onClick={() => { setStep('type'); setError(''); }}>Back</button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Creating…' : 'Create'}</button>
-          </div>
-        </form>
-      )}
-
-      {step === 'personal' && (
-        <form onSubmit={handleCreatePersonal}>
-          <div className="form-row">
-            <label className="form-label">Name *</label>
-            <input className="input" value={personalName} onChange={e => setPersonalName(e.target.value)} placeholder="e.g. Business Ideas" autoFocus />
-          </div>
-          <div className="form-row">
-            <label className="form-label">Description</label>
-            <input className="input" value={personalDesc} onChange={e => setPersonalDesc(e.target.value)} placeholder="Optional description" />
-          </div>
-          {error && <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 10px' }}>{error}</p>}
-          <div className="modal-footer">
-            <button type="button" className="btn btn-ghost" onClick={() => { setStep('type'); setError(''); }}>Back</button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Creating…' : 'Create'}</button>
-          </div>
-        </form>
-      )}
+        )}
+        <div className="form-row">
+          <label className="form-label">Name *</label>
+          <input className="input" value={name} onChange={e => setName(e.target.value)} autoFocus />
+        </div>
+        <div className="form-row">
+          <label className="form-label">Description</label>
+          <input className="input" value={description} onChange={e => setDescription(e.target.value)} />
+        </div>
+        {error && <div className="error-msg">{error}</div>}
+      </form>
     </Overlay>
   );
 }
 
-// ── Sortable section (one per kind) ──────────────────────────────────────────
-
-const SECTION_LABEL = {
-  fontSize: '11px', fontWeight: 700, letterSpacing: '0.1em',
-  textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '14px',
-};
-const TILE_GRID = 'collections-tile-grid';
-
-function SortableSection({ kind, list, onListChange, onEdit, onDelete, onArchive, onStar, navigate, isDragEnabled }) {
-  const meta = KIND_META[kind];
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
-  );
-
-  function handleDragEnd({ active, over }) {
-    if (!over || active.id === over.id) return;
-    const activeItem = list.find(c => c.id === active.id);
-    const overItem = list.find(c => c.id === over.id);
-    if (activeItem?.starred || overItem?.starred) return;
-    const oldIndex = list.findIndex(c => c.id === active.id);
-    const newIndex = list.findIndex(c => c.id === over.id);
-    const newList = arrayMove(list, oldIndex, newIndex);
-    onListChange(kind, newList);
-    api.put('/collections/reorder', { orderedIds: newList.map(c => c.id) }).catch(() => {});
-  }
-
-  return (
-    <section style={{ marginBottom: '32px' }}>
-      <h2 style={SECTION_LABEL}>{meta.label}</h2>
-      {list.length === 0 ? (
-        <div className="card" style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
-          {meta.emptyMsg}
-        </div>
-      ) : isDragEnabled ? (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <SortableContext items={list.map(c => c.id)} strategy={rectSortingStrategy}>
-            <div className={TILE_GRID}>
-              {list.map(c => (
-                <SortableCollectionTile
-                  key={c.id}
-                  collection={c}
-                  onEdit={onEdit}
-                  onDelete={onDelete}
-                  onArchive={onArchive}
-                  onStar={onStar}
-                  onClick={() => navigate(`/collections/${c.id}`)}
-                />
-              ))}
-            </div>
-          </SortableContext>
-        </DndContext>
-      ) : (
-        <div className={TILE_GRID}>
-          {list.map(c => (
-            <CollectionTile
-              key={c.id}
-              collection={c}
-              onEdit={onEdit}
-              onDelete={onDelete}
-              onArchive={onArchive}
-              onStar={onStar}
-              onClick={() => navigate(`/collections/${c.id}`)}
-            />
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-// ── Simple (non-sortable) tile grid for archived view ─────────────────────────
-
-function StaticTileGrid({ list, onEdit, onDelete, onArchive, onStar, navigate }) {
-  return (
-    <div className={TILE_GRID}>
-      {list.map(c => (
-        <CollectionTile
-          key={c.id}
-          collection={c}
-          onEdit={onEdit}
-          onDelete={onDelete}
-          onArchive={onArchive}
-          onStar={onStar}
-          onClick={() => navigate(`/collections/${c.id}`)}
-        />
-      ))}
-    </div>
-  );
-}
-
-// ── Mind share modal ─────────────────────────────────────────────────────────
-
-const MIND_CAT_LABELS = { project: 'Project Collections', studio: 'Studio', personal: 'Personal' };
+// ── Share the whole page ──────────────────────────────────────────────────────
 
 function MindShareModal({ onClose }) {
   const [loading, setLoading] = useState(true);
-  const [hasLink, setHasLink] = useState(false);
   const [token, setToken] = useState(null);
   const [linkCategories, setLinkCategories] = useState([]);
-  const [selectedCategories, setSelectedCategories] = useState(['project', 'studio', 'personal']);
-  const [generating, setGenerating] = useState(false);
-  const [revoking, setRevoking] = useState(false);
+  const [selected, setSelected] = useState(KINDS);
+  const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [error, setError] = useState('');
+  const [confirming, setConfirming] = useState(null);
+  const [notice, setNotice] = useState(null);
 
   const shareUrl = token ? `${window.location.origin}/shared/mind/${token}` : '';
 
   useEffect(() => {
     api.get('/collections/mind-share')
       .then(data => {
-        setHasLink(data.has_link);
         if (data.has_link) {
           setToken(data.token);
           setLinkCategories(data.categories || []);
-          setSelectedCategories(data.categories || ['project', 'studio', 'personal']);
+          setSelected(data.categories && data.categories.length ? data.categories : KINDS);
         }
       })
-      .catch(() => {})
+      .catch(err => setNotice({ title: 'Share link not loaded', message: err.message }))
       .finally(() => setLoading(false));
   }, []);
 
-  function toggleCategory(cat) {
-    setSelectedCategories(prev =>
-      prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]
-    );
+  useEffect(() => {
+    if (!copied) return undefined;
+    const t = setTimeout(() => setCopied(false), 2000);
+    return () => clearTimeout(t);
+  }, [copied]);
+
+  function toggle(cat) {
+    setSelected(prev => (prev.includes(cat) ? prev.filter(c => c !== cat) : KINDS.filter(k => k === cat || prev.includes(k))));
   }
 
-  async function handleGenerate() {
-    if (selectedCategories.length === 0) { setError('Select at least one category'); return; }
-    setGenerating(true); setError('');
+  async function generate() {
+    setConfirming(null);
+    setBusy(true);
     try {
-      const data = await api.post('/collections/mind-share', { categories: selectedCategories });
+      const data = await api.post('/collections/mind-share', { categories: selected });
       setToken(data.token);
-      setLinkCategories(data.categories || selectedCategories);
-      setHasLink(true);
+      setLinkCategories(data.categories || selected);
     } catch (err) {
-      setError(err.message || 'Failed to generate link');
-    } finally {
-      setGenerating(false);
+      setNotice({ title: 'Link not created', message: err.message || 'The link could not be created.' });
     }
+    setBusy(false);
   }
 
-  async function handleRevoke() {
-    if (!confirm('Revoke this link permanently? The current URL will stop working immediately and cannot be recovered.')) return;
-    setRevoking(true);
+  async function revoke() {
+    setConfirming(null);
+    setBusy(true);
     try {
       await api.del('/collections/mind-share');
-      setHasLink(false);
       setToken(null);
       setLinkCategories([]);
     } catch (err) {
-      setError(err.message || 'Failed to revoke');
-    } finally {
-      setRevoking(false);
+      setNotice({ title: 'Link not revoked', message: err.message || 'The link could not be revoked.' });
     }
+    setBusy(false);
   }
 
-  async function copyLink() {
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-    } catch (_) {
-      const ta = document.createElement('textarea');
-      ta.value = shareUrl;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
-    }
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  async function copy() {
+    if (await copyText(shareUrl)) setCopied(true);
+    else setNotice({ title: 'Not copied', message: 'The browser did not allow copying.' });
   }
 
-  const categoryRow = (cat) => (
-    <label key={cat} style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '13px', padding: '4px 0' }}>
-      <input
-        type="checkbox"
-        checked={selectedCategories.includes(cat)}
-        onChange={() => toggleCategory(cat)}
-        style={{ accentColor: 'var(--accent)', width: 15, height: 15, flexShrink: 0 }}
-      />
-      {MIND_CAT_LABELS[cat]}
-    </label>
+  const changed = token && (selected.length !== linkCategories.length || selected.some(c => !linkCategories.includes(c)));
+
+  const footer = loading ? null : token ? (
+    <>
+      <button type="button" className="db-iconbtn danger" onClick={() => setConfirming('revoke')} disabled={busy} title="Revoke link" aria-label="Revoke link">
+        <Link2Off size={16} />
+      </button>
+      <span className="spacer" />
+      <button type="button" className="btn btn-ghost" onClick={onClose}>Close</button>
+      <button
+        type="button"
+        className={`btn ${changed ? 'btn-primary' : 'btn-ghost'}`}
+        onClick={() => setConfirming('regenerate')}
+        disabled={busy || selected.length === 0}
+        title="New link"
+        aria-label="New link"
+      >
+        <RefreshCw size={15} />
+      </button>
+    </>
+  ) : (
+    <>
+      <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+      <button type="button" className="btn btn-primary" onClick={generate} disabled={busy || selected.length === 0} title="Create link" aria-label="Create link">
+        <Link2 size={15} />
+      </button>
+    </>
   );
 
   return (
-    <Overlay title="Share Collections Page" onClose={onClose} guard={false}>
+    <Overlay title="Share Collections" onClose={onClose} guard={false} width={480} footer={footer}>
       {loading ? (
-        <p style={{ color: 'var(--text-muted)', fontSize: '13px', padding: '8px 0' }}>Loading…</p>
+        <div className="loading" style={{ padding: '16px' }}>Loading...</div>
       ) : (
-        <div>
-          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '18px', lineHeight: 1.5 }}>
-            Share a read-only view of your Collections page. Select which categories to expose — unselected categories stay private.
-          </p>
-
+        <>
           <div className="form-row">
-            <label className="form-label">Categories to share</label>
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              {['project', 'studio', 'personal'].map(categoryRow)}
+            <div className="toggle-group mind-toggles" role="group" aria-label="Shared kinds">
+              {KINDS.map(k => {
+                const { Icon, title } = KIND_META[k];
+                const on = selected.includes(k);
+                return (
+                  <button
+                    key={k}
+                    type="button"
+                    className={`toggle-btn toggle-icon ${on ? 'active' : ''}`}
+                    onClick={() => toggle(k)}
+                    title={title}
+                    aria-label={title}
+                    aria-pressed={on}
+                  >
+                    <Icon size={15} />
+                  </button>
+                );
+              })}
             </div>
           </div>
-
-          {error && <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 14px' }}>{error}</p>}
-
-          {!hasLink && (
-            <div className="modal-footer" style={{ marginTop: 4 }}>
-              <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-              <button
-                className="btn btn-primary"
-                onClick={handleGenerate}
-                disabled={generating || selectedCategories.length === 0}
-              >
-                {generating ? 'Generating…' : 'Generate Link'}
-              </button>
+          {token && (
+            <div className="form-row">
+              <div className="share-field">
+                <input className="input" value={shareUrl} readOnly onFocus={e => e.target.select()} />
+                <button type="button" className="db-iconbtn lg" onClick={copy} title="Copy" aria-label="Copy link">
+                  {copied ? <Check size={16} /> : <Copy size={16} />}
+                </button>
+              </div>
             </div>
           )}
-
-          {hasLink && token && (
-            <>
-              <div className="form-row">
-                <label className="form-label">Share Link</label>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <input
-                    className="input"
-                    value={shareUrl}
-                    readOnly
-                    style={{ flex: 1, fontSize: '12px' }}
-                    onFocus={e => e.target.select()}
-                  />
-                  <button className="btn btn-primary" style={{ flexShrink: 0, minWidth: 80 }} onClick={copyLink}>
-                    {copied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy</>}
-                  </button>
-                </div>
-                <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
-                  Sharing: {linkCategories.map(c => MIND_CAT_LABELS[c]).join(', ')}
-                </p>
-              </div>
-
-              <div style={{ borderTop: '1px solid var(--border-default)', paddingTop: '14px' }}>
-                <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '14px', lineHeight: 1.5 }}>
-                  "Generate New Link" creates a new link with the selected categories and <strong style={{ color: 'var(--text-secondary)' }}>permanently disables</strong> the current URL — the old link is gone forever.
-                </p>
-                <div style={{ display: 'flex', gap: '8px', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-                  <button
-                    className="btn btn-ghost"
-                    style={{ color: 'var(--danger)', borderColor: 'var(--ember-line-strong)', fontSize: '12px' }}
-                    onClick={handleRevoke}
-                    disabled={revoking}
-                  >
-                    {revoking ? 'Revoking…' : 'Revoke Link'}
-                  </button>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button type="button" className="btn btn-ghost" onClick={onClose}>Close</button>
-                    <button
-                      className="btn btn-primary"
-                      onClick={handleGenerate}
-                      disabled={generating || selectedCategories.length === 0}
-                    >
-                      {generating ? 'Generating…' : 'Generate New Link'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
+        </>
+      )}
+      {confirming === 'revoke' && (
+        <ConfirmDialog
+          title="Revoke this link?"
+          message="The current link stops working at once and cannot be restored."
+          confirmLabel="Revoke"
+          tone="danger"
+          onConfirm={revoke}
+          onCancel={() => setConfirming(null)}
+        />
+      )}
+      {confirming === 'regenerate' && (
+        <ConfirmDialog
+          title="Replace this link?"
+          message="A new link is made with the selected kinds, and the current link stops working for good."
+          confirmLabel="Replace"
+          tone="danger"
+          onConfirm={generate}
+          onCancel={() => setConfirming(null)}
+        />
+      )}
+      {notice && (
+        <ConfirmDialog
+          title={notice.title}
+          message={notice.message}
+          confirmLabel="OK"
+          cancelLabel={null}
+          onConfirm={() => setNotice(null)}
+          onCancel={() => setNotice(null)}
+        />
       )}
     </Overlay>
   );
@@ -713,75 +507,68 @@ export default function Collections() {
   const [collections, setCollections] = useState([]);
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadErr, setLoadErr] = useState('');
   const [activeTab, setActiveTab] = useState('active');
   const [showNewModal, setShowNewModal] = useState(false);
   const [editingColl, setEditingColl] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const [notice, setNotice] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const query = useDebounced(searchQuery.trim(), 280);
   const [searchResults, setSearchResults] = useState(null);
-  const [searching, setSearching] = useState(false);
   const [showMindShare, setShowMindShare] = useState(false);
   const [sortMode, setSortMode] = useState('latest');
-
-  // Per-section sorted lists (active only; derived from collections)
-  const [sortedProject, setSortedProject] = useState([]);
-  const [sortedStudio, setSortedStudio] = useState([]);
-  const [sortedPersonal, setSortedPersonal] = useState([]);
+  const [sorted, setSorted] = useState({ project: [], studio: [], personal: [] });
 
   async function loadData() {
     try {
       const [colls, projs] = await Promise.all([api.get('/collections'), api.get('/projects')]);
       setCollections(colls);
       setProjects(projs);
-    } catch (_) {}
+      setLoadErr('');
+    } catch (err) {
+      setLoadErr(err.message || 'Failed to load');
+    }
   }
 
   useEffect(() => {
     loadData().finally(() => setLoading(false));
   }, []);
 
-  // Sync sorted lists when collections or sortMode change
   useEffect(() => {
     const active = collections.filter(c => !c.archived);
-    const byKind = kind => applySortMode(active.filter(c => c.kind === kind), sortMode);
-    setSortedProject(byKind('project'));
-    setSortedStudio(byKind('studio'));
-    setSortedPersonal(byKind('personal'));
+    const next = {};
+    KINDS.forEach(k => { next[k] = applySortMode(active.filter(c => c.kind === k), sortMode); });
+    setSorted(next);
   }, [collections, sortMode]);
 
-  function handleSectionListChange(kind, newList) {
-    if (kind === 'project') setSortedProject(newList);
-    else if (kind === 'studio') setSortedStudio(newList);
-    else setSortedPersonal(newList);
+  useEffect(() => {
+    if (!query) { setSearchResults(null); return undefined; }
+    let live = true;
+    api.get(`/collections/search?q=${encodeURIComponent(query)}`)
+      .then(res => { if (live) setSearchResults(res); })
+      .catch(err => { if (live) setLoadErr(err.message || 'Search failed'); });
+    return () => { live = false; };
+  }, [query]);
+
+  function showNotice(title, message) {
+    setNotice({ title, message });
   }
 
-  // Debounced search
-  useEffect(() => {
-    const q = searchQuery.trim();
-    if (!q) { setSearchResults(null); setSearching(false); return; }
-    setSearching(true);
-    const timer = setTimeout(async () => {
-      try {
-        const res = await api.get(`/collections/search?q=${encodeURIComponent(q)}`);
-        setSearchResults(res);
-      } catch (_) {}
-      setSearching(false);
-    }, 280);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
-
-  const isSearchMode = searchQuery.trim().length > 0;
-  const activeCollections = collections.filter(c => !c.archived);
-  const archivedCollections = collections.filter(c => c.archived);
-
-  const searchFilteredCollections = isSearchMode
-    ? collections.filter(c => {
-        if (c.archived) return false;
-        const q = searchQuery.toLowerCase();
-        return c.name.toLowerCase().includes(q) || (c.description || '').toLowerCase().includes(q);
-      })
-    : [];
-
-  const archivedByKind = kind => archivedCollections.filter(c => c.kind === kind);
+  // The new order shows at once. When the server refuses it the previous
+  // order comes back and a notice says so.
+  async function handleReorder(kind, previous, next) {
+    setSorted(s => ({ ...s, [kind]: next }));
+    try {
+      await api.put('/collections/reorder', { orderedIds: next.map(c => c.id) });
+      const order = new Map(next.map((c, i) => [c.id, i]));
+      setCollections(prev => prev.map(c => (order.has(c.id) && !c.starred ? { ...c, sort_order: order.get(c.id) } : c)));
+    } catch (err) {
+      setSorted(s => ({ ...s, [kind]: previous }));
+      showNotice('Order not saved', err.message || 'The new order could not be saved.');
+    }
+  }
 
   async function handleCreated(coll) {
     setShowNewModal(false);
@@ -792,232 +579,187 @@ export default function Collections() {
   async function handleEdit(data) {
     await api.put(`/collections/${editingColl.id}`, data);
     await loadData();
-    setEditingColl(null);
   }
 
-  async function handleDelete(coll) {
-    if (!confirm(`Delete collection "${coll.name}"? This will also delete all cards inside. This cannot be undone.`)) return;
+  async function runDelete() {
+    const coll = confirmDelete;
+    setDeleting(true);
     try {
       await api.del(`/collections/${coll.id}`);
+      setConfirmDelete(null);
       await loadData();
-    } catch (err) { alert(err.message || 'Failed to delete'); }
+    } catch (err) {
+      setConfirmDelete(null);
+      showNotice('Not deleted', err.message || 'The collection could not be deleted.');
+    }
+    setDeleting(false);
   }
 
   async function handleStar(coll) {
     try {
       await api.put(`/collections/${coll.id}/star`, { starred: !coll.starred });
       await loadData();
-    } catch (err) { alert(err.message || 'Failed to update'); }
+    } catch (err) {
+      showNotice('Not updated', err.message || 'The collection could not be updated.');
+    }
   }
 
   async function handleArchive(coll) {
     try {
       await api.patch(`/collections/${coll.id}/archive`, { archived: !coll.archived });
       await loadData();
-    } catch (err) { alert(err.message || 'Failed to update'); }
+    } catch (err) {
+      showNotice('Not updated', err.message || 'The collection could not be updated.');
+    }
   }
 
-  if (loading) return (
-    <div className="page-header">
-      <h1 className="page-title">Collections</h1>
-    </div>
-  );
+  if (loading) return <div className="loading">Loading...</div>;
 
-  const totalActive = activeCollections.length;
-  const totalArchived = archivedCollections.length;
+  const tileProps = c => ({
+    onOpen: () => navigate(`/collections/${c.id}`),
+    onEdit: setEditingColl,
+    onDelete: setConfirmDelete,
+    onArchive: handleArchive,
+    onStar: handleStar,
+  });
+
+  const activeCollections = collections.filter(c => !c.archived);
+  const archivedCollections = collections.filter(c => c.archived);
+  const isSearchMode = searchQuery.trim().length > 0;
+  const q = searchQuery.trim().toLowerCase();
+  const matchingCollections = isSearchMode
+    ? activeCollections.filter(c => c.name.toLowerCase().includes(q) || (c.description || '').toLowerCase().includes(q))
+    : [];
+  const matchingCards = searchResults ? searchResults.cards : [];
 
   return (
     <div>
       <div className="page-header">
-        <h1 className="page-title">Collections</h1>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button className="btn btn-ghost" style={{ fontSize: '13px' }} onClick={() => setShowMindShare(true)} title="Share Collections page">
-            <Share2 size={14} /> Share Page
+        <div className="page-title">Collections</div>
+        <div className="db-actions" style={{ gap: '8px' }}>
+          <button type="button" className="db-iconbtn lg" onClick={() => setShowMindShare(true)} title="Share page" aria-label="Share page">
+            <Share2 size={17} />
           </button>
-          <button className="btn btn-primary" onClick={() => setShowNewModal(true)}>
-            <Plus size={16} /> New Collection
+          <button className="btn btn-primary" onClick={() => setShowNewModal(true)} title="New collection" aria-label="New collection">
+            <Plus size={16} />
           </button>
         </div>
       </div>
 
-      {/* Search bar */}
-      <div style={{ position: 'relative', marginBottom: '24px' }}>
-        <Search size={15} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-        <input
-          className="input"
-          value={searchQuery}
-          onChange={e => setSearchQuery(e.target.value)}
-          placeholder="Search collections and cards…"
-          style={{ paddingLeft: 40, paddingRight: searchQuery ? 36 : 14 }}
-        />
-        {searchQuery && (
-          <button
-            onClick={() => setSearchQuery('')}
-            style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}
-          >
-            <X size={14} />
-          </button>
+      <div className="mind-toolbar">
+        <input className="input" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search" />
+        {!isSearchMode && <IconToggles options={TABS} value={activeTab} onChange={setActiveTab} label="Show" />}
+        {!isSearchMode && activeTab === 'active' && (
+          <IconToggles options={SORTS} value={sortMode} onChange={setSortMode} label="Sort" />
         )}
       </div>
 
-      {/* ── Search results ── */}
+      {loadErr && <div className="error-msg" style={{ marginBottom: '12px' }}>{loadErr}</div>}
+
       {isSearchMode ? (
-        <div>
-          <section style={{ marginBottom: '32px' }}>
-            <h2 style={SECTION_LABEL}>
-              Matching Collections{searchFilteredCollections.length > 0 ? ` (${searchFilteredCollections.length})` : ''}
-            </h2>
-            {searchFilteredCollections.length === 0 ? (
-              <div className="card" style={{ padding: '14px 18px', color: 'var(--text-muted)', fontSize: '13px' }}>
-                No collections match "{searchQuery}"
-              </div>
+        <>
+          <section className="mind-section">
+            <div className="mind-section-head" title="Collections">
+              <Library size={16} />
+              <span className="db-count"><span className="db-dot" />{matchingCollections.length}</span>
+            </div>
+            {matchingCollections.length === 0 ? (
+              <div className="card db-empty"><Library size={24} /></div>
             ) : (
-              <div className={TILE_GRID}>
-                {searchFilteredCollections.map(c => (
-                  <CollectionTile key={c.id} collection={c} onEdit={setEditingColl} onDelete={handleDelete} onArchive={handleArchive} onStar={handleStar} onClick={() => navigate(`/collections/${c.id}`)} />
+              <div className="collections-tile-grid">
+                {matchingCollections.map(c => <CollectionTile key={c.id} collection={c} {...tileProps(c)} />)}
+              </div>
+            )}
+          </section>
+          <section className="mind-section">
+            <div className="mind-section-head" title="Cards">
+              <FileText size={16} />
+              <span className="db-count"><span className="db-dot" />{matchingCards.length}</span>
+            </div>
+            {matchingCards.length === 0 ? (
+              <div className="card db-empty"><FileText size={24} /></div>
+            ) : (
+              <div className="card db-list">
+                {matchingCards.map(card => (
+                  <div
+                    key={card.id}
+                    className="db-row"
+                    role="button"
+                    tabIndex={0}
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => navigate(`/collections/${card.collection_id}`)}
+                    onKeyDown={e => { if (e.key === 'Enter') navigate(`/collections/${card.collection_id}`); }}
+                  >
+                    <span className="source-icon">{card.type === 'note' ? <FileText size={14} /> : <Link2 size={14} />}</span>
+                    <span className="db-row-title">{card.title || card.url || card.note_text}</span>
+                    <span className="db-sub" style={{ marginTop: 0, display: 'inline-flex', alignItems: 'center', gap: 5, maxWidth: '40%' }}>
+                      <Library size={12} style={{ flexShrink: 0 }} />
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{card.collection_name}</span>
+                    </span>
+                  </div>
                 ))}
               </div>
             )}
           </section>
-
-          <section>
-            <h2 style={SECTION_LABEL}>
-              Matching Cards{searchResults && searchResults.cards.length > 0 ? ` (${searchResults.cards.length})` : ''}
-            </h2>
-            {searching ? (
-              <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Searching…</p>
-            ) : searchResults && searchResults.cards.length === 0 ? (
-              <div className="card" style={{ padding: '14px 18px', color: 'var(--text-muted)', fontSize: '13px' }}>
-                No cards match "{searchQuery}"
-              </div>
-            ) : searchResults ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                {searchResults.cards.map(card => (
-                  <div
-                    key={card.id}
-                    className="card"
-                    style={{ padding: '11px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px' }}
-                    onClick={() => navigate(`/collections/${card.collection_id}`)}
-                  >
-                    <div style={{ flexShrink: 0, color: card.type === 'note' ? 'var(--accent)' : 'var(--text-muted)' }}>
-                      {card.type === 'note' ? <FileText size={14} /> : <Link2 size={14} />}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: '13px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {card.title || card.url || 'Untitled'}
-                      </div>
-                      {card.note_text && (
-                        <div style={{ fontSize: '11px', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: '2px' }}>
-                          {card.note_text.slice(0, 120)}
-                        </div>
-                      )}
-                    </div>
-                    <div style={{ flexShrink: 0, fontSize: '11px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                      in {card.collection_name}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </section>
-        </div>
-      ) : (
-        <>
-          {/* Tabs */}
-          <div style={{ display: 'flex', gap: '4px', marginBottom: '28px', borderBottom: '1px solid var(--border)', paddingBottom: '0' }}>
-            {['active', 'archived'].map(tab => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                style={{
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  padding: '8px 16px', fontSize: '13px', fontWeight: 600,
-                  color: activeTab === tab ? 'var(--accent)' : 'var(--text-muted)',
-                  borderBottom: activeTab === tab ? '2px solid var(--accent)' : '2px solid transparent',
-                  marginBottom: '-1px', textTransform: 'capitalize', transition: 'color 0.15s',
-                }}
-              >
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                {tab === 'active' && totalActive > 0 && (
-                  <span style={{ marginLeft: '6px', fontSize: '11px', background: 'var(--accent)', color: 'var(--accent-contrast)', borderRadius: '10px', padding: '1px 6px', fontWeight: 700 }}>
-                    {totalActive}
-                  </span>
-                )}
-                {tab === 'archived' && totalArchived > 0 && (
-                  <span style={{ marginLeft: '6px', fontSize: '11px', background: 'var(--surface-input-fill)', color: 'var(--color-mid-gray)', borderRadius: '10px', padding: '1px 6px', fontWeight: 700 }}>
-                    {totalArchived}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-
-          {activeTab === 'active' && (
-            <>
-              {totalActive === 0 ? (
-                <div className="card" style={{ padding: '48px 20px', textAlign: 'center' }}>
-                  <Library size={32} color="var(--text-muted)" style={{ margin: '0 auto 12px', display: 'block' }} />
-                  <p style={{ color: 'var(--text-secondary)', fontSize: '14px', marginBottom: '16px' }}>
-                    No collections yet. Create one to start saving references and inspiration.
-                  </p>
-                  <button className="btn btn-primary" onClick={() => setShowNewModal(true)}>
-                    <Plus size={15} /> Create your first collection
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: '20px' }}>
-                    <SortSelector value={sortMode} onChange={setSortMode} />
-                  </div>
-                  <SortableSection kind="project" list={sortedProject} onListChange={handleSectionListChange} onEdit={setEditingColl} onDelete={handleDelete} onArchive={handleArchive} onStar={handleStar} navigate={navigate} isDragEnabled={sortMode === 'custom'} />
-                  <SortableSection kind="studio"  list={sortedStudio}  onListChange={handleSectionListChange} onEdit={setEditingColl} onDelete={handleDelete} onArchive={handleArchive} onStar={handleStar} navigate={navigate} isDragEnabled={sortMode === 'custom'} />
-                  <SortableSection kind="personal" list={sortedPersonal} onListChange={handleSectionListChange} onEdit={setEditingColl} onDelete={handleDelete} onArchive={handleArchive} onStar={handleStar} navigate={navigate} isDragEnabled={sortMode === 'custom'} />
-                </>
-              )}
-            </>
-          )}
-
-          {activeTab === 'archived' && (
-            <>
-              {totalArchived === 0 ? (
-                <div className="card" style={{ padding: '32px 20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
-                  No archived collections.
-                </div>
-              ) : (
-                <>
-                  {archivedByKind('project').length > 0 && (
-                    <section style={{ marginBottom: '32px' }}>
-                      <h2 style={SECTION_LABEL}>Project Collections — Archived</h2>
-                      <StaticTileGrid list={archivedByKind('project')} onEdit={setEditingColl} onDelete={handleDelete} onArchive={handleArchive} onStar={handleStar} navigate={navigate} />
-                    </section>
-                  )}
-                  {archivedByKind('studio').length > 0 && (
-                    <section style={{ marginBottom: '32px' }}>
-                      <h2 style={SECTION_LABEL}>Studio — Archived</h2>
-                      <StaticTileGrid list={archivedByKind('studio')} onEdit={setEditingColl} onDelete={handleDelete} onArchive={handleArchive} onStar={handleStar} navigate={navigate} />
-                    </section>
-                  )}
-                  {archivedByKind('personal').length > 0 && (
-                    <section style={{ marginBottom: '32px' }}>
-                      <h2 style={SECTION_LABEL}>Personal — Archived</h2>
-                      <StaticTileGrid list={archivedByKind('personal')} onEdit={setEditingColl} onDelete={handleDelete} onArchive={handleArchive} onStar={handleStar} navigate={navigate} />
-                    </section>
-                  )}
-                </>
-              )}
-            </>
-          )}
         </>
+      ) : activeTab === 'active' ? (
+        activeCollections.length === 0 ? (
+          <div className="card db-empty"><Library size={28} /></div>
+        ) : (
+          KINDS.map(kind => (
+            <CollectionSection
+              key={kind}
+              kind={kind}
+              list={sorted[kind] || []}
+              sortable={sortMode === 'custom'}
+              onReorder={handleReorder}
+              tileProps={tileProps}
+            />
+          ))
+        )
+      ) : archivedCollections.length === 0 ? (
+        <div className="card db-empty"><Archive size={28} /></div>
+      ) : (
+        KINDS.filter(kind => archivedCollections.some(c => c.kind === kind)).map(kind => (
+          <CollectionSection
+            key={kind}
+            kind={kind}
+            archived
+            list={archivedCollections.filter(c => c.kind === kind)}
+            tileProps={tileProps}
+          />
+        ))
       )}
 
       {showNewModal && (
         <NewCollectionModal projects={projects} onClose={() => setShowNewModal(false)} onCreated={handleCreated} />
       )}
       {editingColl && (
-        <EditModal collection={editingColl} onSave={handleEdit} onClose={() => setEditingColl(null)} />
+        <EditCollectionModal collection={editingColl} onSave={handleEdit} onClose={() => setEditingColl(null)} />
       )}
-      {showMindShare && (
-        <MindShareModal onClose={() => setShowMindShare(false)} />
+      {showMindShare && <MindShareModal onClose={() => setShowMindShare(false)} />}
+      {confirmDelete && (
+        <ConfirmDialog
+          title={`Delete ${confirmDelete.name}?`}
+          message={confirmDelete.card_count > 0
+            ? `${confirmDelete.card_count} card${confirmDelete.card_count === 1 ? '' : 's'} inside will be deleted too.`
+            : undefined}
+          confirmLabel="Delete"
+          tone="danger"
+          busy={deleting}
+          onConfirm={runDelete}
+          onCancel={() => setConfirmDelete(null)}
+        />
+      )}
+      {notice && (
+        <ConfirmDialog
+          title={notice.title}
+          message={notice.message}
+          confirmLabel="OK"
+          cancelLabel={null}
+          onConfirm={() => setNotice(null)}
+          onCancel={() => setNotice(null)}
+        />
       )}
     </div>
   );

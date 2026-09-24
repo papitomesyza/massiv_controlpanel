@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
+import SourceIcon from '../components/SourceIcon';
 import {
   Globe, FileText, Play, XCircle, Lock, Instagram, Music2,
   Library, FolderKanban, Clapperboard, User, ChevronLeft,
@@ -145,10 +146,7 @@ function PublicLinkCard({ card }) {
         ) : (
           <p style={{ fontSize: '12px', color: 'var(--color-mid-gray)', margin: 0, wordBreak: 'break-all' }}>{domain}</p>
         )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'var(--color-mid-gray)', fontSize: '11px' }}>
-          <Globe size={10} />
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{domain}</span>
-        </div>
+        <SourceIcon source={card.source} title={domain} />
         {tags.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '3px' }}>
             {tags.map(tag => (

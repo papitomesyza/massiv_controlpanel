@@ -818,7 +818,7 @@ export default function ProjectDetail() {
         <InlineCrewModal onClose={() => setShowNewCrew(false)} onSave={addNewCrew} />
       )}
       {deleteModal && (
-        <DeleteProjectModal projectTitle={project.title} onClose={() => setDeleteModal(false)} onConfirm={handleDelete} />
+        <DeleteProjectModal projectId={project.id} projectTitle={project.title} onClose={() => setDeleteModal(false)} onConfirm={handleDelete} />
       )}
       {duplicateModal && (
         <DuplicateModal project={project} onClose={() => setDuplicateModal(false)} onDone={newId => navigate(`/projects/${newId}`)} />
@@ -979,7 +979,7 @@ function PhaseCompleteModal({ projectId, project, currentPhase, nextPhase, crewL
     }
   }, [project.category_name, nextPhase.phase_name, project.shoot_days]);
 
-  async function confirm() {
+  async function completePhase() {
     setSaving(true);
     try {
       const selected = tasks.filter(t => t.included);
@@ -995,7 +995,12 @@ function PhaseCompleteModal({ projectId, project, currentPhase, nextPhase, crewL
   }
 
   return (
-    <Overlay title={<>Starting {nextPhase.phase_name}</>} onClose={onClose} width={680}>
+    <Overlay title={<>Starting {nextPhase.phase_name}</>} onClose={onClose} width={680} footer={<>
+      <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+      <button className="btn btn-primary" onClick={completePhase} disabled={saving}>
+        {saving ? 'Saving...' : `Complete ${currentPhase.phase_name} →`}
+      </button>
+    </>}>
       <p className="text-2 text-sm" style={{ marginBottom: '16px' }}>
         Optionally add tasks to <strong style={{ color: 'var(--color-ink)' }}>{nextPhase.phase_name}</strong> before marking <strong style={{ color: 'var(--color-ink)' }}>{currentPhase.phase_name}</strong> complete.
       </p>
@@ -1009,12 +1014,6 @@ function PhaseCompleteModal({ projectId, project, currentPhase, nextPhase, crewL
         crewList={crewList}
       />
       {err && <div className="error-msg">{err}</div>}
-      <div className="modal-footer">
-        <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-        <button className="btn btn-primary" onClick={confirm} disabled={saving}>
-          {saving ? 'Saving...' : `Complete ${currentPhase.phase_name} →`}
-        </button>
-      </div>
     </Overlay>
   );
 }
@@ -1622,9 +1621,7 @@ function EditProjectModal({ project, projectId, onClose, onSaved }) {
         {err && <div className="error-msg">{err}</div>}
       </Overlay>
       {showNewClient && (
-        <Overlay title="New Client" onClose={() => setShowNewClient(false)}>
-          <InlineClientForm onSave={createClient} onClose={() => setShowNewClient(false)} />
-        </Overlay>
+        <InlineClientOverlay onSave={createClient} onClose={() => setShowNewClient(false)} />
       )}
     </>
   );
@@ -1634,11 +1631,22 @@ function EditProjectModal({ project, projectId, onClose, onSaved }) {
 // Deleting asks first. The server refuses while money is attached (payments,
 // crew payments, confirmed expenses or invoices) and says what is attached; that
 // reason is shown in a second dialog rather than a native alert.
-function DeleteProjectModal({ projectTitle, onClose, onConfirm }) {
+function DeleteProjectModal({ projectId, projectTitle, onClose, onConfirm }) {
   const [deleting, setDeleting] = useState(false);
   const [refusal, setRefusal] = useState('');
+  const [collectionCount, setCollectionCount] = useState(0);
 
-  async function confirm() {
+  // Collections survive the delete, detached from the project, so the prompt
+  // says how many will be kept.
+  useEffect(() => {
+    let live = true;
+    api.get('/collections')
+      .then(list => { if (live) setCollectionCount(list.filter(c => c.project_id === projectId).length); })
+      .catch(() => { if (live) setCollectionCount(0); });
+    return () => { live = false; };
+  }, [projectId]);
+
+  async function runDelete() {
     setDeleting(true);
     try { await onConfirm(); }
     catch (e) { setRefusal(e.message); setDeleting(false); }
@@ -1660,10 +1668,13 @@ function DeleteProjectModal({ projectTitle, onClose, onConfirm }) {
   return (
     <ConfirmDialog
       title={`Delete ${projectTitle}?`}
+      message={collectionCount > 0
+        ? `${collectionCount} collection${collectionCount === 1 ? '' : 's'} will be kept, unlinked`
+        : undefined}
       confirmLabel="Delete"
       tone="danger"
       busy={deleting}
-      onConfirm={confirm}
+      onConfirm={runDelete}
       onCancel={onClose}
     />
   );
@@ -1695,7 +1706,12 @@ function DuplicateModal({ project, onClose, onDone }) {
   }
 
   return (
-    <Overlay title="Duplicate Project" onClose={onClose} width={480}>
+    <Overlay title="Duplicate Project" onClose={onClose} width={480} footer={<>
+      <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+      <button className="btn btn-primary" onClick={save} disabled={!canSave || saving}>
+        {saving ? 'Duplicating...' : 'Duplicate'}
+      </button>
+    </>}>
       <div className="form-row">
         <label className="form-label">New Project Title</label>
         <input
@@ -1716,17 +1732,12 @@ function DuplicateModal({ project, onClose, onDone }) {
         Tasks will be copied (status reset to To Do). Crew assignments, payments, and expenses will not be copied.
       </div>
       {err && <div className="error-msg">{err}</div>}
-      <div className="modal-footer">
-        <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-        <button className="btn btn-primary" onClick={save} disabled={!canSave || saving}>
-          {saving ? 'Duplicating...' : 'Duplicate'}
-        </button>
-      </div>
     </Overlay>
   );
 }
 
-function InlineClientForm({ onSave, onClose }) {
+// New client, created from the Edit Project form and selected straight away.
+function InlineClientOverlay({ onSave, onClose }) {
   const [form, setForm] = useState({ name: '', company: '', phone: '', email: '', socials: '', notes: '' });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
@@ -1737,7 +1748,10 @@ function InlineClientForm({ onSave, onClose }) {
     try { await onSave(form); } catch (e) { setErr(e.message); setSaving(false); }
   }
   return (
-    <>
+    <Overlay title="New Client" onClose={onClose} footer={<>
+      <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+      <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Create & Select'}</button>
+    </>}>
       <div className="form-row"><label className="form-label">Name *</label><input className="input" value={form.name} onChange={e => f('name', e.target.value)} autoFocus /></div>
       <div className="form-row"><label className="form-label">Company</label><input className="input" value={form.company} onChange={e => f('company', e.target.value)} /></div>
       <div className="form-grid">
@@ -1745,10 +1759,6 @@ function InlineClientForm({ onSave, onClose }) {
         <div className="form-row"><label className="form-label">Email</label><input type="email" className="input" value={form.email} onChange={e => f('email', e.target.value)} /></div>
       </div>
       {err && <div className="error-msg">{err}</div>}
-      <div className="modal-footer">
-        <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-        <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Create & Select'}</button>
-      </div>
-    </>
+    </Overlay>
   );
 }

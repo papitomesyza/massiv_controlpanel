@@ -1,52 +1,28 @@
-import React, { useEffect, useState, useRef } from 'react';
-import ReactDOM from 'react-dom';
+import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  ChevronLeft, Library, FolderKanban, Archive, ArchiveRestore, Trash2,
-  Link2, FileText, MoreHorizontal, Edit2, Youtube, Play,
-  Globe, X, AlertCircle, Search, Share2, Copy, Check, GripVertical,
-  Instagram, Music2, Star,
+  ChevronLeft, ChevronDown, ChevronUp, Library, FolderKanban, Archive, ArchiveRestore, Trash2,
+  Link2, Link2Off, FileText, Edit2, Play, Globe, X, SearchX, Share2, Copy, Check, GripVertical,
+  Instagram, Music2, Star, Unlink, Clock, History, ArrowDownAZ,
 } from 'lucide-react';
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors,
 } from '@dnd-kit/core';
 import { SortableContext, useSortable, rectSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import Overlay from '../components/Overlay';
 import { api } from '../api';
+import Overlay from '../components/Overlay';
+import ConfirmDialog from '../components/ConfirmDialog';
+import IconMenu from '../components/IconMenu';
+import SourceIcon from '../components/SourceIcon';
+import { IconToggles } from '../components/DbBits';
+import { EditCollectionModal } from './Collections';
+import '../styles/mind.css';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const SOURCE_LABEL = {
-  youtube: 'YouTube', vimeo: 'Vimeo', pinterest: 'Pinterest',
-  behance: 'Behance', instagram: 'Instagram', tiktok: 'TikTok',
-  dribbble: 'Dribbble', twitter: 'X / Twitter', web: 'Web',
-};
-
 function getDomain(url) {
   try { return new URL(url).hostname.replace(/^www\./, ''); } catch (_) { return url; }
-}
-
-function parseInstagramInfo(url) {
-  try {
-    const parts = new URL(url).pathname.split('/').filter(Boolean);
-    const RESERVED = ['explore', 'stories', 'accounts', 'direct', 'login', 'ar', 'challenge', 'about', 'blog', 'legal', 'help'];
-    let username = null;
-    let postType = 'Post';
-    if (parts[0] === 'p') postType = 'Post';
-    else if (parts[0] === 'reel' || parts[0] === 'reels') postType = 'Reel';
-    else if (parts[0] === 'tv') postType = 'Video';
-    else if (parts[0] && !RESERVED.includes(parts[0])) {
-      username = parts[0];
-      if (parts[1] === 'p') postType = 'Post';
-      else if (parts[1] === 'reel' || parts[1] === 'reels') postType = 'Reel';
-      else if (parts[1] === 'tv') postType = 'Video';
-      else postType = 'Profile';
-    }
-    return { username, postType };
-  } catch (_) {
-    return { username: null, postType: 'Post' };
-  }
 }
 
 function parseTags(tags) {
@@ -54,15 +30,14 @@ function parseTags(tags) {
   return tags.split(',').map(t => t.trim()).filter(Boolean);
 }
 
-// ── Sort helpers ──────────────────────────────────────────────────────────────
-
-const SORT_OPTIONS = [
-  { value: 'latest', label: 'Latest added' },
-  { value: 'oldest', label: 'Oldest added' },
-  { value: 'name',   label: 'Name A–Z' },
-  { value: 'custom', label: 'Custom order' },
+const SORTS = [
+  { key: 'latest', Icon: Clock,        title: 'Newest' },
+  { key: 'oldest', Icon: History,      title: 'Oldest' },
+  { key: 'name',   Icon: ArrowDownAZ,  title: 'A to Z' },
+  { key: 'custom', Icon: GripVertical, title: 'Custom order' },
 ];
 
+// Starred first, then the chosen order. Custom keeps the stored order.
 function applySortMode(list, mode) {
   const starred = list.filter(c => c.starred);
   const rest = list.filter(c => !c.starred);
@@ -79,369 +54,180 @@ function applySortMode(list, mode) {
   return [...sortGroup(starred), ...sortGroup(rest)];
 }
 
-function SortSelector({ value, onChange }) {
-  return (
-    <select
-      className="select"
-      value={value}
-      onChange={e => onChange(e.target.value)}
-      style={{ fontSize: '12px', padding: '5px 10px', height: 'auto', width: 'auto' }}
-    >
-      {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
-  );
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (_) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  }
 }
 
-// ── Tag chip ──────────────────────────────────────────────────────────────────
+// ── Card pieces ───────────────────────────────────────────────────────────────
 
 function TagChip({ tag, active, onClick }) {
   return (
-    <button
-      onClick={e => { e.stopPropagation(); onClick(tag); }}
-      style={{
-        padding: '2px 9px', borderRadius: 18, fontSize: '11px', fontWeight: 600,
-        background: active ? 'var(--accent)' : 'var(--overlay-04)',
-        color: active ? 'var(--accent-contrast)' : 'var(--accent)',
-        border: 'none', cursor: 'pointer', transition: 'all 0.15s', flexShrink: 0,
-      }}
-    >
+    <button type="button" className={`card-tag ${active ? 'active' : ''}`} onClick={e => { e.stopPropagation(); onClick(tag); }}>
       {tag}
     </button>
   );
 }
 
-// ── Instagram branded placeholder ─────────────────────────────────────────────
-
-function InstagramPlaceholder({ url }) {
-  const { username, postType } = parseInstagramInfo(url || '');
-  return (
-    <div style={{
-      position: 'absolute', inset: 0,
-      background: 'linear-gradient(135deg, var(--color-mid-gray) 0%, var(--color-ember) 50%, var(--color-mid-gray) 100%)',
-      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      gap: '8px',
-    }}>
-      <Instagram size={38} color="var(--color-ink)" strokeWidth={1.5} />
-      <div style={{ textAlign: 'center', lineHeight: 1.4 }}>
-        <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-ink)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-          {postType}
-        </div>
-        {username && (
-          <div style={{ fontSize: '11px', color: 'var(--color-ink)', marginTop: '3px' }}>
-            @{username}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── TikTok branded placeholder ────────────────────────────────────────────────
-
-function TikTokPlaceholder() {
-  return (
-    <div style={{
-      position: 'absolute', inset: 0,
-      background: 'var(--surface-input-fill)',
-      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      gap: '8px',
-    }}>
-      <Music2 size={38} color="var(--color-ink)" strokeWidth={1.5} />
-      <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-ink)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-        TikTok
-      </div>
-    </div>
-  );
-}
-
-// ── Favicon placeholder (Section 3) ──────────────────────────────────────────
-
-function FaviconPlaceholder({ url }) {
+function FaviconFallback({ url }) {
   const domain = getDomain(url);
-  const [faviconFailed, setFaviconFailed] = useState(false);
+  const [failed, setFailed] = useState(false);
   return (
-    <div style={{
-      position: 'absolute', inset: 0,
-      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      gap: '10px', background: 'var(--color-surface-alt)',
-    }}>
-      {!faviconFailed ? (
+    <div className="card-thumb-fallback">
+      {!failed ? (
         <img
           src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=128`}
-          alt={domain}
-          onError={() => setFaviconFailed(true)}
-          style={{ width: 44, height: 44, borderRadius: 10, objectFit: 'contain' }}
+          alt=""
+          onError={() => setFailed(true)}
         />
       ) : (
-        <Globe size={32} color="var(--color-faint)" />
+        <Globe size={30} />
       )}
-      <span style={{ fontSize: '12px', color: 'var(--color-mid-gray)', fontWeight: 500, maxWidth: '85%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center' }}>
-        {domain}
-      </span>
     </div>
   );
 }
-
-// ── Card thumbnail ────────────────────────────────────────────────────────────
 
 function CardThumbnail({ card }) {
   const [imgFailed, setImgFailed] = useState(false);
   const hasThumbnail = !!card.thumbnail_url && !imgFailed;
   const isInstagramReel = card.source === 'instagram' && !!card.url && /\/(reel|reels)\//.test(card.url);
   const isVideo = card.source === 'youtube' || card.source === 'vimeo' || card.source === 'tiktok' || isInstagramReel;
-  const isInstagram = card.source === 'instagram';
-  const isTikTok = card.source === 'tiktok';
 
-  return (
-    <div style={{
-      position: 'relative', width: '100%', paddingBottom: '56.25%',
-      background: 'var(--color-surface-alt)', borderRadius: '10px 10px 0 0', overflow: 'hidden', flexShrink: 0,
-    }}>
-      {hasThumbnail ? (
-        <img
-          src={card.thumbnail_url}
-          alt={card.title || ''}
-          onError={() => setImgFailed(true)}
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
-          loading="lazy"
-        />
-      ) : isInstagram ? (
-        <InstagramPlaceholder url={card.url} />
-      ) : isTikTok ? (
-        <TikTokPlaceholder />
-      ) : (
-        <FaviconPlaceholder url={card.url || ''} />
-      )}
-      {isVideo && hasThumbnail && (
-        <div style={{
-          position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: 'var(--overlay-06)',
-        }}>
-          <div style={{ width: 46, height: 46, borderRadius: '50%', background: 'var(--scrim-strong)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Play size={18} color="white" fill="white" style={{ marginLeft: 2 }} />
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Card dropdown menu — portal-based ────────────────────────────────────────
-
-function CardMenu({ isOpen, onToggle, onEdit, onDelete }) {
-  const btnRef = useRef();
-  const menuRef = useRef();
-  const [menuPos, setMenuPos] = useState(null);
-
-  function handleToggle() {
-    if (!isOpen && btnRef.current) {
-      const rect = btnRef.current.getBoundingClientRect();
-      setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
-    }
-    onToggle();
+  let body;
+  if (hasThumbnail) {
+    body = <img src={card.thumbnail_url} alt="" loading="lazy" onError={() => setImgFailed(true)} />;
+  } else if (card.source === 'instagram') {
+    body = <div className="card-thumb-fallback"><Instagram size={34} strokeWidth={1.5} /></div>;
+  } else if (card.source === 'tiktok') {
+    body = <div className="card-thumb-fallback"><Music2 size={34} strokeWidth={1.5} /></div>;
+  } else {
+    body = <FaviconFallback url={card.url || ''} />;
   }
 
-  useEffect(() => {
-    if (!isOpen) return;
-    function handler(e) {
-      const inBtn = btnRef.current && btnRef.current.contains(e.target);
-      const inMenu = menuRef.current && menuRef.current.contains(e.target);
-      if (!inBtn && !inMenu) onToggle();
-    }
-    function closeMenu() { onToggle(); }
-    document.addEventListener('mousedown', handler);
-    window.addEventListener('scroll', closeMenu, true);
-    window.addEventListener('resize', closeMenu);
-    return () => {
-      document.removeEventListener('mousedown', handler);
-      window.removeEventListener('scroll', closeMenu, true);
-      window.removeEventListener('resize', closeMenu);
-    };
-  }, [isOpen, onToggle]);
-
   return (
-    <div style={{ flexShrink: 0 }}>
-      <button
-        ref={btnRef}
-        className="btn-ghost"
-        onClick={e => { e.stopPropagation(); handleToggle(); }}
-        style={{ padding: '3px 6px', opacity: 0.55, border: 'none' }}
-        title="Options"
-      >
-        <MoreHorizontal size={14} />
-      </button>
-
-      {isOpen && menuPos && ReactDOM.createPortal(
-        <div
-          ref={menuRef}
-          style={{
-            position: 'fixed', top: menuPos.top, right: menuPos.right,
-            zIndex: 9999, background: 'var(--bg-card)',
-            border: '1px solid var(--border-default)', borderRadius: '10px',
-            minWidth: '130px', overflow: 'hidden', boxShadow: '0 8px 28px var(--scrim)',
-          }}
-        >
-          <button style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '10px 14px', background: 'none', border: 'none', color: 'var(--text-primary)', fontSize: '13px', cursor: 'pointer', textAlign: 'left' }}
-            onClick={e => { e.stopPropagation(); onEdit(); onToggle(); }}>
-            <Edit2 size={12} /> Edit
-          </button>
-          <button style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '10px 14px', background: 'none', border: 'none', color: 'var(--danger)', fontSize: '13px', cursor: 'pointer', textAlign: 'left' }}
-            onClick={e => { e.stopPropagation(); onDelete(); onToggle(); }}>
-            <Trash2 size={12} /> Delete
-          </button>
-        </div>,
-        document.body
+    <div className="card-thumb">
+      {body}
+      {isVideo && hasThumbnail && (
+        <div className="card-play"><span><Play size={17} color="white" fill="white" style={{ marginLeft: 2 }} /></span></div>
       )}
     </div>
   );
 }
 
-// ── Link card ─────────────────────────────────────────────────────────────────
+function StarButton({ starred, onClick }) {
+  return (
+    <button
+      type="button"
+      className="db-iconbtn acct-secret-btn"
+      style={starred ? { color: 'var(--color-ink)' } : undefined}
+      title={starred ? 'Unstar' : 'Star'}
+      aria-label={starred ? 'Unstar' : 'Star'}
+      onClick={e => { e.stopPropagation(); onClick(); }}
+    >
+      <Star size={13} fill={starred ? 'currentColor' : 'none'} />
+    </button>
+  );
+}
 
-function LinkCard({ card, isMenuOpen, onMenuToggle, onEdit, onDelete, onStar, activeTag, onTagClick }) {
+function cardMenu(onEdit, onDelete) {
+  return [
+    { key: 'edit', Icon: Edit2, title: 'Edit', onClick: onEdit },
+    { key: 'delete', Icon: Trash2, title: 'Delete', danger: true, onClick: onDelete },
+  ];
+}
+
+function LinkCard({ card, grip, onEdit, onDelete, onStar, activeTag, onTagClick }) {
   const tags = parseTags(card.tags);
-  const isStarred = !!card.starred;
+  const domain = getDomain(card.url);
+  const open = () => window.open(card.url, '_blank', 'noopener,noreferrer');
   return (
     <div
-      className="card"
-      style={{
-        padding: 0, overflow: 'hidden', cursor: 'pointer', display: 'flex', flexDirection: 'column',
-        position: 'relative',
-        border: isStarred ? '2px solid var(--color-hairline-strong)' : undefined,
-        boxShadow: isStarred ? '0 0 0 2px var(--color-ink)' : undefined,
-      }}
-      onClick={() => window.open(card.url, '_blank', 'noopener,noreferrer')}
+      className={`link-card ${card.starred ? 'card-starred' : ''}`}
+      role="link"
+      tabIndex={0}
       title={card.url}
+      onClick={open}
+      onKeyDown={e => { if (e.key === 'Enter') open(); }}
     >
+      {grip}
       <CardThumbnail card={card} />
-      <div style={{ padding: '11px 14px 13px', display: 'flex', flexDirection: 'column', gap: '5px', flex: 1 }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '6px' }}>
-          {card.title ? (
-            <p style={{ fontSize: '13px', fontWeight: 600, lineHeight: 1.4, flex: 1, margin: 0, wordBreak: 'break-word' }}>
-              {card.title}
-            </p>
-          ) : (
-            <p style={{ fontSize: '12px', color: 'var(--text-muted)', flex: 1, margin: 0, wordBreak: 'break-all' }}>
-              {getDomain(card.url)}
-            </p>
-          )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '2px', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-            <button
-              className="btn-ghost"
-              style={{ padding: '3px 5px', color: isStarred ? 'var(--color-ink-soft)' : undefined, border: 'none' }}
-              title={isStarred ? 'Unstar' : 'Star'}
-              onClick={() => onStar(card.id)}
-            >
-              <Star size={13} fill={isStarred ? 'var(--color-ink-soft)' : 'none'} />
-            </button>
-            <CardMenu isOpen={isMenuOpen} onToggle={onMenuToggle} onEdit={onEdit} onDelete={onDelete} />
-          </div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'var(--text-muted)', fontSize: '11px' }}>
-          <Globe size={10} />
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {getDomain(card.url)}
-          </span>
-        </div>
-        {tags.length > 0 && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }} onClick={e => e.stopPropagation()}>
-            {tags.map(tag => (
-              <TagChip key={tag} tag={tag} active={activeTag === tag} onClick={onTagClick} />
-            ))}
-          </div>
-        )}
+      <div className="card-body">
+        <SourceIcon source={card.source} title={domain} style={{ marginTop: 3 }} />
+        <p className={`card-title ${card.title ? '' : 'is-domain'}`}>{card.title || domain}</p>
+        <span style={{ display: 'inline-flex' }} onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
+          <StarButton starred={!!card.starred} onClick={() => onStar(card.id)} />
+          <IconMenu items={cardMenu(onEdit, onDelete)} size={14} />
+        </span>
       </div>
-      {isStarred && (
-        <div style={{
-          position: 'absolute', bottom: 8, left: 8, zIndex: 10,
-          background: 'var(--color-ink-soft)', borderRadius: '50%',
-          width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          pointerEvents: 'none',
-        }}>
-          <Star size={10} fill="var(--accent-contrast)" color="var(--accent-contrast)" />
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Note card ─────────────────────────────────────────────────────────────────
-
-function NoteCard({ card, isMenuOpen, onMenuToggle, onEdit, onDelete, onStar, isExpanded, onToggleExpand, activeTag, onTagClick }) {
-  const isLong = (card.note_text || '').length > 250;
-  const tags = parseTags(card.tags);
-  const isStarred = !!card.starred;
-
-  return (
-    <div
-      className="card"
-      style={{
-        padding: '14px 16px', background: 'var(--overlay-02)',
-        border: isStarred ? '2px solid var(--color-hairline-strong)' : '1px solid var(--color-hairline)',
-        boxShadow: isStarred ? '0 0 0 2px var(--color-ink)' : undefined,
-        display: 'flex', flexDirection: 'column', gap: '9px', position: 'relative',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '7px', flex: 1, minWidth: 0 }}>
-          <FileText size={12} color="var(--accent)" style={{ flexShrink: 0 }} />
-          {card.title && (
-            <span style={{ fontSize: '13px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {card.title}
-            </span>
-          )}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '2px', flexShrink: 0 }}>
-          <button
-            className="btn-ghost"
-            style={{ padding: '3px 5px', color: isStarred ? 'var(--color-ink-soft)' : undefined, border: 'none' }}
-            title={isStarred ? 'Unstar' : 'Star'}
-            onClick={e => { e.stopPropagation(); onStar(card.id); }}
-          >
-            <Star size={13} fill={isStarred ? 'var(--color-ink-soft)' : 'none'} />
-          </button>
-          <CardMenu isOpen={isMenuOpen} onToggle={onMenuToggle} onEdit={onEdit} onDelete={onDelete} />
-        </div>
-      </div>
-      <p style={{
-        fontSize: '13px', lineHeight: 1.65, color: 'var(--text-secondary)', margin: 0,
-        whiteSpace: 'pre-wrap', wordBreak: 'break-word', overflow: 'hidden',
-        display: '-webkit-box', WebkitLineClamp: isExpanded ? 'unset' : 5, WebkitBoxOrient: 'vertical',
-        cursor: isLong && !isExpanded ? 'pointer' : 'default',
-      }}
-        onClick={isLong && !isExpanded ? onToggleExpand : undefined}
-      >
-        {card.note_text}
-      </p>
-      {isLong && (
-        <button onClick={onToggleExpand} style={{ alignSelf: 'flex-start', fontSize: '11px', fontWeight: 700, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-          {isExpanded ? 'Collapse ↑' : 'Read more ↓'}
-        </button>
-      )}
       {tags.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+        <div className="card-tags" onClick={e => e.stopPropagation()}>
           {tags.map(tag => <TagChip key={tag} tag={tag} active={activeTag === tag} onClick={onTagClick} />)}
         </div>
       )}
-      {isStarred && (
-        <div style={{
-          position: 'absolute', bottom: 8, left: 8, zIndex: 10,
-          background: 'var(--color-ink-soft)', borderRadius: '50%',
-          width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          pointerEvents: 'none',
-        }}>
-          <Star size={10} fill="var(--accent-contrast)" color="var(--accent-contrast)" />
+    </div>
+  );
+}
+
+function NoteCard({ card, grip, onEdit, onDelete, onStar, isExpanded, onToggleExpand, activeTag, onTagClick }) {
+  const isLong = (card.note_text || '').length > 250;
+  const tags = parseTags(card.tags);
+  return (
+    <div className={`note-card ${card.starred ? 'card-starred' : ''}`}>
+      {grip}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <span className="source-icon" title="Note"><FileText size={13} /></span>
+        <span className="card-title" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{card.title}</span>
+        <StarButton starred={!!card.starred} onClick={() => onStar(card.id)} />
+        <IconMenu items={cardMenu(onEdit, onDelete)} size={14} />
+      </div>
+      <p className="note-text" style={{ WebkitLineClamp: isExpanded ? 'unset' : 5, paddingRight: 6 }}>{card.note_text}</p>
+      {isLong && (
+        <button
+          type="button"
+          className="db-iconbtn acct-secret-btn"
+          onClick={onToggleExpand}
+          title={isExpanded ? 'Collapse' : 'Expand'}
+          aria-label={isExpanded ? 'Collapse' : 'Expand'}
+        >
+          {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </button>
+      )}
+      {tags.length > 0 && (
+        <div className="card-tags">
+          {tags.map(tag => <TagChip key={tag} tag={tag} active={activeTag === tag} onClick={onTagClick} />)}
         </div>
       )}
     </div>
   );
 }
 
-// ── Sortable card wrapper (Section 4) ─────────────────────────────────────────
+function CardItem({ card, ...props }) {
+  return card.type === 'link' ? <LinkCard card={card} {...props} /> : <NoteCard card={card} {...props} />;
+}
 
-function SortableCardWrapper({ card, ...props }) {
+function SortableCard({ card, ...props }) {
   const isStarred = !!card.starred;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: card.id });
+  const grip = (
+    <span
+      className={`coll-grip ${isStarred ? 'is-off' : ''}`}
+      title={isStarred ? 'Starred' : 'Drag'}
+      onClick={e => e.stopPropagation()}
+      {...(isStarred ? {} : listeners)}
+    >
+      <GripVertical size={12} />
+    </span>
+  );
   return (
     <div
       ref={setNodeRef}
@@ -449,219 +235,281 @@ function SortableCardWrapper({ card, ...props }) {
         transform: CSS.Transform.toString(transform),
         transition,
         opacity: isDragging ? 0.45 : 1,
-        zIndex: isDragging ? 999 : undefined,
+        zIndex: isDragging ? 20 : undefined,
         position: 'relative',
       }}
       {...attributes}
     >
-      {/* Drag handle — disabled for starred (pinned) cards */}
-      <div
-        {...(isStarred ? {} : listeners)}
-        onClick={e => e.stopPropagation()}
-        title={isStarred ? 'Starred — unstar to reorder' : 'Drag to reorder'}
-        style={{
-          position: 'absolute', top: 7, left: 7, zIndex: 20,
-          cursor: isStarred ? 'default' : (isDragging ? 'grabbing' : 'grab'),
-          background: 'var(--scrim-strong)', borderRadius: 6, padding: '3px 5px',
-          color: '#ffffff', touchAction: 'none',
-          display: 'flex', alignItems: 'center',
-          opacity: isStarred ? 0.25 : 1,
-        }}
-      >
-        <GripVertical size={11} />
-      </div>
-      {card.type === 'link' ? (
-        <LinkCard card={card} {...props} />
-      ) : (
-        <NoteCard card={card} {...props} />
-      )}
+      <CardItem card={card} grip={grip} {...props} />
     </div>
   );
 }
 
-// ── Static card wrapper (no drag) ────────────────────────────────────────────
+// ── Add and edit overlays ─────────────────────────────────────────────────────
 
-function StaticCardItem({ card, ...props }) {
-  return card.type === 'link' ? (
-    <LinkCard card={card} {...props} />
-  ) : (
-    <NoteCard card={card} {...props} />
+function CardFormOverlay({ title, formId, busy, submitLabel, error, onClose, onSubmit, children }) {
+  return (
+    <Overlay
+      title={title}
+      onClose={onClose}
+      width={460}
+      footer={<>
+        <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy}>Cancel</button>
+        <button type="submit" form={formId} className="btn btn-primary" disabled={busy}>{busy ? 'Working...' : submitLabel}</button>
+      </>}
+    >
+      <form id={formId} onSubmit={onSubmit}>
+        {children}
+        {error && <div className="error-msg">{error}</div>}
+      </form>
+    </Overlay>
   );
 }
 
-// ── Edit card modal ───────────────────────────────────────────────────────────
+function AddCardModal({ kind, collectionId, onAdded, onClose }) {
+  const [url, setUrl] = useState('');
+  const [title, setTitle] = useState('');
+  const [noteText, setNoteText] = useState('');
+  const [tags, setTags] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (kind === 'link' && !url.trim()) { setError('URL is required'); return; }
+    if (kind === 'note' && !noteText.trim()) { setError('Note is required'); return; }
+    setBusy(true);
+    setError('');
+    try {
+      const body = kind === 'link'
+        ? { type: 'link', url: url.trim(), tags: tags.trim() || undefined }
+        : { type: 'note', title: title.trim() || undefined, note_text: noteText.trim(), tags: tags.trim() || undefined };
+      onAdded(await api.post(`/collections/${collectionId}/cards`, body));
+    } catch (err) {
+      setError(err.message || 'Failed to add');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <CardFormOverlay
+      title={kind === 'link' ? 'Add Link' : 'Add Note'}
+      formId="card-add"
+      busy={busy}
+      submitLabel="Add"
+      error={error}
+      onClose={onClose}
+      onSubmit={handleSubmit}
+    >
+      {kind === 'link' ? (
+        <div className="form-row">
+          <label className="form-label">URL *</label>
+          <input className="input" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://" autoFocus disabled={busy} />
+        </div>
+      ) : (
+        <>
+          <div className="form-row">
+            <label className="form-label">Title</label>
+            <input className="input" value={title} onChange={e => setTitle(e.target.value)} autoFocus disabled={busy} />
+          </div>
+          <div className="form-row">
+            <label className="form-label">Note *</label>
+            <textarea className="input" value={noteText} onChange={e => setNoteText(e.target.value)} rows={5} style={{ resize: 'vertical', minHeight: '90px' }} disabled={busy} />
+          </div>
+        </>
+      )}
+      <div className="form-row">
+        <label className="form-label">Tags</label>
+        <input className="input" value={tags} onChange={e => setTags(e.target.value)} placeholder="design, color, 3D" disabled={busy} />
+      </div>
+    </CardFormOverlay>
+  );
+}
 
 function EditCardModal({ card, onSave, onClose }) {
   const [title, setTitle] = useState(card.title || '');
   const [noteText, setNoteText] = useState(card.note_text || '');
   const [url, setUrl] = useState(card.url || '');
   const [tags, setTags] = useState(card.tags || '');
-  const [saving, setSaving] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const isNote = card.type === 'note';
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (card.type === 'note' && !noteText.trim()) { setError('Note text is required'); return; }
-    if (card.type === 'link' && !url.trim()) { setError('URL is required'); return; }
-    setSaving(true);
+    if (isNote && !noteText.trim()) { setError('Note is required'); return; }
+    if (!isNote && !url.trim()) { setError('URL is required'); return; }
+    setBusy(true);
     try {
-      await onSave(card.id, card.type === 'note'
+      await onSave(card.id, isNote
         ? { title: title.trim() || undefined, note_text: noteText, tags: tags.trim() || null }
         : { title: title.trim() || undefined, url: url.trim(), tags: tags.trim() || null });
       onClose();
     } catch (err) {
       setError(err.message || 'Failed to save');
-    } finally {
-      setSaving(false);
+      setBusy(false);
     }
   }
 
   return (
-    <Overlay title={<>Edit {card.type === 'note' ? 'Note' : 'Link'}</>} onClose={onClose} width={460}>
-      <form onSubmit={handleSubmit}>
-        {card.type === 'link' && (
-          <div className="form-row">
-            <label className="form-label">URL *</label>
-            <input className="input" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://…" autoFocus />
-            <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-              Changing the URL re-fetches the thumbnail.
-            </p>
-          </div>
-        )}
+    <CardFormOverlay
+      title={isNote ? 'Edit Note' : 'Edit Link'}
+      formId="card-edit"
+      busy={busy}
+      submitLabel="Save"
+      error={error}
+      onClose={onClose}
+      onSubmit={handleSubmit}
+    >
+      {!isNote && (
         <div className="form-row">
-          <label className="form-label">Title {card.type === 'note' ? '(optional)' : '(optional override)'}</label>
-          <input
-            className="input"
-            value={title}
-            onChange={e => setTitle(e.target.value)}
-            placeholder={card.type === 'note' ? 'Optional title' : 'Leave blank to use fetched title'}
-            autoFocus={card.type === 'note'}
-          />
+          <label className="form-label">URL *</label>
+          <input className="input" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://" autoFocus />
         </div>
-        {card.type === 'note' && (
-          <div className="form-row">
-            <label className="form-label">Note *</label>
-            <textarea className="input" value={noteText} onChange={e => setNoteText(e.target.value)} rows={5} style={{ resize: 'vertical', minHeight: '80px' }} />
-          </div>
-        )}
+      )}
+      <div className="form-row">
+        <label className="form-label">Title</label>
+        <input className="input" value={title} onChange={e => setTitle(e.target.value)} autoFocus={isNote} />
+      </div>
+      {isNote && (
         <div className="form-row">
-          <label className="form-label">Tags <span style={{ color: 'var(--text-muted)', textTransform: 'none', fontWeight: 400 }}>(comma-separated)</span></label>
-          <input className="input" value={tags} onChange={e => setTags(e.target.value)} placeholder="design, color, 3D" />
+          <label className="form-label">Note *</label>
+          <textarea className="input" value={noteText} onChange={e => setNoteText(e.target.value)} rows={5} style={{ resize: 'vertical', minHeight: '90px' }} />
         </div>
-        {error && (
-          <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 12px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <AlertCircle size={13} /> {error}
-          </p>
-        )}
-        <div className="modal-footer">
-          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
-        </div>
-      </form>
-    </Overlay>
+      )}
+      <div className="form-row">
+        <label className="form-label">Tags</label>
+        <input className="input" value={tags} onChange={e => setTags(e.target.value)} placeholder="design, color, 3D" />
+      </div>
+    </CardFormOverlay>
   );
 }
 
-// ── Share modal (Section 5) ───────────────────────────────────────────────────
+// ── Share one collection ──────────────────────────────────────────────────────
 
 function ShareModal({ collectionId, onClose }) {
   const [loading, setLoading] = useState(true);
   const [token, setToken] = useState(null);
-  const [enabled, setEnabled] = useState(true);
+  const [enabled, setEnabled] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [toggling, setToggling] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [notice, setNotice] = useState(null);
 
   const shareUrl = token ? `${window.location.origin}/shared/collection/${token}` : '';
 
+  // Read the link as it stands. A revoked link stays revoked until it is
+  // turned back on here, through the confirm.
   useEffect(() => {
-    // Generate / fetch existing share link
-    api.post(`/collections/${collectionId}/share`)
+    api.get(`/collections/${collectionId}/share`)
       .then(data => {
-        setToken(data.token);
-        setEnabled(!!data.enabled);
+        if (data.has_link) {
+          setToken(data.token);
+          setEnabled(!!data.enabled);
+        }
       })
-      .catch(() => {})
+      .catch(err => setNotice({ title: 'Share link not loaded', message: err.message }))
       .finally(() => setLoading(false));
   }, [collectionId]);
 
-  async function toggleEnabled() {
-    setToggling(true);
+  useEffect(() => {
+    if (!copied) return undefined;
+    const t = setTimeout(() => setCopied(false), 2000);
+    return () => clearTimeout(t);
+  }, [copied]);
+
+  async function create() {
+    setBusy(true);
     try {
-      await api.put(`/collections/${collectionId}/share`, { enabled: !enabled });
-      setEnabled(p => !p);
-    } catch (_) {}
-    setToggling(false);
+      const data = await api.post(`/collections/${collectionId}/share`);
+      setToken(data.token);
+      setEnabled(!!data.enabled);
+    } catch (err) {
+      setNotice({ title: 'Link not created', message: err.message || 'The link could not be created.' });
+    }
+    setBusy(false);
   }
 
-  async function copyLink() {
+  async function toggleEnabled() {
+    setConfirming(false);
+    setBusy(true);
     try {
-      await navigator.clipboard.writeText(shareUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (_) {
-      const ta = document.createElement('textarea');
-      ta.value = shareUrl;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      await api.put(`/collections/${collectionId}/share`, { enabled: !enabled });
+      setEnabled(v => !v);
+    } catch (err) {
+      setNotice({ title: 'Link not updated', message: err.message || 'The link could not be updated.' });
     }
+    setBusy(false);
+  }
+
+  async function copy() {
+    if (await copyText(shareUrl)) setCopied(true);
+    else setNotice({ title: 'Not copied', message: 'The browser did not allow copying.' });
+  }
+
+  let footer = null;
+  if (!loading) {
+    footer = !token ? (
+      <>
+        <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+        <button type="button" className="btn btn-primary" onClick={create} disabled={busy} title="Create link" aria-label="Create link">
+          <Link2 size={15} />
+        </button>
+      </>
+    ) : (
+      <>
+        <button
+          type="button"
+          className={`db-iconbtn ${enabled ? 'danger' : ''}`}
+          onClick={() => setConfirming(true)}
+          disabled={busy}
+          title={enabled ? 'Revoke link' : 'Turn link on'}
+          aria-label={enabled ? 'Revoke link' : 'Turn link on'}
+        >
+          {enabled ? <Link2Off size={16} /> : <Link2 size={16} />}
+        </button>
+        <span className="spacer" />
+        <button type="button" className="btn btn-ghost" onClick={onClose}>Close</button>
+      </>
+    );
   }
 
   return (
-    <Overlay title="Share Collection" onClose={onClose} guard={false}>
+    <Overlay title="Share Collection" onClose={onClose} guard={false} width={480} footer={footer}>
       {loading ? (
-        <p style={{ color: 'var(--text-muted)', fontSize: '13px', padding: '8px 0' }}>Generating link…</p>
-      ) : !token ? (
-        <p style={{ color: 'var(--danger)', fontSize: '13px' }}>Failed to generate share link.</p>
-      ) : (
-        <div>
-          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px', lineHeight: 1.5 }}>
-            Anyone with this link can view the collection read-only — no account needed.
-            They can click links but cannot add, edit, or delete anything.
-          </p>
-
-          {/* Link display + copy */}
-          <div className="form-row">
-            <label className="form-label">Share Link</label>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <input
-                className="input"
-                value={enabled ? shareUrl : '— link disabled —'}
-                readOnly
-                style={{ flex: 1, fontSize: '12px', opacity: enabled ? 1 : 0.5, color: enabled ? 'var(--text-primary)' : 'var(--text-muted)' }}
-              />
-              <button
-                className="btn btn-primary"
-                style={{ flexShrink: 0, minWidth: 80 }}
-                onClick={copyLink}
-                disabled={!enabled}
-              >
-                {copied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy</>}
-              </button>
-            </div>
-          </div>
-
-          {/* Enable/disable toggle */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 0 4px', borderTop: '1px solid var(--border-default)' }}>
-            <div>
-              <div style={{ fontSize: '13px', fontWeight: 600 }}>Link {enabled ? 'Active' : 'Disabled'}</div>
-              <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: 2 }}>
-                {enabled ? 'Anyone with the link can view this collection.' : 'The link is revoked — no one can open it.'}
-              </div>
-            </div>
-            <button
-              className={`btn btn-sm ${enabled ? 'btn-ghost' : 'btn-primary'}`}
-              style={{ minWidth: 80, marginLeft: 12 }}
-              onClick={toggleEnabled}
-              disabled={toggling}
-            >
-              {toggling ? '…' : enabled ? 'Revoke' : 'Re-enable'}
-            </button>
-          </div>
+        <div className="loading" style={{ padding: '16px' }}>Loading...</div>
+      ) : token ? (
+        <div className="share-field">
+          <span className={enabled ? 'db-dot ink' : 'db-dot muted'} title={enabled ? 'On' : 'Off'} />
+          <input className={`input ${enabled ? '' : 'is-off'}`} value={shareUrl} readOnly onFocus={e => e.target.select()} />
+          <button type="button" className="db-iconbtn lg" onClick={copy} disabled={!enabled} title="Copy" aria-label="Copy link">
+            {copied ? <Check size={16} /> : <Copy size={16} />}
+          </button>
         </div>
+      ) : (
+        <div className="db-empty" style={{ padding: '12px' }}><Link2 size={24} /></div>
+      )}
+      {confirming && (
+        <ConfirmDialog
+          title={enabled ? 'Revoke this link?' : 'Turn this link back on?'}
+          message={enabled
+            ? 'Anyone holding the link loses access until it is turned back on.'
+            : 'Anyone holding the link can view this collection again.'}
+          confirmLabel={enabled ? 'Revoke' : 'Turn on'}
+          tone={enabled ? 'danger' : 'default'}
+          onConfirm={toggleEnabled}
+          onCancel={() => setConfirming(false)}
+        />
+      )}
+      {notice && (
+        <ConfirmDialog
+          title={notice.title}
+          message={notice.message}
+          confirmLabel="OK"
+          cancelLabel={null}
+          onConfirm={() => setNotice(null)}
+          onCancel={() => setNotice(null)}
+        />
       )}
     </Overlay>
   );
@@ -678,30 +526,21 @@ export default function CollectionDetail() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
-  // Add form state
-  const [addMode, setAddMode] = useState(null);
-  const [linkUrl, setLinkUrl] = useState('');
-  const [linkTags, setLinkTags] = useState('');
-  const [noteTitle, setNoteTitle] = useState('');
-  const [noteText, setNoteText] = useState('');
-  const [noteTags, setNoteTags] = useState('');
-  const [adding, setAdding] = useState(false);
-  const [addError, setAddError] = useState('');
-
-  // Cards UI state
-  const [openMenuId, setOpenMenuId] = useState(null);
+  const [addKind, setAddKind] = useState(null);
   const [editingCard, setEditingCard] = useState(null);
+  const [editingCollection, setEditingCollection] = useState(false);
   const [expandedIds, setExpandedIds] = useState(new Set());
   const [showShare, setShowShare] = useState(false);
+  const [confirmDeleteCard, setConfirmDeleteCard] = useState(null);
+  const [confirmDeleteCollection, setConfirmDeleteCollection] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [notice, setNotice] = useState(null);
 
-  // Sort mode — never persisted, always defaults to 'latest' on page load
+  // The sort is never persisted and always opens on newest.
   const [cardSortMode, setCardSortMode] = useState('latest');
-
-  // Search + tag filter
   const [cardSearch, setCardSearch] = useState('');
   const [activeTag, setActiveTag] = useState(null);
 
-  // dnd-kit sensors
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
@@ -722,7 +561,10 @@ export default function CollectionDetail() {
     loadCollection().finally(() => setLoading(false));
   }, [id]);
 
-  // Sorted then filtered cards
+  function showNotice(title, message) {
+    setNotice({ title, message });
+  }
+
   const sortedCards = applySortMode(cards, cardSortMode);
   const displayedCards = sortedCards.filter(card => {
     const q = cardSearch.trim().toLowerCase();
@@ -733,21 +575,23 @@ export default function CollectionDetail() {
     return matchSearch && matchTag;
   });
 
-  // ── dnd-kit drag-end handler ──────────────────────────────────────────────
-
-  function handleDragEnd({ active, over }) {
+  // The new order shows at once. When the server refuses it the previous
+  // order comes back and a notice says so.
+  async function handleDragEnd({ active, over }) {
     if (cardSortMode !== 'custom') return;
     if (!over || active.id === over.id) return;
     const activeCard = cards.find(c => c.id === active.id);
     const overCard = cards.find(c => c.id === over.id);
     if (activeCard?.starred || overCard?.starred) return;
-    setCards(prev => {
-      const oldIndex = prev.findIndex(c => c.id === active.id);
-      const newIndex = prev.findIndex(c => c.id === over.id);
-      const newOrder = arrayMove(prev, oldIndex, newIndex);
-      api.put(`/collections/${id}/cards/reorder`, { orderedIds: newOrder.map(c => c.id) }).catch(() => {});
-      return newOrder;
-    });
+    const previous = cards;
+    const next = arrayMove(cards, cards.findIndex(c => c.id === active.id), cards.findIndex(c => c.id === over.id));
+    setCards(next);
+    try {
+      await api.put(`/collections/${id}/cards/reorder`, { orderedIds: next.map(c => c.id) });
+    } catch (err) {
+      setCards(previous);
+      showNotice('Order not saved', err.message || 'The new order could not be saved.');
+    }
   }
 
   async function handleStarCard(cardId) {
@@ -756,413 +600,226 @@ export default function CollectionDetail() {
     try {
       await api.put(`/collections/${id}/cards/${cardId}/star`, { starred: !card.starred });
       await loadCollection();
-    } catch (err) { alert(err.message || 'Failed to update'); }
-  }
-
-  // ── Card actions ──────────────────────────────────────────────────────────
-
-  async function handleAddLink(e) {
-    e.preventDefault();
-    if (!linkUrl.trim()) { setAddError('Please enter a URL'); return; }
-    setAdding(true); setAddError('');
-    try {
-      const card = await api.post(`/collections/${id}/cards`, {
-        type: 'link', url: linkUrl.trim(),
-        tags: linkTags.trim() || undefined,
-      });
-      setCards(prev => [card, ...prev]);
-      setLinkUrl(''); setLinkTags(''); setAddMode(null);
     } catch (err) {
-      setAddError(err.message || 'Failed to add link');
-    } finally {
-      setAdding(false);
+      showNotice('Not updated', err.message || 'The card could not be updated.');
     }
   }
 
-  async function handleAddNote(e) {
-    e.preventDefault();
-    if (!noteText.trim()) { setAddError('Note text is required'); return; }
-    setAdding(true); setAddError('');
-    try {
-      const card = await api.post(`/collections/${id}/cards`, {
-        type: 'note',
-        title: noteTitle.trim() || undefined,
-        note_text: noteText.trim(),
-        tags: noteTags.trim() || undefined,
-      });
-      setCards(prev => [card, ...prev]);
-      setNoteTitle(''); setNoteText(''); setNoteTags(''); setAddMode(null);
-    } catch (err) {
-      setAddError(err.message || 'Failed to add note');
-    } finally {
-      setAdding(false);
-    }
+  function handleAdded(card) {
+    setCards(prev => [card, ...prev]);
+    setAddKind(null);
   }
 
   async function handleEditCard(cardId, data) {
     const updated = await api.put(`/collections/${id}/cards/${cardId}`, data);
-    setCards(prev => prev.map(c => c.id === cardId ? updated : c));
+    setCards(prev => prev.map(c => (c.id === cardId ? updated : c)));
   }
 
-  async function handleDeleteCard(cardId) {
-    if (!confirm('Delete this card? This cannot be undone.')) return;
+  async function handleEditCollection(data) {
+    await api.put(`/collections/${id}`, data);
+    setCollection(prev => ({ ...prev, name: data.name, description: data.description || null }));
+  }
+
+  async function runDeleteCard() {
+    const cardId = confirmDeleteCard.id;
+    setDeleting(true);
     try {
       await api.del(`/collections/${id}/cards/${cardId}`);
       setCards(prev => prev.filter(c => c.id !== cardId));
+      setConfirmDeleteCard(null);
     } catch (err) {
-      alert(err.message || 'Failed to delete');
+      setConfirmDeleteCard(null);
+      showNotice('Not deleted', err.message || 'The card could not be deleted.');
     }
+    setDeleting(false);
   }
 
   async function handleArchive() {
-    const newArchived = collection.archived ? 0 : 1;
+    const next = collection.archived ? 0 : 1;
     try {
-      await api.patch(`/collections/${id}/archive`, { archived: newArchived });
-      setCollection(prev => ({ ...prev, archived: newArchived }));
-    } catch (err) { alert(err.message || 'Failed'); }
+      await api.patch(`/collections/${id}/archive`, { archived: next });
+      setCollection(prev => ({ ...prev, archived: next }));
+    } catch (err) {
+      showNotice('Not updated', err.message || 'The collection could not be updated.');
+    }
   }
 
-  async function handleDeleteCollection() {
-    if (!confirm(`Delete collection "${collection.name}"?\nAll ${cards.length} card(s) inside will be permanently deleted.`)) return;
+  async function runDeleteCollection() {
+    setDeleting(true);
     try {
       await api.del(`/collections/${id}`);
       navigate('/collections');
-    } catch (err) { alert(err.message || 'Failed to delete'); }
-  }
-
-  function cancelAdd() {
-    setAddMode(null);
-    setLinkUrl(''); setLinkTags('');
-    setNoteTitle(''); setNoteText(''); setNoteTags('');
-    setAddError('');
+    } catch (err) {
+      setConfirmDeleteCollection(false);
+      setDeleting(false);
+      showNotice('Not deleted', err.message || 'The collection could not be deleted.');
+    }
   }
 
   function toggleExpand(cardId) {
     setExpandedIds(prev => {
       const next = new Set(prev);
-      next.has(cardId) ? next.delete(cardId) : next.add(cardId);
+      if (next.has(cardId)) next.delete(cardId); else next.add(cardId);
       return next;
     });
   }
 
-  function toggleMenu(cardId) {
-    setOpenMenuId(prev => prev === cardId ? null : cardId);
-  }
-
   function handleTagClick(tag) {
-    setActiveTag(prev => prev === tag ? null : tag);
+    setActiveTag(prev => (prev === tag ? null : tag));
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  if (loading) return <div className="loading">Loading...</div>;
 
-  if (loading) return (
-    <div style={{ padding: '24px' }}>
-      <p style={{ color: 'var(--text-muted)' }}>Loading…</p>
-    </div>
-  );
+  if (notFound) {
+    return (
+      <div>
+        <div className="db-head">
+          <button type="button" className="db-iconbtn lg" onClick={() => navigate('/collections')} title="Collections" aria-label="Back to collections">
+            <ChevronLeft size={18} />
+          </button>
+        </div>
+        <div className="card db-empty"><SearchX size={28} /></div>
+      </div>
+    );
+  }
 
-  if (notFound) return (
-    <div style={{ padding: '24px' }}>
-      <button className="btn btn-ghost" style={{ marginBottom: 16 }} onClick={() => navigate('/collections')}>
-        <ChevronLeft size={16} /> Collections
-      </button>
-      <p style={{ color: 'var(--text-muted)' }}>Collection not found.</p>
-    </div>
-  );
+  const isProject = collection.kind === 'project';
+  const cardProps = card => ({
+    onEdit: () => setEditingCard(card),
+    onDelete: () => setConfirmDeleteCard(card),
+    onStar: handleStarCard,
+    isExpanded: expandedIds.has(card.id),
+    onToggleExpand: () => toggleExpand(card.id),
+    activeTag,
+    onTagClick: handleTagClick,
+  });
 
   return (
     <div>
-      {/* ── Page header ── */}
-      <div style={{ marginBottom: '24px' }}>
-        <button
-          className="btn btn-ghost"
-          style={{ padding: '6px 12px', fontSize: '13px', marginBottom: '16px' }}
-          onClick={() => navigate('/collections')}
-        >
-          <ChevronLeft size={15} /> Collections
+      <div className="db-head">
+        <button type="button" className="db-iconbtn lg" onClick={() => navigate('/collections')} title="Collections" aria-label="Back to collections">
+          <ChevronLeft size={18} />
         </button>
-
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0, flex: 1 }}>
-            <div style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--overlay-04)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <Library size={20} color="var(--accent)" />
-            </div>
-            <div style={{ minWidth: 0 }}>
-              <h1 style={{ fontSize: '22px', fontWeight: 700, margin: 0 }}>{collection.name}</h1>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px', flexWrap: 'wrap' }}>
-                {collection.project_id && collection.project_title && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <FolderKanban size={12} color="var(--text-muted)" />
-                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{collection.project_title}</span>
-                  </div>
-                )}
-                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                  {cards.length} {cards.length === 1 ? 'card' : 'cards'}
-                </span>
-                {collection.archived === 1 && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                    <Archive size={11} color="var(--text-muted)" />
-                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Archived</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', gap: '8px', flexShrink: 0, flexWrap: 'wrap' }}>
-            <button className="btn btn-ghost" style={{ padding: '7px 13px', fontSize: '12px' }} onClick={() => setShowShare(true)} title="Share collection">
-              <Share2 size={13} /> Share
-            </button>
-            <button className="btn btn-ghost" style={{ padding: '7px 13px', fontSize: '12px' }} onClick={handleArchive} title={collection.archived ? 'Unarchive' : 'Archive'}>
-              {collection.archived
-                ? <><ArchiveRestore size={13} /> Unarchive</>
-                : <><Archive size={13} /> Archive</>}
-            </button>
-            <button className="btn btn-ghost" style={{ padding: '7px 13px', fontSize: '12px', color: 'var(--danger)', borderColor: 'var(--ember-line-strong)' }} onClick={handleDeleteCollection} title="Delete collection">
-              <Trash2 size={13} /> Delete
-            </button>
+        <div className="db-main">
+          <div className="page-title">{collection.name}</div>
+          <div className="coll-meta">
+            <span className="db-count" title={`${cards.length} card${cards.length === 1 ? '' : 's'}`}>
+              <span className="db-dot" />{cards.length}
+            </span>
+            {isProject && (collection.project_id && collection.project_title ? (
+              <span className="db-sub" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <FolderKanban size={12} />{collection.project_title}
+              </span>
+            ) : (
+              <span className="source-icon" title="No project" aria-label="No project" style={{ color: 'var(--color-hairline-strong)' }}>
+                <Unlink size={12} />
+              </span>
+            ))}
+            {!!collection.archived && (
+              <span className="source-icon" title="Archived" aria-label="Archived"><Archive size={12} /></span>
+            )}
           </div>
         </div>
-
-        {collection.description && (
-          <p style={{ marginTop: '10px', color: 'var(--text-secondary)', fontSize: '13px' }}>
-            {collection.description}
-          </p>
-        )}
+        <div className="db-actions">
+          <button type="button" className="db-iconbtn" onClick={() => setShowShare(true)} title="Share" aria-label="Share"><Share2 size={16} /></button>
+          <button type="button" className="db-iconbtn" onClick={() => setEditingCollection(true)} title="Edit" aria-label="Edit"><Edit2 size={16} /></button>
+          <button type="button" className="db-iconbtn" onClick={handleArchive} title={collection.archived ? 'Unarchive' : 'Archive'} aria-label={collection.archived ? 'Unarchive' : 'Archive'}>
+            {collection.archived ? <ArchiveRestore size={16} /> : <Archive size={16} />}
+          </button>
+          <button type="button" className="db-iconbtn danger" onClick={() => setConfirmDeleteCollection(true)} title="Delete" aria-label="Delete"><Trash2 size={16} /></button>
+        </div>
       </div>
 
-      {/* ── Add buttons (Section 1 — polished) ── */}
-      {!addMode && (
-        <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
-          <button className="btn btn-primary" style={{ fontSize: '13px' }} onClick={() => { setAddMode('link'); setAddError(''); }}>
-            <Link2 size={14} /> Add Link
+      {collection.description && (
+        <p className="db-sub" style={{ whiteSpace: 'normal', margin: '-8px 0 18px' }}>{collection.description}</p>
+      )}
+
+      <div className="mind-toolbar">
+        {cards.length > 0 && (
+          <>
+            <input className="input" value={cardSearch} onChange={e => setCardSearch(e.target.value)} placeholder="Search" />
+            <IconToggles options={SORTS} value={cardSortMode} onChange={setCardSortMode} label="Sort" />
+          </>
+        )}
+        {activeTag && (
+          <button type="button" className="card-tag active" onClick={() => setActiveTag(null)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            {activeTag} <X size={11} />
           </button>
-          <button className="btn btn-ghost" style={{ fontSize: '13px' }} onClick={() => { setAddMode('note'); setAddError(''); }}>
-            <FileText size={14} /> Add Note
+        )}
+        <span className="spacer" />
+        <button type="button" className="db-iconbtn lg" onClick={() => setAddKind('link')} title="Add link" aria-label="Add link"><Link2 size={17} /></button>
+        <button type="button" className="db-iconbtn lg" onClick={() => setAddKind('note')} title="Add note" aria-label="Add note"><FileText size={17} /></button>
+      </div>
+
+      {cards.length === 0 ? (
+        <div className="card db-empty"><Library size={28} /></div>
+      ) : displayedCards.length === 0 ? (
+        <div className="card db-empty" style={{ gap: 10, alignItems: 'center' }}>
+          <SearchX size={26} />
+          <button
+            type="button"
+            className="db-iconbtn"
+            onClick={() => { setCardSearch(''); setActiveTag(null); }}
+            title="Clear filters"
+            aria-label="Clear filters"
+          >
+            <X size={15} />
           </button>
         </div>
-      )}
-
-      {/* ── Add Link inline form (Section 1 — polished card) ── */}
-      {addMode === 'link' && (
-        <div className="card" style={{ padding: '20px 22px', marginBottom: '24px', border: '1px solid var(--color-hairline)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
-            <Link2 size={14} color="var(--accent)" />
-            <span style={{ fontWeight: 700, fontSize: '14px' }}>Add Link</span>
-            <button onClick={cancelAdd} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}>
-              <X size={15} />
-            </button>
-          </div>
-          <form onSubmit={handleAddLink}>
-            <div className="form-row">
-              <label className="form-label">URL</label>
-              <input
-                className="input"
-                placeholder="Paste a URL — YouTube, Vimeo, Pinterest, Behance, or any site…"
-                value={linkUrl}
-                onChange={e => setLinkUrl(e.target.value)}
-                autoFocus
-                disabled={adding}
-              />
+      ) : cardSortMode === 'custom' ? (
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={displayedCards.map(c => c.id)} strategy={rectSortingStrategy}>
+            <div className="card-grid">
+              {displayedCards.map(card => <SortableCard key={card.id} card={card} {...cardProps(card)} />)}
             </div>
-            <div className="form-row">
-              <label className="form-label">Tags <span style={{ fontWeight: 400, textTransform: 'none', color: 'var(--text-muted)' }}>(comma-separated, optional)</span></label>
-              <input
-                className="input"
-                placeholder="design, color, 3D"
-                value={linkTags}
-                onChange={e => setLinkTags(e.target.value)}
-                disabled={adding}
-              />
-            </div>
-            {adding && (
-              <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '0 0 12px' }}>Fetching preview — this may take a few seconds…</p>
-            )}
-            {addError && !adding && (
-              <p style={{ color: 'var(--danger)', fontSize: '12px', margin: '0 0 12px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                <AlertCircle size={12} /> {addError}
-              </p>
-            )}
-            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={cancelAdd} disabled={adding}>Cancel</button>
-              <button type="submit" className="btn btn-primary btn-sm" disabled={adding}>{adding ? 'Fetching…' : 'Add Link'}</button>
-            </div>
-          </form>
+          </SortableContext>
+        </DndContext>
+      ) : (
+        <div className="card-grid">
+          {displayedCards.map(card => <CardItem key={card.id} card={card} {...cardProps(card)} />)}
         </div>
       )}
 
-      {/* ── Add Note inline form (Section 1 — polished card) ── */}
-      {addMode === 'note' && (
-        <div className="card" style={{ padding: '20px 22px', marginBottom: '24px', border: '1px solid var(--color-hairline)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
-            <FileText size={14} color="var(--accent)" />
-            <span style={{ fontWeight: 700, fontSize: '14px' }}>Add Note</span>
-            <button onClick={cancelAdd} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}>
-              <X size={15} />
-            </button>
-          </div>
-          <form onSubmit={handleAddNote}>
-            <div className="form-row">
-              <label className="form-label">Title <span style={{ fontWeight: 400, textTransform: 'none', color: 'var(--text-muted)' }}>(optional)</span></label>
-              <input className="input" placeholder="Note title" value={noteTitle} onChange={e => setNoteTitle(e.target.value)} autoFocus disabled={adding} />
-            </div>
-            <div className="form-row">
-              <label className="form-label">Note *</label>
-              <textarea className="input" placeholder="Write your note…" value={noteText} onChange={e => setNoteText(e.target.value)} rows={4} style={{ resize: 'vertical', minHeight: '80px' }} disabled={adding} />
-            </div>
-            <div className="form-row">
-              <label className="form-label">Tags <span style={{ fontWeight: 400, textTransform: 'none', color: 'var(--text-muted)' }}>(comma-separated, optional)</span></label>
-              <input className="input" placeholder="design, color, 3D" value={noteTags} onChange={e => setNoteTags(e.target.value)} disabled={adding} />
-            </div>
-            {addError && (
-              <p style={{ color: 'var(--danger)', fontSize: '12px', margin: '0 0 12px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                <AlertCircle size={12} /> {addError}
-              </p>
-            )}
-            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={cancelAdd} disabled={adding}>Cancel</button>
-              <button type="submit" className="btn btn-primary btn-sm" disabled={adding}>{adding ? 'Saving…' : 'Add Note'}</button>
-            </div>
-          </form>
-        </div>
+      {addKind && (
+        <AddCardModal kind={addKind} collectionId={id} onAdded={handleAdded} onClose={() => setAddKind(null)} />
       )}
-
-      {/* ── Search bar + tag filter ── */}
-      {cards.length > 0 && (
-        <div style={{ marginBottom: '20px' }}>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: activeTag ? '10px' : 0 }}>
-            <div style={{ position: 'relative', flex: 1 }}>
-              <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
-              <input
-                className="input"
-                value={cardSearch}
-                onChange={e => setCardSearch(e.target.value)}
-                placeholder="Search cards by title, text, URL, tags…"
-                style={{ paddingLeft: 36, paddingRight: cardSearch ? 32 : 12, fontSize: '13px' }}
-              />
-              {cardSearch && (
-                <button
-                  onClick={() => setCardSearch('')}
-                  style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}
-                >
-                  <X size={13} />
-                </button>
-              )}
-            </div>
-            <SortSelector value={cardSortMode} onChange={setCardSortMode} />
-          </div>
-          {activeTag && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Filtering by tag:</span>
-              <button
-                onClick={() => setActiveTag(null)}
-                style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '3px 10px', borderRadius: 18, fontSize: '12px', fontWeight: 600, background: 'var(--accent)', color: 'var(--accent-contrast)', border: 'none', cursor: 'pointer' }}
-              >
-                {activeTag} <X size={11} />
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── Empty state ── */}
-      {cards.length === 0 && (
-        <div className="card" style={{ padding: '52px 24px', textAlign: 'center' }}>
-          <Library size={36} color="var(--text-muted)" style={{ margin: '0 auto 14px', display: 'block' }} />
-          <p style={{ fontSize: '15px', fontWeight: 600, marginBottom: '6px' }}>Nothing here yet</p>
-          <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '22px' }}>
-            Add a link or a note to start filling this collection.
-          </p>
-          {!addMode && (
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
-              <button className="btn btn-primary" style={{ fontSize: '13px' }} onClick={() => setAddMode('link')}>
-                <Link2 size={14} /> Add Link
-              </button>
-              <button className="btn btn-ghost" style={{ fontSize: '13px' }} onClick={() => setAddMode('note')}>
-                <FileText size={14} /> Add Note
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── Card grid with dnd-kit (Section 4) ── */}
-      {cards.length > 0 && (
-        displayedCards.length === 0 ? (
-          <div className="card" style={{ padding: '28px 20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
-            No cards match{activeTag ? ` tag "${activeTag}"` : ''}{cardSearch ? ` "${cardSearch}"` : ''}.
-            {(cardSearch || activeTag) && (
-              <button
-                onClick={() => { setCardSearch(''); setActiveTag(null); }}
-                style={{ marginLeft: '10px', color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px' }}
-              >
-                Clear filters
-              </button>
-            )}
-          </div>
-        ) : cardSortMode === 'custom' ? (
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext items={displayedCards.map(c => c.id)} strategy={rectSortingStrategy}>
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-                gap: '16px',
-              }}>
-                {displayedCards.map(card => (
-                  <SortableCardWrapper
-                    key={card.id}
-                    card={card}
-                    isMenuOpen={openMenuId === card.id}
-                    onMenuToggle={() => toggleMenu(card.id)}
-                    onEdit={() => { setEditingCard(card); setOpenMenuId(null); }}
-                    onDelete={() => handleDeleteCard(card.id)}
-                    onStar={handleStarCard}
-                    isExpanded={expandedIds.has(card.id)}
-                    onToggleExpand={() => toggleExpand(card.id)}
-                    activeTag={activeTag}
-                    onTagClick={handleTagClick}
-                  />
-                ))}
-              </div>
-            </SortableContext>
-          </DndContext>
-        ) : (
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-            gap: '16px',
-          }}>
-            {displayedCards.map(card => (
-              <StaticCardItem
-                key={card.id}
-                card={card}
-                isMenuOpen={openMenuId === card.id}
-                onMenuToggle={() => toggleMenu(card.id)}
-                onEdit={() => { setEditingCard(card); setOpenMenuId(null); }}
-                onDelete={() => handleDeleteCard(card.id)}
-                onStar={handleStarCard}
-                isExpanded={expandedIds.has(card.id)}
-                onToggleExpand={() => toggleExpand(card.id)}
-                activeTag={activeTag}
-                onTagClick={handleTagClick}
-              />
-            ))}
-          </div>
-        )
-      )}
-
-      {/* ── Edit card modal ── */}
       {editingCard && (
-        <EditCardModal
-          card={editingCard}
-          onSave={handleEditCard}
-          onClose={() => setEditingCard(null)}
+        <EditCardModal card={editingCard} onSave={handleEditCard} onClose={() => setEditingCard(null)} />
+      )}
+      {editingCollection && (
+        <EditCollectionModal collection={collection} onSave={handleEditCollection} onClose={() => setEditingCollection(false)} />
+      )}
+      {showShare && <ShareModal collectionId={id} onClose={() => setShowShare(false)} />}
+      {confirmDeleteCard && (
+        <ConfirmDialog
+          title="Delete this card?"
+          confirmLabel="Delete"
+          tone="danger"
+          busy={deleting}
+          onConfirm={runDeleteCard}
+          onCancel={() => setConfirmDeleteCard(null)}
         />
       )}
-
-      {/* ── Share modal (Section 5) ── */}
-      {showShare && (
-        <ShareModal collectionId={id} onClose={() => setShowShare(false)} />
+      {confirmDeleteCollection && (
+        <ConfirmDialog
+          title={`Delete ${collection.name}?`}
+          message={cards.length > 0 ? `${cards.length} card${cards.length === 1 ? '' : 's'} inside will be deleted too.` : undefined}
+          confirmLabel="Delete"
+          tone="danger"
+          busy={deleting}
+          onConfirm={runDeleteCollection}
+          onCancel={() => setConfirmDeleteCollection(false)}
+        />
+      )}
+      {notice && (
+        <ConfirmDialog
+          title={notice.title}
+          message={notice.message}
+          confirmLabel="OK"
+          cancelLabel={null}
+          onConfirm={() => setNotice(null)}
+          onCancel={() => setNotice(null)}
+        />
       )}
     </div>
   );

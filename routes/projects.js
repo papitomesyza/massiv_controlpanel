@@ -402,6 +402,10 @@ router.delete('/:id', (req, res) => {
       };
     }
     db.prepare("DELETE FROM calendar_events WHERE project_id = ? AND event_type IN ('shoot', 'deadline', 'task')").run(id);
+    // Collections outlive their project. The foreign key would cascade them
+    // and every card inside away, so detach them first: they keep kind
+    // 'project' and show as unlinked on the Collections page.
+    db.prepare("UPDATE collections SET project_id = NULL, kind = 'project' WHERE project_id = ?").run(id);
     db.prepare('DELETE FROM projects WHERE id = ?').run(id);
     return { status: 200, body: { ok: true } };
   });

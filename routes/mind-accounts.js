@@ -2,6 +2,14 @@ const express = require('express');
 const router = express.Router();
 const { db } = require('../db/database');
 
+// Schema safe: on a fresh database the boot migrations run before the
+// mind_accounts table exists, so the vault columns are added here as well.
+[
+  'ALTER TABLE mind_accounts ADD COLUMN password_cipher TEXT',
+  'ALTER TABLE mind_accounts ADD COLUMN password_iv TEXT',
+  "ALTER TABLE mind_accounts ADD COLUMN auth_method TEXT DEFAULT 'password'",
+].forEach(sql => { try { db.exec(sql); } catch (_) {} });
+
 const VALID_CATEGORIES = ['project', 'studio', 'personal'];
 const VALID_BILLING_CYCLES = ['monthly', 'yearly', 'quarterly', 'weekly', 'one-time'];
 const VALID_AUTH_METHODS = ['password', 'google', 'apple', 'microsoft', 'facebook', 'github', 'other'];
@@ -26,33 +34,40 @@ function validateAccount(body) {
   return null;
 }
 
-// GET /api/mind-accounts/monthly-spend — must be before /:id to avoid route conflict
+// GET /api/mind-accounts/monthly-spend, before /:id so it is not read as an id.
+// One monthly figure per currency. Different currencies are never added
+// together: there are no conversion rates here, so EUR and USD stay apart.
 router.get('/monthly-spend', (req, res) => {
   try {
     const accounts = db.prepare(
-      "SELECT cost, billing_cycle FROM mind_accounts WHERE archived = 0 AND has_payment = 1 AND cost > 0"
+      "SELECT cost, billing_cycle, currency FROM mind_accounts WHERE archived = 0 AND has_payment = 1 AND cost > 0"
     ).all();
 
-    let total = 0;
+    const totals = {};
     for (const a of accounts) {
       const cost = Number(a.cost) || 0;
+      let monthly;
       switch (a.billing_cycle) {
-        case 'monthly':   total += cost; break;
-        case 'yearly':    total += cost / 12; break;
-        case 'quarterly': total += cost / 3; break;
-        case 'weekly':    total += (cost * 52) / 12; break;
-        case 'one-time':  break;
-        default:          total += cost; break;
+        case 'monthly':   monthly = cost; break;
+        case 'yearly':    monthly = cost / 12; break;
+        case 'quarterly': monthly = cost / 3; break;
+        case 'weekly':    monthly = (cost * 52) / 12; break;
+        case 'one-time':  monthly = 0; break;
+        default:          monthly = cost; break;
       }
+      if (!monthly) continue;
+      const cur = (a.currency || 'EUR').toUpperCase();
+      totals[cur] = (totals[cur] || 0) + monthly;
     }
+    for (const cur of Object.keys(totals)) totals[cur] = Math.round(totals[cur] * 100) / 100;
 
-    res.json({ total: Math.round(total * 100) / 100, currency: 'EUR' });
+    res.json({ totals });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// GET /api/mind-accounts/archived — must be before /:id
+// GET /api/mind-accounts/archived, before /:id
 router.get('/archived', (req, res) => {
   try {
     const accounts = db.prepare(

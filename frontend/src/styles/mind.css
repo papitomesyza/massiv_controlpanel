@@ -1,0 +1,143 @@
+/* The Mind: Collections, a Collection, Accounts. Built on the Database card
+   system (db-card, db-iconbtn, db-dot, db-chip); only what those pages add
+   lives here. Every colour is a token, so both themes follow. */
+
+/* ---- Three dot action row ---- */
+.icon-menu {
+  position: fixed;
+  z-index: 900;
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  background: var(--surface-card);
+  border: 1px solid var(--color-hairline);
+  border-radius: 12px;
+  box-shadow: var(--shadow-raised);
+}
+.icon-menu .db-iconbtn.is-active { color: var(--color-ink); }
+.icon-menu-btn.is-open { background: var(--overlay-03); color: var(--color-ink); }
+
+.source-icon { display: inline-flex; align-items: center; color: var(--color-mid-gray); flex-shrink: 0; }
+
+/* ---- Section heads: icon plus a count dot ---- */
+.mind-section { margin-bottom: 28px; }
+.mind-section-head {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 12px; color: var(--color-ink-soft);
+}
+.mind-section-head .muted { color: var(--color-hairline-strong); }
+
+.mind-toolbar { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; align-items: center; }
+.mind-toolbar .input { max-width: 260px; flex: 1 1 180px; }
+.mind-toolbar .spacer { flex: 1; }
+
+/* ---- Collection tile ---- */
+.coll-tile {
+  position: relative;
+  display: flex; flex-direction: column;
+  background: var(--surface-card);
+  border: 1px solid var(--color-hairline);
+  border-radius: 14px;
+  overflow: hidden;
+  cursor: pointer;
+  min-width: 0;
+  transition: border-color 0.15s ease, transform 0.1s ease;
+}
+.coll-tile:hover { border-color: var(--color-hairline-strong); }
+.coll-tile:active { transform: scale(0.99); }
+.coll-tile:focus-visible { outline: 2px solid var(--color-ink); outline-offset: 2px; }
+.coll-tile.is-muted { opacity: 0.6; }
+.coll-cover {
+  height: 112px; flex-shrink: 0;
+  background: var(--color-surface-alt);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--color-hairline-strong);
+}
+.coll-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.coll-body { display: flex; align-items: center; gap: 8px; padding: 10px 6px 10px 12px; min-width: 0; }
+.coll-body .db-main { min-width: 0; }
+.coll-name { font-size: 13px; font-weight: 600; color: var(--color-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.coll-meta { display: flex; align-items: center; gap: 8px; margin-top: 3px; min-width: 0; }
+.coll-meta .db-sub { margin-top: 0; font-size: 11px; }
+.coll-star { color: var(--color-ink-soft); display: inline-flex; flex-shrink: 0; }
+.coll-grip {
+  position: absolute; top: 7px; left: 7px; z-index: 2;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 7px;
+  background: var(--scrim-strong); color: #ffffff;
+  touch-action: none; cursor: grab;
+}
+.coll-grip.is-off { opacity: 0.3; cursor: default; }
+
+/* ---- Cards inside a collection ---- */
+.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+@media (max-width: 560px) { .card-grid { grid-template-columns: minmax(0, 1fr); } }
+.link-card, .note-card {
+  position: relative;
+  display: flex; flex-direction: column;
+  background: var(--surface-card);
+  border: 1px solid var(--color-hairline);
+  border-radius: 14px;
+  overflow: hidden;
+  min-width: 0;
+}
+.link-card { cursor: pointer; }
+.link-card:hover, .note-card:hover { border-color: var(--color-hairline-strong); }
+.note-card { background: var(--overlay-02); padding: 12px 8px 12px 14px; gap: 8px; }
+.card-thumb { position: relative; width: 100%; padding-bottom: 56.25%; background: var(--color-surface-alt); overflow: hidden; flex-shrink: 0; }
+.card-thumb > * { position: absolute; inset: 0; }
+.card-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.card-thumb-fallback { display: flex; align-items: center; justify-content: center; color: var(--color-hairline-strong); }
+.card-thumb-fallback img { position: static; width: 44px; height: 44px; border-radius: 10px; object-fit: contain; }
+.card-play { display: flex; align-items: center; justify-content: center; background: var(--overlay-06); pointer-events: none; }
+.card-play span {
+  width: 42px; height: 42px; border-radius: 50%;
+  background: var(--scrim-strong);
+  display: flex; align-items: center; justify-content: center;
+}
+.card-body { display: flex; align-items: flex-start; gap: 6px; padding: 10px 6px 10px 12px; }
+.card-title { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; line-height: 1.4; margin: 0; word-break: break-word; color: var(--color-ink); }
+.card-title.is-domain { font-weight: 500; color: var(--color-mid-gray); }
+.card-tags { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 12px 12px; }
+.note-card .card-tags { padding: 0; }
+.card-tag {
+  padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 600;
+  background: var(--overlay-04); color: var(--color-ink-soft);
+  border: none; cursor: pointer; font-family: var(--font);
+}
+.card-tag.active { background: var(--color-ink); color: var(--accent-contrast); }
+.note-text {
+  font-size: 13px; line-height: 1.6; color: var(--color-ink-soft); margin: 0;
+  white-space: pre-wrap; word-break: break-word; overflow: hidden;
+  display: -webkit-box; -webkit-box-orient: vertical;
+}
+.card-starred { box-shadow: 0 0 0 2px var(--color-ink); border-color: transparent; }
+
+/* ---- Accounts ---- */
+.acct-card { cursor: default; align-items: flex-start; }
+.acct-card:active { transform: none; }
+.acct-row { display: flex; align-items: center; gap: 6px; margin-top: 7px; min-width: 0; }
+.acct-secret {
+  flex: 1; min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+  color: var(--color-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.acct-secret.is-masked { color: var(--color-mid-gray); letter-spacing: 0.12em; font-family: var(--font); }
+.acct-secret-btn { width: 24px; height: 24px; border-radius: 7px; }
+.acct-date { font-size: 12px; color: var(--color-mid-gray); font-variant-numeric: tabular-nums; display: inline-flex; align-items: center; gap: 5px; }
+.acct-lock { color: var(--color-hairline-strong); display: inline-flex; }
+
+.mind-summary {
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  padding: 14px 18px; margin-bottom: 22px;
+}
+.mind-summary .db-money { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+.mind-summary .cycle { font-size: 12px; color: var(--color-mid-gray); font-weight: 500; margin-left: 2px; }
+.mind-summary .spacer { flex: 1; }
+
+/* ---- Share link field ---- */
+.share-field { display: flex; gap: 6px; align-items: center; }
+.share-field .input { flex: 1; font-size: 12px; }
+.share-field .input.is-off { color: var(--color-mid-gray); text-decoration: line-through; }
+.mind-toggles { display: inline-flex; }
+.ov-footer .spacer { flex: 1; }

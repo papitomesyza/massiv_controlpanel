@@ -1,6 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
+const dns = require('dns');
+const net = require('net');
+const http = require('http');
+const https = require('https');
+const zlib = require('zlib');
 const { db } = require('../db/database');
 
 // Schema-safe: add starred column to both tables if not already present
@@ -17,7 +22,7 @@ try {
   )`);
 } catch (_) {}
 
-// Instagram proxy domains — reorder or swap if one stops working
+// Instagram proxy domains. Reorder or swap if one stops working.
 const INSTAGRAM_PROXIES = ['ddinstagram.com', 'kkinstagram.com', 'instagramez.com'];
 
 // ── Link preview helpers ──────────────────────────────────────────────────────
@@ -32,27 +37,181 @@ async function fetchWithTimeout(url, ms) {
   }
 }
 
-async function fetchHtml(url) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 7000);
-  try {
-    const r = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'DNT': '1',
-        'Upgrade-Insecure-Requests': '1',
-      },
+// ── Safe page fetch ───────────────────────────────────────────────────────────
+// A pasted link is fetched by the server, so it must never reach the server's
+// own network: only http and https, never a host that resolves to a loopback,
+// private, link local or unique local address, at most 3 redirects with every
+// hop checked again, at most 2 MB of HTML, and 7 seconds in total. A refused
+// link still saves as a card, just without a preview.
+
+const PREVIEW_TIMEOUT_MS = 7000;
+const PREVIEW_MAX_BYTES = 2 * 1024 * 1024;
+const PREVIEW_MAX_REDIRECTS = 3;
+
+const BROWSER_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.5',
+  'Accept-Encoding': 'gzip, deflate, br',
+  'DNT': '1',
+  'Upgrade-Insecure-Requests': '1',
+};
+
+function ipv4Blocked(ip) {
+  const p = ip.split('.').map(Number);
+  if (p.length !== 4 || p.some(n => !Number.isInteger(n) || n < 0 || n > 255)) return true;
+  const [a, b] = p;
+  if (a === 0) return true;                          // this network
+  if (a === 10) return true;                         // private
+  if (a === 127) return true;                        // loopback
+  if (a === 169 && b === 254) return true;           // link local
+  if (a === 172 && b >= 16 && b <= 31) return true;  // private
+  if (a === 192 && b === 168) return true;           // private
+  if (a === 100 && b >= 64 && b <= 127) return true; // carrier grade NAT
+  if (a === 192 && b === 0 && p[2] === 0) return true;
+  if (a === 198 && (b === 18 || b === 19)) return true;
+  if (a >= 224) return true;                         // multicast and reserved
+  return false;
+}
+
+function ipv6Blocked(ip) {
+  const s = ip.toLowerCase().split('%')[0];
+  if (s === '::' || s === '::1') return true;
+  // IPv4 mapped or compatible, checked as IPv4.
+  const mapped = s.match(/^::(?:ffff:)?(\d+\.\d+\.\d+\.\d+)$/);
+  if (mapped) return ipv4Blocked(mapped[1]);
+  const hexMapped = s.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (hexMapped) {
+    const hi = parseInt(hexMapped[1], 16), lo = parseInt(hexMapped[2], 16);
+    return ipv4Blocked(`${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`);
+  }
+  const first = parseInt(s.split(':')[0] || '0', 16);
+  if ((first & 0xfe00) === 0xfc00) return true;      // unique local fc00::/7
+  if ((first & 0xffc0) === 0xfe80) return true;      // link local fe80::/10
+  if ((first & 0xff00) === 0xff00) return true;      // multicast
+  return false;
+}
+
+function addressBlocked(address) {
+  const family = net.isIP(address);
+  if (family === 4) return ipv4Blocked(address);
+  if (family === 6) return ipv6Blocked(address);
+  return true;
+}
+
+// Every address a host resolves to must be public. Throws when one is not.
+async function assertPublicHost(hostname) {
+  const host = hostname.replace(/^\[|\]$/g, '');
+  if (!host || /^localhost$/i.test(host) || /\.localhost$/i.test(host)) throw new Error('refused host');
+  if (net.isIP(host)) {
+    if (addressBlocked(host)) throw new Error('refused address');
+    return;
+  }
+  const addrs = await dns.promises.lookup(host, { all: true, verbatim: true });
+  if (!addrs.length || addrs.some(a => addressBlocked(a.address))) throw new Error('refused address');
+}
+
+// A URL the preview fetcher may open at all: http or https to a public host.
+async function assertSafeUrl(rawUrl) {
+  let u;
+  try { u = new URL(rawUrl); } catch (_) { throw new Error('bad url'); }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('refused scheme');
+  if (u.username || u.password) throw new Error('refused credentials');
+  await assertPublicHost(u.hostname);
+  return u;
+}
+
+// The socket resolves the host again and connects only to a checked address,
+// so a name cannot answer public for the check and private for the connect.
+function pinnedLookup(hostname, options, callback) {
+  dns.lookup(hostname, { all: true, verbatim: true }, (err, addrs) => {
+    if (err) return callback(err);
+    if (!addrs.length || addrs.some(a => addressBlocked(a.address))) {
+      return callback(new Error('refused address'));
+    }
+    if (options && options.all) return callback(null, addrs);
+    callback(null, addrs[0].address, addrs[0].family);
+  });
+}
+
+function requestOnce(u, deadline) {
+  return new Promise((resolve, reject) => {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return reject(new Error('timeout'));
+    const mod = u.protocol === 'https:' ? https : http;
+    const req = mod.request(u, { method: 'GET', headers: BROWSER_HEADERS, lookup: pinnedLookup, timeout: remaining }, resolve);
+    const timer = setTimeout(() => req.destroy(new Error('timeout')), remaining);
+    req.on('response', () => clearTimeout(timer));
+    req.on('timeout', () => req.destroy(new Error('timeout')));
+    req.on('error', err => { clearTimeout(timer); reject(err); });
+    req.end();
+  });
+}
+
+// Read at most PREVIEW_MAX_BYTES of the decoded body, then stop reading.
+function readCapped(res, deadline) {
+  return new Promise(resolve => {
+    const enc = String(res.headers['content-encoding'] || '').toLowerCase();
+    let stream = res;
+    if (enc === 'gzip' || enc === 'x-gzip') stream = res.pipe(zlib.createGunzip());
+    else if (enc === 'deflate') stream = res.pipe(zlib.createInflate());
+    else if (enc === 'br') stream = res.pipe(zlib.createBrotliDecompress());
+
+    const chunks = [];
+    let size = 0;
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      res.destroy();
+      if (stream !== res) stream.destroy();
+      resolve(Buffer.concat(chunks).toString('utf8'));
+    };
+    const timer = setTimeout(finish, Math.max(0, deadline - Date.now()));
+    stream.on('data', chunk => {
+      const room = PREVIEW_MAX_BYTES - size;
+      if (room <= 0) return finish();
+      const part = chunk.length > room ? chunk.subarray(0, room) : chunk;
+      chunks.push(part);
+      size += part.length;
+      if (size >= PREVIEW_MAX_BYTES) finish();
     });
-    clearTimeout(timer);
-    if (!r.ok) return null;
-    return await r.text();
+    stream.on('end', finish);
+    stream.on('error', finish);
+    res.on('error', finish);
+  });
+}
+
+// Returns the page HTML, or null when the link is refused, fails or is not HTML.
+async function fetchHtml(rawUrl) {
+  const deadline = Date.now() + PREVIEW_TIMEOUT_MS;
+  let current = rawUrl;
+  try {
+    for (let hop = 0; hop <= PREVIEW_MAX_REDIRECTS; hop++) {
+      const u = await assertSafeUrl(current);
+      const res = await requestOnce(u, deadline);
+      const status = res.statusCode || 0;
+      if (status >= 300 && status < 400 && res.headers.location) {
+        res.resume();
+        res.destroy();
+        if (hop === PREVIEW_MAX_REDIRECTS) return null;
+        current = new URL(res.headers.location, u).href;
+        continue;
+      }
+      if (status < 200 || status >= 300) { res.resume(); res.destroy(); return null; }
+      const type = String(res.headers['content-type'] || '').toLowerCase();
+      if (type && !/html|xml/.test(type)) { res.resume(); res.destroy(); return null; }
+      return await readCapped(res, deadline);
+    }
   } catch (_) {
-    clearTimeout(timer);
     return null;
   }
+  return null;
+}
+
+async function isSafeUrl(rawUrl) {
+  try { await assertSafeUrl(rawUrl); return true; } catch (_) { return false; }
 }
 
 async function parseOgTags(html, baseUrl) {
@@ -144,6 +303,9 @@ function buildInstagramTitle(username, postType) {
 async function fetchLinkPreview(rawUrl) {
   try {
     const url = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
+    // A refused link gets no preview from any path below, including the
+    // oEmbed and screenshot services, which would otherwise be asked about it.
+    if (!(await isSafeUrl(url))) return { title: null, thumbnail_url: null, source: detectSource(url) };
 
     const ytMatch = url.match(
       /(?:youtube\.com\/(?:watch\?(?:[^#&?]*&)*v=|shorts\/|embed\/|v\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/
@@ -182,7 +344,7 @@ async function fetchLinkPreview(rawUrl) {
       return { title: null, thumbnail_url: null, source: 'vimeo' };
     }
 
-    // TikTok — public oEmbed endpoint, no auth required; covers tiktok.com and vm.tiktok.com short links
+    // TikTok: public oEmbed endpoint, no auth required. Covers tiktok.com and vm.tiktok.com short links
     if (/tiktok\./i.test(url)) {
       try {
         const r = await fetchWithTimeout(
@@ -201,7 +363,7 @@ async function fetchLinkPreview(rawUrl) {
       return { title: null, thumbnail_url: null, source: 'tiktok' };
     }
 
-    // Instagram — try proxy services to fetch a real thumbnail; fall back to placeholder
+    // Instagram: try proxy services for a real thumbnail, else the placeholder
     if (/instagram\./i.test(url)) {
       const { username, postType } = parseInstagramMeta(url);
       const fallbackTitle = buildInstagramTitle(username, postType);
@@ -284,7 +446,7 @@ router.get('/', (req, res) => {
   }
 });
 
-// GET /api/collections/search?q=...  — must be BEFORE /:id
+// GET /api/collections/search?q=..., must be BEFORE /:id
 router.get('/search', (req, res) => {
   try {
     const q = (req.query.q || '').trim();
@@ -322,12 +484,12 @@ router.get('/search', (req, res) => {
   }
 });
 
-// PUT /api/collections/reorder — must be BEFORE /:id to avoid route conflict
+// PUT /api/collections/reorder, must be BEFORE /:id to avoid route conflict
 router.put('/reorder', (req, res) => {
   try {
     const { orderedIds } = req.body;
     if (!Array.isArray(orderedIds)) return res.status(400).json({ error: 'orderedIds array required' });
-    // Only update unstarred collections — starred items stay pinned at top via ORDER BY starred DESC
+    // Only update unstarred collections. Starred items stay pinned at top via ORDER BY starred DESC
     const update = db.prepare('UPDATE collections SET sort_order = ? WHERE id = ? AND starred = 0');
     const tx = db.transaction(() => {
       orderedIds.forEach((id, index) => update.run(index, id));
@@ -341,7 +503,7 @@ router.put('/reorder', (req, res) => {
 
 // ── Page-level share links ─────────────────────────────────────────────────────
 
-// GET /api/collections/mind-share — return current active page-share link if any
+// GET /api/collections/mind-share, return current active page-share link if any
 router.get('/mind-share', (req, res) => {
   try {
     const link = db.prepare('SELECT * FROM mind_share_links ORDER BY id DESC LIMIT 1').get();
@@ -356,7 +518,7 @@ router.get('/mind-share', (req, res) => {
   }
 });
 
-// POST /api/collections/mind-share — create (or replace) page-share link
+// POST /api/collections/mind-share, create (or replace) page-share link
 router.post('/mind-share', (req, res) => {
   try {
     const VALID_CATS = ['project', 'studio', 'personal'];
@@ -371,7 +533,7 @@ router.post('/mind-share', (req, res) => {
   }
 });
 
-// DELETE /api/collections/mind-share — permanently revoke current page-share link
+// DELETE /api/collections/mind-share, permanently revoke current page-share link
 router.delete('/mind-share', (req, res) => {
   try {
     db.prepare('DELETE FROM mind_share_links').run();
@@ -381,7 +543,7 @@ router.delete('/mind-share', (req, res) => {
   }
 });
 
-// GET /api/collections/:id — single collection + its cards
+// GET /api/collections/:id, single collection + its cards
 router.get('/:id', (req, res) => {
   try {
     const coll = db.prepare(`
@@ -499,19 +661,16 @@ router.delete('/:id', (req, res) => {
 
 // ── Share links ───────────────────────────────────────────────────────────────
 
-// POST /api/collections/:id/share — create or return existing share link
+// POST /api/collections/:id/share, create the share link or return the existing one
 router.post('/:id/share', (req, res) => {
   try {
     const coll = db.prepare('SELECT id FROM collections WHERE id = ?').get(req.params.id);
     if (!coll) return res.status(404).json({ error: 'Collection not found' });
 
+    // An existing link is returned as it stands. A disabled link is turned
+    // back on only through PUT, which the page asks to confirm first.
     const existing = db.prepare('SELECT * FROM collection_share_links WHERE collection_id = ?').get(req.params.id);
-    if (existing) {
-      if (!existing.enabled) {
-        db.prepare('UPDATE collection_share_links SET enabled = 1 WHERE id = ?').run(existing.id);
-      }
-      return res.json({ token: existing.token, enabled: 1 });
-    }
+    if (existing) return res.json({ token: existing.token, enabled: existing.enabled ? 1 : 0 });
 
     const token = crypto.randomBytes(32).toString('hex');
     db.prepare('INSERT INTO collection_share_links (collection_id, token) VALUES (?, ?)').run(req.params.id, token);
@@ -521,7 +680,7 @@ router.post('/:id/share', (req, res) => {
   }
 });
 
-// GET /api/collections/:id/share — get current share link status
+// GET /api/collections/:id/share, get current share link status
 router.get('/:id/share', (req, res) => {
   try {
     const link = db.prepare('SELECT token, enabled FROM collection_share_links WHERE collection_id = ?').get(req.params.id);
@@ -532,7 +691,7 @@ router.get('/:id/share', (req, res) => {
   }
 });
 
-// PUT /api/collections/:id/share — enable or disable share link
+// PUT /api/collections/:id/share, enable or disable share link
 router.put('/:id/share', (req, res) => {
   try {
     const { enabled } = req.body;
@@ -598,12 +757,12 @@ router.post('/:id/cards', async (req, res) => {
   }
 });
 
-// PUT /api/collections/:id/cards/reorder — must be BEFORE /:id/cards/:cardId
+// PUT /api/collections/:id/cards/reorder, must be BEFORE /:id/cards/:cardId
 router.put('/:id/cards/reorder', (req, res) => {
   try {
     const { orderedIds } = req.body;
     if (!Array.isArray(orderedIds)) return res.status(400).json({ error: 'orderedIds array required' });
-    // Only update unstarred cards — starred cards stay pinned at top via ORDER BY starred DESC
+    // Only update unstarred cards. Starred cards stay pinned at top via ORDER BY starred DESC
     const update = db.prepare('UPDATE collection_cards SET sort_order = ? WHERE id = ? AND collection_id = ? AND starred = 0');
     const tx = db.transaction(() => {
       orderedIds.forEach((cardId, index) => update.run(index, cardId, req.params.id));
@@ -615,7 +774,7 @@ router.put('/:id/cards/reorder', (req, res) => {
   }
 });
 
-// PUT /api/collections/:id/cards/:cardId/star — must be BEFORE /:id/cards/:cardId
+// PUT /api/collections/:id/cards/:cardId/star, must be BEFORE /:id/cards/:cardId
 router.put('/:id/cards/:cardId/star', (req, res) => {
   try {
     const card = db.prepare(

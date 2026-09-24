@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Globe, Link2, FileText, Play, Youtube, XCircle, Lock, Instagram, Music2 } from 'lucide-react';
+import SourceIcon from '../components/SourceIcon';
+import { Globe, FileText, Play, XCircle, Lock, Instagram, Music2 } from 'lucide-react';
 
 const BASE = '/api';
 
@@ -8,12 +9,6 @@ async function publicGet(path) {
   const res = await fetch(`${BASE}${path}`);
   return res.json();
 }
-
-const SOURCE_LABEL = {
-  youtube: 'YouTube', vimeo: 'Vimeo', pinterest: 'Pinterest',
-  behance: 'Behance', instagram: 'Instagram', tiktok: 'TikTok',
-  dribbble: 'Dribbble', twitter: 'X / Twitter', web: 'Web',
-};
 
 function getDomain(url) {
   try { return new URL(url).hostname.replace(/^www\./, ''); } catch (_) { return url; }
@@ -181,10 +176,7 @@ function PublicLinkCard({ card }) {
         ) : (
           <p style={{ fontSize: '12px', color: 'var(--color-mid-gray)', margin: 0, wordBreak: 'break-all' }}>{domain}</p>
         )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'var(--color-mid-gray)', fontSize: '11px' }}>
-          <Globe size={10} />
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{domain}</span>
-        </div>
+        <SourceIcon source={card.source} title={domain} />
         {tags.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '3px' }}>
             {tags.map(tag => (
