@@ -1,47 +1,54 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Presentation, Edit2, Trash2, Copy, Link2, Check, Sparkles, X,
+  Presentation, Edit2, Trash2, Copy, Link2, Sparkles, ArrowLeft, CheckSquare, Square,
 } from 'lucide-react';
-import { api, fmtDate } from '../api';
+import { api } from '../api';
 import { SECTION_LABELS, sectionSummary } from '../lib/pitchSections';
 import Overlay from '../components/Overlay';
+import ConfirmDialog from '../components/ConfirmDialog';
+import IconMenu from '../components/IconMenu';
+import '../styles/mind.css';
+import '../styles/production.css';
 
-const STATUS_BADGE = {
-  draft: 'badge badge-pending',
-  published: 'badge badge-active',
-};
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (_) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  }
+}
 
-function TemplateCard({ template, onUse, using }) {
+function thumbFor(filename) {
+  if (!filename) return null;
+  return `/p-media/${filename.replace(/-web\.jpg$/, '-thumb.jpg')}`;
+}
+
+function TemplateCard({ template, onUse }) {
   return (
-    <div className="card pitch-template-card">
-      <div className="pitch-template-accent" style={{ background: template.accent_color || 'var(--color-mid-gray)' }} />
-      <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Sparkles size={13} color="var(--accent)" />
-          <span style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
-            Template
-          </span>
+    <button type="button" className="db-card" onClick={() => onUse(template)} title={`${template.section_count} sections`}>
+      <span className="prod-swatch" style={{ background: template.accent_color || 'var(--color-mid-gray)' }}>
+        <Sparkles size={15} />
+      </span>
+      <div className="db-main">
+        <div className="db-name"><span>{template.title}</span></div>
+        <div className="db-meta">
+          <span className="db-count"><span className="db-dot" />{template.section_count}</span>
         </div>
-        <div style={{ fontWeight: 700, fontSize: '14px' }}>{template.title}</div>
-        <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-          {template.section_count} sections
-        </div>
-        <button
-          className="btn btn-secondary btn-sm"
-          style={{ marginTop: 'auto', justifyContent: 'center' }}
-          disabled={using}
-          onClick={() => onUse(template)}
-        >
-          {using ? 'Creating…' : 'Use template'}
-        </button>
       </div>
-    </div>
+    </button>
   );
 }
 
-// "Use template" opens this first: name the pitch, then choose which of the
-// template's sections to carry over. Nothing is created until Create is clicked.
+// Choosing a template opens this first: name the pitch, then choose which of
+// the template's sections to carry over. Nothing is created until Create.
 function UseTemplateModal({ template, onClose, onCreated }) {
   const [title, setTitle] = useState('');
   const [sections, setSections] = useState(null);
@@ -90,37 +97,41 @@ function UseTemplateModal({ template, onClose, onCreated }) {
   }
 
   return (
-    <Overlay title={<>New pitch from “{template.title}”</>} onClose={onClose} width={560}>
-      <form onSubmit={create}>
+    <Overlay
+      title={template.title}
+      onClose={onClose}
+      width={560}
+      footer={<>
+        <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+        <button type="submit" form="pitch-from-template" className="btn btn-primary" disabled={creating || loading}>
+          {creating ? 'Creating...' : 'Create'}
+        </button>
+      </>}
+    >
+      <form id="pitch-from-template" onSubmit={create}>
         <div className="form-row">
-          <label className="form-label">Pitch name *</label>
-          <input
-            className="input"
-            value={title}
-            onChange={e => setTitle(e.target.value)}
-            placeholder="e.g. Nike SS26 Editorial"
-            autoFocus
-          />
+          <label className="form-label">Pitch name</label>
+          <input className="input" value={title} onChange={e => setTitle(e.target.value)} autoFocus />
         </div>
 
         <div className="form-row">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-            <label className="form-label" style={{ margin: 0 }}>
-              Sections to include {sections ? `(${picked.size}/${sections.length})` : ''}
-            </label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+            {sections && (
+              <span className="db-count" title="Sections"><span className="db-dot" />{picked.size} / {sections.length}</span>
+            )}
             {sections && sections.length > 0 && (
               <button
                 type="button"
-                className="btn-ghost"
-                style={{ padding: '3px 8px', fontSize: '11px' }}
+                className="db-iconbtn"
+                style={{ marginLeft: 'auto' }}
+                title={allOn ? 'Clear all' : 'Select all'}
+                aria-label={allOn ? 'Clear all' : 'Select all'}
                 onClick={() => setPicked(allOn ? new Set() : new Set(sections.map(s => s.id)))}
               >
-                {allOn ? 'Clear all' : 'Select all'}
+                {allOn ? <Square size={15} /> : <CheckSquare size={15} />}
               </button>
             )}
           </div>
-
-          {loading && <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Loading sections…</p>}
 
           {sections && (
             <div className="pitch-section-picker">
@@ -140,85 +151,54 @@ function UseTemplateModal({ template, onClose, onCreated }) {
           )}
         </div>
 
-        {error && <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 12px' }}>{error}</p>}
-
-        <div className="modal-footer">
-          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button type="submit" className="btn btn-primary" disabled={creating || loading}>
-            {creating ? 'Creating…' : 'Create pitch'}
-          </button>
-        </div>
+        {error && <p className="prod-error">{error}</p>}
       </form>
     </Overlay>
   );
 }
 
-function PitchCard({ pitch, onDelete, onDuplicate, pitchBase }) {
-  const navigate = useNavigate();
-  const [copied, setCopied] = useState(false);
+function PitchCover({ pitch }) {
+  const [failed, setFailed] = useState(false);
+  const src = thumbFor(pitch.cover);
+  return (
+    <div className="coll-cover" style={pitch.accent_color ? { borderBottom: `2px solid ${pitch.accent_color}` } : undefined}>
+      {src && !failed
+        ? <img src={src} alt="" loading="lazy" onError={() => setFailed(true)} />
+        : <Presentation size={26} strokeWidth={1.5} />}
+    </div>
+  );
+}
+
+function PitchCard({ pitch, pitchBase, onOpen, onDuplicate, onDelete, onCopy }) {
   const isPublished = pitch.status === 'published';
-  // Built from the server's public base, never window.location — the link you
-  // copy is the client-facing one even when the panel lives on another host.
+  // Built from the server's public base, never window.location: the link you
+  // copy is the client facing one even when the panel lives on another host.
   const publicUrl = pitch.slug ? `${pitchBase.base}/p/${pitch.slug}` : null;
 
-  async function copyLink(e) {
-    e.stopPropagation();
-    if (!publicUrl) return;
-    try {
-      await navigator.clipboard.writeText(publicUrl);
-    } catch (_) {
-      const ta = document.createElement('textarea');
-      ta.value = publicUrl;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
-    }
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
-
   return (
-    <div className="card pitch-saved-card" style={{ cursor: 'pointer' }} onClick={() => navigate(`/pitches/${pitch.id}`)}>
-      <div className="pitch-template-accent" style={{ background: pitch.accent_color || 'var(--color-mid-gray)' }} />
-      <div style={{ padding: '14px 18px 16px', display: 'flex', flexDirection: 'column', gap: '7px', flex: 1 }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
-          <span style={{ fontWeight: 700, fontSize: '14px', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{pitch.title}</span>
-          <span className={STATUS_BADGE[pitch.status] || 'badge badge-pending'}>{pitch.status}</span>
+    <div
+      className="coll-tile"
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); } }}
+    >
+      <PitchCover pitch={pitch} />
+      <div className="coll-body">
+        <div className="db-main">
+          <div className="coll-name">{pitch.title}</div>
+          <div className="coll-meta">
+            {isPublished && <span className="db-dot ink" title="Published" />}
+          </div>
         </div>
-        {pitch.category && (
-          <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{pitch.category}</span>
-        )}
-        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-          {pitch.section_count} sections · updated {fmtDate(String(pitch.updated_at || '').replace(' ', 'T'))}
+        <span onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
+          <IconMenu items={[
+            { key: 'edit', Icon: Edit2, title: 'Edit', onClick: onOpen },
+            { key: 'duplicate', Icon: Copy, title: 'Duplicate', onClick: () => onDuplicate(pitch) },
+            isPublished && publicUrl && { key: 'link', Icon: Link2, title: `Copy link (${pitchBase.host})`, onClick: () => onCopy(publicUrl) },
+            { key: 'delete', Icon: Trash2, title: 'Delete', danger: true, onClick: () => onDelete(pitch) },
+          ]} />
         </span>
-        {isPublished && publicUrl && (
-          <span style={{ fontSize: '11px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {pitchBase.host}/p/{pitch.slug}
-          </span>
-        )}
-        <div style={{ display: 'flex', gap: '4px', marginTop: 'auto', paddingTop: '8px' }} onClick={e => e.stopPropagation()}>
-          <button className="btn-ghost" style={{ padding: '5px 7px' }} title="Edit" onClick={() => navigate(`/pitches/${pitch.id}`)}>
-            <Edit2 size={13} />
-          </button>
-          <button className="btn-ghost" style={{ padding: '5px 7px' }} title="Duplicate" onClick={() => onDuplicate(pitch)}>
-            <Copy size={13} />
-          </button>
-          {isPublished && publicUrl && (
-            <>
-              <button className="btn-ghost" style={{ padding: '5px 7px', color: copied ? 'var(--success)' : undefined }} title={`Copy public link (${pitchBase.host})`} onClick={copyLink}>
-                {copied ? <Check size={13} /> : <Link2 size={13} />}
-              </button>
-              {/* Which domain the copied link points at, at a glance */}
-              <span style={{ fontSize: '10px', color: 'var(--text-muted)', alignSelf: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '50%' }}>
-                {pitchBase.host}
-              </span>
-            </>
-          )}
-          <button className="btn-ghost" style={{ padding: '5px 7px', color: 'var(--danger)', marginLeft: 'auto' }} title="Delete" onClick={() => onDelete(pitch)}>
-            <Trash2 size={13} />
-          </button>
-        </div>
       </div>
     </div>
   );
@@ -229,7 +209,11 @@ export default function PitchesPhotography() {
   const [templates, setTemplates] = useState([]);
   const [pitches, setPitches] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadErr, setLoadErr] = useState('');
   const [templateInUse, setTemplateInUse] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const [notice, setNotice] = useState(null);
   // Falls back to the current origin until the server answers, which is also
   // exactly what the server reports when no pitch domain is configured.
   const [pitchBase, setPitchBase] = useState({
@@ -239,7 +223,7 @@ export default function PitchesPhotography() {
   useEffect(() => {
     api.get('/pitches/public-base')
       .then(b => { if (b && b.base) setPitchBase(b); })
-      .catch(() => {});
+      .catch(() => { /* the current origin stays */ });
   }, []);
 
   async function loadData() {
@@ -247,83 +231,121 @@ export default function PitchesPhotography() {
       const data = await api.get('/pitches');
       setTemplates(data.templates);
       setPitches(data.pitches);
-    } catch (_) {}
+      setLoadErr('');
+    } catch (err) {
+      setLoadErr(err.message || 'Could not load the pitches');
+    }
   }
 
   useEffect(() => {
     loadData().finally(() => setLoading(false));
   }, []);
 
-  // Naming and section selection happen in the modal; nothing is created until
-  // the writer confirms there.
-  function handleUseTemplate(template) {
-    setTemplateInUse(template);
-  }
-
   async function handleDuplicate(pitch) {
     try {
       const res = await api.post(`/pitches/${pitch.id}/duplicate`, {});
       await loadData();
       navigate(`/pitches/${res.id}`);
-    } catch (err) { alert(err.message || 'Failed to duplicate'); }
+    } catch (err) {
+      setNotice({ title: 'Not duplicated', message: err.message || 'The pitch could not be duplicated.' });
+    }
   }
 
-  async function handleDelete(pitch) {
-    if (!confirm(`Delete pitch "${pitch.title}"? This cannot be undone.${pitch.status === 'published' ? ' Its public link will stop working.' : ''}`)) return;
+  async function runDelete() {
+    const pitch = confirmDelete;
+    setDeleting(true);
     try {
       await api.del(`/pitches/${pitch.id}`);
+      setConfirmDelete(null);
       await loadData();
-    } catch (err) { alert(err.message || 'Failed to delete'); }
+    } catch (err) {
+      setConfirmDelete(null);
+      setNotice({ title: 'Not deleted', message: err.message || 'The pitch could not be deleted.' });
+    }
+    setDeleting(false);
   }
 
-  if (loading) return (
-    <div className="page-header">
-      <h1 className="page-title">Photography Concepts</h1>
-    </div>
-  );
+  async function handleCopy(url) {
+    if (!(await copyText(url))) setNotice({ title: 'Not copied', message: 'The browser did not allow copying.' });
+  }
 
   return (
     <div>
-      <div className="page-header">
-        <h1 className="page-title">Photography Concepts</h1>
+      <div className="page-header prod-head">
+        <button className="db-iconbtn lg" onClick={() => navigate('/pitches')} title="Pitches" aria-label="Pitches">
+          <ArrowLeft size={16} />
+        </button>
+        <h1 className="page-title">Photography</h1>
       </div>
 
-      <section style={{ marginBottom: '36px' }}>
-        <h2 style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '14px' }}>
-          Start from a template
-        </h2>
-        <div className="pitch-card-grid">
-          {templates.map(t => (
-            <TemplateCard key={t.id} template={t} onUse={handleUseTemplate} using={false} />
-          ))}
-        </div>
-      </section>
+      {loadErr && <div className="error-msg" style={{ marginBottom: '12px' }}>{loadErr}</div>}
 
-      <section>
-        <h2 style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '14px' }}>
-          Your pitches
-        </h2>
-        {pitches.length === 0 ? (
-          <div className="card" style={{ padding: '48px 20px', textAlign: 'center' }}>
-            <Presentation size={32} color="var(--text-muted)" style={{ margin: '0 auto 12px', display: 'block' }} />
-            <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
-              No pitches yet. Pick a template above to build your first presentation.
-            </p>
-          </div>
-        ) : (
-          <div className="pitch-card-grid">
-            {pitches.map(p => (
-              <PitchCard key={p.id} pitch={p} onDelete={handleDelete} onDuplicate={handleDuplicate} pitchBase={pitchBase} />
-            ))}
-          </div>
-        )}
-      </section>
+      {!loading && (
+        <>
+          <section className="prod-section">
+            <div className="prod-section-head" title="Templates">
+              <Sparkles size={16} />
+              <span className="db-count"><span className="db-dot" />{templates.length}</span>
+            </div>
+            <div className="db-grid">
+              {templates.map(t => <TemplateCard key={t.id} template={t} onUse={setTemplateInUse} />)}
+            </div>
+          </section>
+
+          <section className="prod-section">
+            <div className="prod-section-head" title="Pitches">
+              <Presentation size={16} />
+              <span className="db-count"><span className="db-dot" />{pitches.length}</span>
+            </div>
+            {pitches.length === 0 ? (
+              <div className="card db-empty"><Presentation size={28} /></div>
+            ) : (
+              <div className="collections-tile-grid">
+                {pitches.map(p => (
+                  <PitchCard
+                    key={p.id}
+                    pitch={p}
+                    pitchBase={pitchBase}
+                    onOpen={() => navigate(`/pitches/${p.id}`)}
+                    onDuplicate={handleDuplicate}
+                    onDelete={setConfirmDelete}
+                    onCopy={handleCopy}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        </>
+      )}
 
       {templateInUse && (
         <UseTemplateModal
           template={templateInUse}
           onClose={() => setTemplateInUse(null)}
           onCreated={id => navigate(`/pitches/${id}`)}
+        />
+      )}
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title={`Delete "${confirmDelete.title}"?`}
+          message={`This cannot be undone.${confirmDelete.status === 'published' ? ' Its public link will stop working.' : ''}`}
+          confirmLabel="Delete"
+          tone="danger"
+          busy={deleting}
+          onConfirm={runDelete}
+          onCancel={() => setConfirmDelete(null)}
+        />
+      )}
+
+      {notice && (
+        <ConfirmDialog
+          title={notice.title}
+          message={notice.message}
+          confirmLabel="OK"
+          cancelLabel={null}
+          onConfirm={() => setNotice(null)}
+          onCancel={() => setNotice(null)}
         />
       )}
     </div>

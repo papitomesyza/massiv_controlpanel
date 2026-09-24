@@ -1,13 +1,35 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ListVideo, Plus, Link2, Check, Trash2, ArrowLeft } from 'lucide-react';
+import { ListVideo, Plus, Link2, Trash2, ArrowLeft } from 'lucide-react';
 import { api, fmtDate } from '../api';
 import Overlay from '../components/Overlay';
+import ConfirmDialog from '../components/ConfirmDialog';
+import DateField from '../components/DateField';
+import IconMenu from '../components/IconMenu';
+import Ring from '../components/Ring';
+import '../styles/mind.css';
+import '../styles/production.css';
 
-const STATUS_BADGE = {
-  draft: 'badge badge-pending',
-  published: 'badge badge-active',
-};
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (_) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  }
+}
+
+// A linked shot list whose first day no longer reads the project's shoot date.
+function dateDrift(firstDate, projectDate, linked) {
+  if (!linked || !projectDate) return false;
+  return String(firstDate || '').slice(0, 10) !== String(projectDate).slice(0, 10);
+}
 
 function NewShotlistModal({ projects, onClose, onCreated }) {
   const [title, setTitle] = useState('');
@@ -45,100 +67,83 @@ function NewShotlistModal({ projects, onClose, onCreated }) {
   }
 
   return (
-    <Overlay title="New shot list" onClose={onClose}>
-      <form onSubmit={submit}>
+    <Overlay
+      title="New shot list"
+      onClose={onClose}
+      width={460}
+      footer={<>
+        <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+        <button type="submit" form="shotlist-new" className="btn btn-primary" disabled={saving}>{saving ? 'Creating...' : 'Create'}</button>
+      </>}
+    >
+      <form id="shotlist-new" onSubmit={submit}>
         <div className="form-row">
-          <label className="form-label">Title *</label>
-          <input className="input" value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Nike SS26 — Day 1" autoFocus />
+          <label className="form-label">Title</label>
+          <input className="input" value={title} onChange={e => setTitle(e.target.value)} autoFocus />
         </div>
         <div className="form-row">
           <label className="form-label">Project</label>
           <select className="select" style={{ width: '100%' }} value={projectId} onChange={e => linkProject(e.target.value)}>
-            <option value="">— none —</option>
+            <option value="" />
             {projects.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
           </select>
         </div>
         <div style={{ display: 'flex', gap: '10px' }}>
           <div className="form-row" style={{ flex: 1 }}>
             <label className="form-label">Shoot date</label>
-            <input className="input" type="date" value={shootDate} onChange={e => setShootDate(e.target.value)} />
+            <DateField value={shootDate} onChange={setShootDate} />
           </div>
           <div className="form-row" style={{ flex: 1 }}>
             <label className="form-label">Call time</label>
             <input className="input" type="time" value={callTime} onChange={e => setCallTime(e.target.value)} />
           </div>
         </div>
-        {error && <p style={{ color: 'var(--danger)', fontSize: '13px', margin: '0 0 12px' }}>{error}</p>}
-        <div className="modal-footer">
-          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Creating…' : 'Create'}</button>
-        </div>
+        {error && <p className="prod-error">{error}</p>}
       </form>
     </Overlay>
   );
 }
 
-function ShotlistCard({ shotlist, base, onDelete }) {
-  const navigate = useNavigate();
-  const [copied, setCopied] = useState(false);
-  const publicUrl = shotlist.slug ? `${base.base}/shotlist/${shotlist.slug}` : null;
+function ShotlistCard({ shotlist, base, onOpen, onCopy, onDelete }) {
   const isPublished = shotlist.status === 'published';
-
-  async function copyLink(e) {
-    e.stopPropagation();
-    if (!publicUrl) return;
-    try {
-      await navigator.clipboard.writeText(publicUrl);
-    } catch (_) {
-      const ta = document.createElement('textarea');
-      ta.value = publicUrl;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
-    }
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
+  const publicUrl = shotlist.slug ? `${base.base}/shotlist/${shotlist.slug}` : null;
+  const firstDate = shotlist.first_day_date || shotlist.shoot_date;
+  const drift = dateDrift(firstDate, shotlist.project_shoot_date, !!shotlist.project_id);
+  const total = Number(shotlist.shot_count) || 0;
+  const done = Number(shotlist.completed_count) || 0;
 
   return (
-    <div className="card shotlist-card" onClick={() => navigate(`/production/shotlists/${shotlist.id}`)}>
-      <div style={{ padding: '14px 16px 16px', display: 'flex', flexDirection: 'column', gap: '7px', flex: 1 }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
-          <span style={{ fontWeight: 700, fontSize: '14px', flex: 1, minWidth: 0 }}>{shotlist.title}</span>
-          <span className={STATUS_BADGE[shotlist.status] || 'badge badge-pending'}>{shotlist.status}</span>
+    <div
+      className="db-card"
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); } }}
+    >
+      <Ring value={done} max={total} size={34} stroke={3} title={`${done} / ${total}`}>
+        <ListVideo size={13} />
+      </Ring>
+      <div className="db-main">
+        <div className="db-name">
+          <span>{shotlist.title}</span>
+          <span className="prod-dots">
+            {isPublished && <span className="db-dot ink" title="Published" />}
+            {drift && <span className="db-dot" title={`Project ${fmtDate(shotlist.project_shoot_date)}`} />}
+          </span>
         </div>
-        {shotlist.project_title && (
-          <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{shotlist.project_title}</span>
+        {shotlist.project_title && <div className="db-sub">{shotlist.project_title}</div>}
+        {firstDate && (
+          <div className="db-meta">
+            <span className="prod-date">{fmtDate(firstDate)}</span>
+          </div>
         )}
-        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-          {shotlist.shoot_date ? fmtDate(shotlist.shoot_date) : 'No shoot date'}
-          {shotlist.call_time ? ` · call ${shotlist.call_time}` : ''}
-          {` · ${shotlist.scene_count} scene${shotlist.scene_count === 1 ? '' : 's'}`}
-          {` · ${shotlist.shot_count} shot${shotlist.shot_count === 1 ? '' : 's'}`}
-          {shotlist.completed_count > 0 ? ` · ${shotlist.completed_count} done` : ''}
-        </span>
-        <div style={{ display: 'flex', gap: '4px', marginTop: 'auto', paddingTop: '8px' }} onClick={e => e.stopPropagation()}>
-          {isPublished && publicUrl && (
-            <button
-              className="btn-ghost"
-              style={{ padding: '5px 7px', color: copied ? 'var(--success)' : undefined }}
-              title={`Copy public link (${base.host})`}
-              onClick={copyLink}
-            >
-              {copied ? <Check size={13} /> : <Link2 size={13} />}
-            </button>
-          )}
-          <button
-            className="btn-ghost"
-            style={{ padding: '5px 7px', color: 'var(--danger)', marginLeft: 'auto' }}
-            title="Delete"
-            onClick={() => onDelete(shotlist)}
-          >
-            <Trash2 size={13} />
-          </button>
-        </div>
       </div>
+      <span onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
+        <IconMenu items={[
+          isPublished && publicUrl && { key: 'link', Icon: Link2, title: `Copy link (${base.host})`, onClick: () => onCopy(publicUrl) },
+          { key: 'delete', Icon: Trash2, title: 'Delete', danger: true, onClick: () => onDelete(shotlist) },
+        ]} />
+      </span>
     </div>
   );
 }
@@ -148,56 +153,78 @@ export default function Shotlists() {
   const [lists, setLists] = useState([]);
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadErr, setLoadErr] = useState('');
   const [showNew, setShowNew] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const [notice, setNotice] = useState(null);
   const [base, setBase] = useState({ base: window.location.origin, host: window.location.host, custom: false });
 
   async function load() {
     try {
       const data = await api.get('/shotlists');
       setLists(data);
-    } catch (_) {}
+      setLoadErr('');
+    } catch (err) {
+      setLoadErr(err.message || 'Could not load the shot lists');
+    }
   }
 
   useEffect(() => {
     load().finally(() => setLoading(false));
-    api.get('/projects').then(p => setProjects(Array.isArray(p) ? p : [])).catch(() => {});
-    api.get('/shotlists/public-base').then(b => { if (b && b.base) setBase(b); }).catch(() => {});
+    api.get('/projects')
+      .then(p => setProjects(Array.isArray(p) ? p : []))
+      .catch(err => setLoadErr(err.message || 'Could not load the projects'));
+    // The public base only changes the copied link; the current origin stands
+    // in until it answers.
+    api.get('/shotlists/public-base').then(b => { if (b && b.base) setBase(b); }).catch(() => { /* the current origin stays */ });
   }, []);
 
-  async function handleDelete(shotlist) {
-    if (!confirm(`Delete "${shotlist.title}"? Its scenes, shots, locations and activity go with it.${shotlist.status === 'published' ? ' The public link will stop working.' : ''}`)) return;
+  async function runDelete() {
+    const shotlist = confirmDelete;
+    setDeleting(true);
     try {
       await api.del(`/shotlists/${shotlist.id}`);
+      setConfirmDelete(null);
       await load();
-    } catch (err) { alert(err.message || 'Failed to delete'); }
+    } catch (err) {
+      setConfirmDelete(null);
+      setNotice({ title: 'Not deleted', message: err.message || 'The shot list could not be deleted.' });
+    }
+    setDeleting(false);
+  }
+
+  async function handleCopy(url) {
+    if (!(await copyText(url))) setNotice({ title: 'Not copied', message: 'The browser did not allow copying.' });
   }
 
   return (
     <div>
-      <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-        <button className="btn-ghost" style={{ padding: '6px 8px' }} onClick={() => navigate('/production')} title="Back to Production">
+      <div className="page-header prod-head">
+        <button className="db-iconbtn lg" onClick={() => navigate('/production')} title="Production" aria-label="Production">
           <ArrowLeft size={16} />
         </button>
-        <div style={{ flex: 1 }}>
-          <h1 className="page-title">Shot Lists</h1>
-          <p className="page-subtitle">A timed day plan the crew can open on a phone.</p>
-        </div>
-        <button className="btn btn-primary btn-sm" onClick={() => setShowNew(true)}>
-          <Plus size={14} /> New shot list
+        <h1 className="page-title">Shot Lists</h1>
+        <button className="btn btn-primary" onClick={() => setShowNew(true)} title="New shot list" aria-label="New shot list">
+          <Plus size={16} />
         </button>
       </div>
 
+      {loadErr && <div className="error-msg" style={{ marginBottom: '12px' }}>{loadErr}</div>}
+
       {loading ? null : lists.length === 0 ? (
-        <div className="card" style={{ padding: '48px 20px', textAlign: 'center' }}>
-          <ListVideo size={32} color="var(--text-muted)" style={{ margin: '0 auto 12px', display: 'block' }} />
-          <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
-            No shot lists yet. Create one to plan a shoot day, scene by scene.
-          </p>
-        </div>
+        <div className="card db-empty"><ListVideo size={28} /></div>
       ) : (
-        <div className="pitch-card-grid">
+        <div className="db-grid">
           {lists.map(s => (
-            <ShotlistCard key={s.id} shotlist={s} base={base} onDelete={handleDelete} />
+            <ShotlistCard
+              key={s.id}
+              shotlist={s}
+              base={base}
+              onOpen={() => navigate(`/production/shotlists/${s.id}`)}
+              onCopy={handleCopy}
+              onDelete={setConfirmDelete}
+            />
           ))}
         </div>
       )}
@@ -207,6 +234,29 @@ export default function Shotlists() {
           projects={projects}
           onClose={() => setShowNew(false)}
           onCreated={id => navigate(`/production/shotlists/${id}`)}
+        />
+      )}
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title={`Delete "${confirmDelete.title}"?`}
+          message={`Its scenes, shots, locations and activity go with it.${confirmDelete.status === 'published' ? ' The public link will stop working.' : ''}`}
+          confirmLabel="Delete"
+          tone="danger"
+          busy={deleting}
+          onConfirm={runDelete}
+          onCancel={() => setConfirmDelete(null)}
+        />
+      )}
+
+      {notice && (
+        <ConfirmDialog
+          title={notice.title}
+          message={notice.message}
+          confirmLabel="OK"
+          cancelLabel={null}
+          onConfirm={() => setNotice(null)}
+          onCancel={() => setNotice(null)}
         />
       )}
     </div>

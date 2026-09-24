@@ -5,6 +5,7 @@ import {
   Image as ImageIcon, Upload, Settings2, Globe, EyeOff, Copy, Check,
   Smartphone, Monitor, Type, Quote, LayoutGrid, Columns2, Grid3x3,
   ListChecks, Users, Megaphone, ImagePlus, Loader2, Sparkles, Smartphone as PhoneIcon,
+  ExternalLink,
 } from 'lucide-react';
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors,
@@ -12,7 +13,10 @@ import {
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import Overlay from '../components/Overlay';
+import { DialogProvider, useDialogs } from '../components/Dialogs';
 import { api } from '../api';
+import '../styles/mind.css';
+import '../styles/production.css';
 
 const CATEGORIES = [
   'Fashion/Editorial',
@@ -21,31 +25,31 @@ const CATEGORIES = [
   'Music Video Photography',
 ];
 
-/* Accent for the client-facing presentation, persisted per pitch — literal hex
-   only, and left chromatic on purpose: this is the deck's brand, not the panel's. */
+/* Accent for the client facing presentation, persisted per pitch: literal hex
+   only, and left chromatic on purpose. This is the deck's brand, not the panel's. */
 const ACCENT_PRESETS = ['#723CEB', '#E8C1A0', '#4FC3F7', '#FF902F', '#A78BFA', '#C7FF2E', '#FF4444', '#4CAF50'];
 
-// The ten section types — labels, icons and default content shapes
+// The ten section types: labels, icons and default content shapes
 const SECTION_TYPES = {
-  hero:         { label: 'Hero',          icon: ImageIcon,  hint: 'Full-screen opener with title',
+  hero:         { label: 'Hero',          icon: ImageIcon,
     defaults: { eyebrow: 'Photography Concept', title: 'Title', subtitle: '', image: '', overlay_strength: 45 } },
-  statement:    { label: 'Statement',     icon: Quote,      hint: 'One big sentence',
+  statement:    { label: 'Statement',     icon: Quote,
     defaults: { text: '', alignment: 'center' } },
-  full_image:   { label: 'Full Image',    icon: ImagePlus,  hint: 'Full-bleed image with caption',
+  full_image:   { label: 'Full Image',    icon: ImagePlus,
     defaults: { image: '', caption: '' } },
-  image_grid:   { label: 'Image Grid',    icon: LayoutGrid, hint: '2–8 images in columns',
+  image_grid:   { label: 'Image Grid',    icon: LayoutGrid,
     defaults: { images: [], columns: 3, gap: 'normal' } },
-  split:        { label: 'Split',         icon: Columns2,   hint: 'Image beside text',
+  split:        { label: 'Split',         icon: Columns2,
     defaults: { image: '', heading: '', body: '', image_side: 'right' } },
-  moodboard:    { label: 'Moodboard',     icon: Grid3x3,    hint: 'Up to 12 reference images',
+  moodboard:    { label: 'Moodboard',     icon: Grid3x3,
     defaults: { images: [], note: '' } },
-  deliverables: { label: 'Deliverables',  icon: ListChecks, hint: 'What the client receives',
+  deliverables: { label: 'Deliverables',  icon: ListChecks,
     defaults: { heading: 'Deliverables', items: [] } },
-  crew:         { label: 'Crew',          icon: Users,      hint: 'The team on the project',
+  crew:         { label: 'Crew',          icon: Users,
     defaults: { heading: 'The team', members: [] } },
-  cta:          { label: 'Call to Action', icon: Megaphone, hint: 'Closing pitch + branding',
+  cta:          { label: 'Call to Action', icon: Megaphone,
     defaults: { heading: '', body: '', show_agency_branding: true } },
-  social_post:  { label: 'Social Post',    icon: PhoneIcon, hint: 'Instagram / Facebook mockup',
+  social_post:  { label: 'Social Post',    icon: PhoneIcon,
     defaults: { platform: 'instagram', handle: '', display_name: '', avatar: '', image: '', caption: '', likes_label: '' } },
 };
 
@@ -68,9 +72,9 @@ function Field({ label, children }) {
 // AI polish availability is checked once on editor load and shared down the tree
 const AiContext = React.createContext({ enabled: false, notifyNotConfigured: () => {} });
 
-// "Fix with Opus" — proposes a corrected version in an inline card. Never
-// auto-replaces: the writer chooses Use or Discard, and the field is locked
-// while a request is in flight so nothing is overwritten underneath it.
+// "Fix with Opus" proposes corrected versions in an inline card. Never
+// replaces on its own: the writer chooses Use or Discard, and the field is
+// locked while a request is in flight so nothing is overwritten underneath it.
 function PolishControl({ value, onChange, loading, setLoading }) {
   const { enabled, notifyNotConfigured } = React.useContext(AiContext);
   const [variants, setVariants] = useState(null);
@@ -175,16 +179,18 @@ async function uploadImage(file) {
 function ImageField({ label, value, onChange }) {
   const inputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState('');
 
   async function handleFile(e) {
     const file = e.target.files[0];
     e.target.value = '';
     if (!file) return;
     setUploading(true);
+    setError('');
     try {
       const res = await uploadImage(file);
       onChange(res.filename);
-    } catch (err) { alert(err.message || 'Upload failed'); }
+    } catch (err) { setError(err.message || 'Upload failed'); }
     setUploading(false);
   }
 
@@ -198,9 +204,9 @@ function ImageField({ label, value, onChange }) {
             <ImageIcon size={16} color="var(--text-muted)" />
           </div>
         )}
-        <button type="button" className="btn btn-secondary btn-sm" onClick={() => inputRef.current?.click()} disabled={uploading}>
-          {uploading ? <Loader2 size={13} className="pitch-spin" /> : <Upload size={13} />}
-          {value ? 'Replace' : 'Upload'}
+        <button type="button" className="db-iconbtn" onClick={() => inputRef.current?.click()} disabled={uploading}
+          title={value ? 'Replace' : 'Upload'} aria-label={value ? 'Replace' : 'Upload'}>
+          {uploading ? <Loader2 size={15} className="pitch-spin" /> : <Upload size={15} />}
         </button>
         {value && (
           <button type="button" className="btn-ghost" style={{ padding: '4px 6px', color: 'var(--danger)' }} title="Remove image" onClick={() => onChange('')}>
@@ -209,6 +215,7 @@ function ImageField({ label, value, onChange }) {
         )}
         <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" style={{ display: 'none' }} onChange={handleFile} />
       </div>
+      {error && <p className="prod-error">{error}</p>}
     </Field>
   );
 }
@@ -216,6 +223,7 @@ function ImageField({ label, value, onChange }) {
 function ImageListField({ label, values, onChange, max }) {
   const inputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState('');
   const images = Array.isArray(values) ? values : [];
 
   async function handleFiles(e) {
@@ -223,13 +231,14 @@ function ImageListField({ label, values, onChange, max }) {
     e.target.value = '';
     if (files.length === 0) return;
     setUploading(true);
+    setError('');
     const next = [...images];
     for (const file of files) {
       if (next.length >= max) break;
       try {
         const res = await uploadImage(file);
         next.push(res.filename);
-      } catch (err) { alert(err.message || 'Upload failed'); break; }
+      } catch (err) { setError(err.message || 'Upload failed'); break; }
     }
     onChange(next);
     setUploading(false);
@@ -240,7 +249,7 @@ function ImageListField({ label, values, onChange, max }) {
   }
 
   return (
-    <Field label={`${label} (${images.length}/${max})`}>
+    <Field label={<>{label} <span className="db-count"><span className="db-dot" />{images.length} / {max}</span></>}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
         {images.map((img, i) => (
           <div key={`${img}-${i}`} style={{ position: 'relative' }}>
@@ -275,13 +284,14 @@ function ImageListField({ label, values, onChange, max }) {
         )}
         <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" multiple style={{ display: 'none' }} onChange={handleFiles} />
       </div>
+      {error && <p className="prod-error">{error}</p>}
     </Field>
   );
 }
 
 // One row of a RowListField. Prose fields (marked polish on the field spec)
-// carry their own Fix with Opus control; proper-noun fields like a crew
-// member's name do not — there is nothing to correct there.
+// carry their own Fix with Opus control; proper noun fields like a crew
+// member's name do not, there is nothing to correct there.
 function RowEditor({ row, fields, onFieldChange, onRemove }) {
   const [loadingKey, setLoadingKey] = useState(null);
   const polishField = fields.find(f => f.polish);
@@ -343,8 +353,8 @@ function RowListField({ label, rows, onChange, fields, addLabel }) {
             onRemove={() => removeRow(i)}
           />
         ))}
-        <button type="button" className="btn btn-ghost btn-sm" style={{ alignSelf: 'flex-start' }} onClick={addRow}>
-          <Plus size={13} /> {addLabel}
+        <button type="button" className="db-iconbtn" style={{ alignSelf: 'flex-start' }} onClick={addRow} title={addLabel} aria-label={addLabel}>
+          <Plus size={15} />
         </button>
       </div>
     </Field>
@@ -364,7 +374,7 @@ function SectionFields({ type, content, onChange }) {
           <TextField label="Title" value={content.title} onChange={v => set('title', v)} placeholder="[PROJECT]" />
           <TextField label="Subtitle" value={content.subtitle} onChange={v => set('subtitle', v)} placeholder="An editorial story for [CLIENT]" />
           <ImageField label="Background image" value={content.image} onChange={v => set('image', v)} />
-          <Field label={`Overlay strength — ${content.overlay_strength ?? 45}`}>
+          <Field label={`Overlay strength · ${content.overlay_strength ?? 45}`}>
             <input
               type="range" min="0" max="100" value={content.overlay_strength ?? 45}
               onChange={e => set('overlay_strength', Number(e.target.value))}
@@ -535,8 +545,26 @@ function SortableSectionCard({ section, expanded, onToggle, onChange, onDelete }
 // ── Main editor ───────────────────────────────────────────────────────────────
 
 export default function PitchEditor() {
+  return (
+    <DialogProvider>
+      <PitchEditorPage />
+    </DialogProvider>
+  );
+}
+
+function SaveDot({ state }) {
+  const title = state === 'saving' ? 'Saving' : state === 'error' ? 'Save failed' : 'Saved';
+  return (
+    <span className="prod-save" title={title} aria-label={title}>
+      <span className={`db-dot ${state === 'saving' ? 'saving' : state === 'error' ? '' : 'muted'}`} />
+    </span>
+  );
+}
+
+function PitchEditorPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { notify, ask } = useDialogs();
   const [pres, setPres] = useState(null);
   const [sections, setSections] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -551,7 +579,7 @@ export default function PitchEditor() {
   const [working, setWorking] = useState(false);
   const [aiEnabled, setAiEnabled] = useState(false);
   const [toast, setToast] = useState('');
-  // The client-facing base for public links (a configured pitch domain when
+  // The client facing base for public links (a configured pitch domain when
   // there is one), so what gets copied is never the panel's own origin.
   const [pitchBase, setPitchBase] = useState({
     base: window.location.origin, host: window.location.host, custom: false,
@@ -581,7 +609,7 @@ export default function PitchEditor() {
       .finally(() => setLoading(false));
   }, [id]);
 
-  // Checked once per editor load — when the server has no key the feature hides entirely
+  // Checked once per editor load. When the server has no key the feature hides entirely.
   useEffect(() => {
     api.get('/pitches/ai-status')
       .then(s => setAiEnabled(!!s.enabled))
@@ -591,7 +619,7 @@ export default function PitchEditor() {
   useEffect(() => {
     api.get('/pitches/public-base')
       .then(b => { if (b && b.base) setPitchBase(b); })
-      .catch(() => {});
+      .catch(() => { /* the current origin stays */ });
   }, []);
 
   // One toast at a time; a second trigger just restarts the timer
@@ -607,11 +635,11 @@ export default function PitchEditor() {
   }, [toast]);
 
   // Mirrored into a ref so the iframe load handler can read it without
-  // being rebound on every expand/collapse.
+  // being rebound on every expand or collapse.
   useEffect(() => { expandedRef.current = expandedId; }, [expandedId]);
 
   // Refreshing the preview must not throw the reader back to the top of the
-  // deck. Record where the preview is looking, then restore it on load —
+  // deck. Record where the preview is looking, then restore it on load,
   // preferring the section currently open in the editor.
   const bumpPreview = useCallback(() => {
     clearTimeout(previewTimer.current);
@@ -634,7 +662,7 @@ export default function PitchEditor() {
       if (target) target.scrollIntoView({ block: 'start' });
       else if (previewScroll.current) win.scrollTo(0, previewScroll.current);
     } catch (_) {
-      // Cross-origin or not-yet-parsed document: leave the preview where it is
+      // Cross origin or not yet parsed document: leave the preview where it is
     }
   }
 
@@ -689,13 +717,18 @@ export default function PitchEditor() {
       bumpPreview();
     } catch (err) {
       setSaveState('error');
-      alert(err.message || 'Failed to add section');
+      notify('Section not added', err.message || 'The section could not be added.');
     }
   }
 
   async function handleDeleteSection(section) {
     const meta = SECTION_TYPES[section.type];
-    if (!confirm(`Delete this ${meta ? meta.label : section.type} section?`)) return;
+    const ok = await ask({
+      title: `Delete this ${meta ? meta.label : section.type} section?`,
+      confirmLabel: 'Delete',
+      tone: 'danger',
+    });
+    if (!ok) return;
     try {
       setSaveState('saving');
       await api.del(`/pitches/${id}/sections/${section.id}`);
@@ -705,12 +738,15 @@ export default function PitchEditor() {
       bumpPreview();
     } catch (err) {
       setSaveState('error');
-      alert(err.message || 'Failed to delete section');
+      notify('Section not deleted', err.message || 'The section could not be deleted.');
     }
   }
 
+  // The new order shows at once. When the server refuses it the previous order
+  // comes back and a notice says so.
   async function handleDragEnd({ active, over }) {
     if (!over || active.id === over.id) return;
+    const previous = sections;
     const oldIndex = sections.findIndex(s => s.id === active.id);
     const newIndex = sections.findIndex(s => s.id === over.id);
     const newList = arrayMove(sections, oldIndex, newIndex);
@@ -721,7 +757,9 @@ export default function PitchEditor() {
       setSaveState('saved');
       bumpPreview();
     } catch (err) {
-      setSaveState('error');
+      setSections(previous);
+      setSaveState('saved');
+      notify('Order not saved', err.message || 'The new order could not be saved.');
     }
   }
 
@@ -733,20 +771,26 @@ export default function PitchEditor() {
       setPres(prev => ({ ...prev, status: 'published', slug: res.slug }));
       setPublishedSlug(res.slug);
     } catch (err) {
-      alert(err.message || 'Failed to publish');
+      notify('Not published', err.message || 'The pitch could not be published.');
     } finally {
       setWorking(false);
     }
   }
 
   async function handleUnpublish() {
-    if (!confirm('Unpublish this pitch? The public link will stop working until you publish again.')) return;
+    const ok = await ask({
+      title: 'Unpublish this pitch?',
+      message: 'The public link stops working until you publish again.',
+      confirmLabel: 'Unpublish',
+      tone: 'danger',
+    });
+    if (!ok) return;
     setWorking(true);
     try {
       await api.post(`/pitches/${id}/unpublish`, {});
       setPres(prev => ({ ...prev, status: 'draft' }));
     } catch (err) {
-      alert(err.message || 'Failed to unpublish');
+      notify('Not unpublished', err.message || 'The pitch could not be unpublished.');
     } finally {
       setWorking(false);
     }
@@ -769,7 +813,7 @@ export default function PitchEditor() {
 
   if (loading || !pres) return (
     <div className="page-header">
-      <h1 className="page-title">Pitch Editor</h1>
+      <h1 className="page-title">Pitch</h1>
     </div>
   );
 
@@ -784,7 +828,7 @@ export default function PitchEditor() {
       {toast && <div className="pitch-toast">{toast}</div>}
       {/* Header */}
       <div className="pitch-editor-header">
-        <button className="btn-ghost" style={{ padding: '6px 8px', flexShrink: 0 }} onClick={() => navigate('/pitches')} title="Back to pitches">
+        <button className="db-iconbtn lg" style={{ flexShrink: 0 }} onClick={() => navigate('/pitches/photography')} title="Pitches" aria-label="Pitches">
           <ArrowLeft size={16} />
         </button>
         <input
@@ -793,38 +837,33 @@ export default function PitchEditor() {
           onChange={e => handlePresChange({ title: e.target.value })}
           placeholder="Pitch title"
         />
-        <span className={`badge ${isPublished ? 'badge-active' : 'badge-pending'}`} style={{ flexShrink: 0 }}>
-          {pres.status}
-        </span>
-        <span style={{ fontSize: '11px', color: saveState === 'error' ? 'var(--danger)' : 'var(--text-muted)', flexShrink: 0, minWidth: 52, textAlign: 'right' }}>
-          {saveState === 'saving' ? 'Saving…' : saveState === 'error' ? 'Save failed' : 'Saved'}
-        </span>
-        <button className="btn btn-ghost btn-sm" style={{ flexShrink: 0 }} onClick={() => setShowSettings(true)} title="Pitch settings">
-          <Settings2 size={14} />
+        {isPublished && <span className="db-dot ink" title="Published" />}
+        <SaveDot state={saveState} />
+        <button className="db-iconbtn lg" onClick={() => setShowSettings(true)} title="Pitch settings" aria-label="Pitch settings">
+          <Settings2 size={16} />
         </button>
-        {isPublished ? (
-          <button className="btn btn-secondary btn-sm" style={{ flexShrink: 0 }} onClick={handleUnpublish} disabled={working}>
-            <EyeOff size={13} /> Unpublish
+        {isPublished && (
+          <button className="db-iconbtn lg" onClick={handleUnpublish} disabled={working} title="Unpublish" aria-label="Unpublish">
+            <EyeOff size={16} />
           </button>
-        ) : null}
-        <button className="btn btn-primary btn-sm" style={{ flexShrink: 0 }} onClick={handlePublish} disabled={working}>
-          <Globe size={13} /> {isPublished ? 'Republish' : 'Publish'}
+        )}
+        <button className="btn btn-primary" style={{ flexShrink: 0 }} onClick={handlePublish} disabled={working}
+          title={isPublished ? 'Republish' : 'Publish'} aria-label={isPublished ? 'Republish' : 'Publish'}>
+          <Globe size={16} />
         </button>
       </div>
 
       {isPublished && publicUrl && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', fontSize: '12px', color: 'var(--text-secondary)' }}>
-          <Globe size={12} color="var(--success)" />
-          <a href={publicUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--text-secondary)' }}>{publicUrl}</a>
-          <button className="btn-ghost" style={{ padding: '3px 5px', color: copied ? 'var(--success)' : undefined }} onClick={() => copyText(publicUrl)} title={`Copy link (${pitchBase.host})`}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '16px', fontSize: '12px', color: 'var(--text-secondary)', minWidth: 0 }}>
+          <a href={publicUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{publicUrl}</a>
+          <button className="db-iconbtn sm" onClick={() => copyText(publicUrl)} title={`Copy link (${pitchBase.host})`} aria-label="Copy link">
             {copied ? <Check size={12} /> : <Copy size={12} />}
           </button>
-          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{pitchBase.host}</span>
         </div>
       )}
 
       <div className="pitch-editor">
-        {/* Left — section stack */}
+        {/* Left: section stack */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', minWidth: 0 }}>
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={sections.map(s => s.id)} strategy={verticalListSortingStrategy}>
@@ -843,9 +882,8 @@ export default function PitchEditor() {
 
           {showAddPicker ? (
             <div className="card" style={{ padding: '12px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                <span style={{ fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)' }}>Add section</span>
-                <button className="btn-ghost" style={{ padding: '3px 5px' }} onClick={() => setShowAddPicker(false)}><X size={14} /></button>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: '10px' }}>
+                <button className="db-iconbtn" onClick={() => setShowAddPicker(false)} title="Close" aria-label="Close"><X size={15} /></button>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '6px' }}>
                 {Object.entries(SECTION_TYPES).map(([type, meta]) => {
@@ -858,24 +896,24 @@ export default function PitchEditor() {
                     >
                       <Icon size={15} color="var(--accent)" />
                       <span style={{ fontSize: '12px', fontWeight: 600 }}>{meta.label}</span>
-                      <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{meta.hint}</span>
                     </button>
                   );
                 })}
               </div>
             </div>
           ) : (
-            <button className="btn btn-secondary" style={{ justifyContent: 'center' }} onClick={() => setShowAddPicker(true)}>
-              <Plus size={15} /> Add section
+            <button className="btn btn-secondary" style={{ justifyContent: 'center' }} onClick={() => setShowAddPicker(true)}
+              title="Add section" aria-label="Add section">
+              <Plus size={15} />
             </button>
           )}
         </div>
 
-        {/* Right — live preview */}
+        {/* Right: live preview */}
         <div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '4px', marginBottom: '8px' }}>
             <button
-              className={`btn-ghost btn-sm ${!phoneView ? '' : ''}`}
+              className="btn-ghost btn-sm"
               style={{ padding: '5px 8px', color: !phoneView ? 'var(--accent)' : 'var(--text-muted)' }}
               onClick={() => setPhoneView(false)}
               title="Full width preview"
@@ -899,13 +937,17 @@ export default function PitchEditor() {
         </div>
       </div>
 
-      {/* Settings drawer */}
+      {/* Settings */}
       {showSettings && (
-        <Overlay title="Pitch Settings" onClose={() => setShowSettings(false)}>
+        <Overlay
+          title="Pitch settings"
+          onClose={() => setShowSettings(false)}
+          footer={<button className="btn btn-primary" onClick={() => setShowSettings(false)}>Done</button>}
+        >
           <div className="form-row">
             <label className="form-label">Category</label>
             <select className="select" style={{ width: '100%' }} value={pres.category || ''} onChange={e => handlePresChange({ category: e.target.value || null })}>
-              <option value="">— none —</option>
+              <option value="" />
               {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
@@ -933,21 +975,19 @@ export default function PitchEditor() {
             </div>
           </div>
           <div className="form-row">
-            <label className="form-label">Public link slug</label>
+            <label className="form-label">Public link</label>
             <SlugEditor pres={pres} onSaved={slug => setPres(prev => ({ ...prev, slug }))} />
-          </div>
-          <div className="modal-footer">
-            <button className="btn btn-primary" onClick={() => setShowSettings(false)}>Done</button>
           </div>
         </Overlay>
       )}
 
-      {/* Publish success modal */}
+      {/* Published */}
       {publishedSlug && (
-        <Overlay title="Published" onClose={() => setPublishedSlug(null)}>
-          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '14px' }}>
-            Your pitch is live. Share this link with the client:
-          </p>
+        <Overlay
+          title="Published"
+          onClose={() => setPublishedSlug(null)}
+          footer={<button className="btn btn-ghost" onClick={() => setPublishedSlug(null)}>Close</button>}
+        >
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <input
               className="input"
@@ -955,16 +995,14 @@ export default function PitchEditor() {
               value={`${pitchBase.base}/p/${publishedSlug}`}
               style={{ flex: 1, fontSize: '12px' }}
               onFocus={e => e.target.select()}
+              title={pitchBase.host}
             />
-            <button className="btn btn-primary" style={{ flexShrink: 0, minWidth: 84 }} onClick={() => copyText(`${pitchBase.base}/p/${publishedSlug}`)}>
-              {copied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy</>}
+            <button className="db-iconbtn lg" onClick={() => copyText(`${pitchBase.base}/p/${publishedSlug}`)} title="Copy link" aria-label="Copy link">
+              {copied ? <Check size={16} /> : <Copy size={16} />}
             </button>
-          </div>
-          <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: '8px 0 0' }}>
-            Served from {pitchBase.host}
-          </p>
-          <div className="modal-footer">
-            <button className="btn btn-ghost" onClick={() => setPublishedSlug(null)}>Close</button>
+            <a className="db-iconbtn lg" href={`${pitchBase.base}/p/${publishedSlug}`} target="_blank" rel="noreferrer" title="Open" aria-label="Open">
+              <ExternalLink size={16} />
+            </a>
           </div>
         </Overlay>
       )}
@@ -973,7 +1011,7 @@ export default function PitchEditor() {
   );
 }
 
-// Slug is deliberately NOT autosaved — it changes a public URL, so it has an
+// Slug is deliberately not autosaved: it changes a public URL, so it has an
 // explicit save button and a warning while published.
 function SlugEditor({ pres, onSaved }) {
   const [value, setValue] = useState(pres.slug || '');
@@ -1002,19 +1040,16 @@ function SlugEditor({ pres, onSaved }) {
           className="input"
           value={value}
           onChange={e => setValue(e.target.value)}
-          placeholder={pres.slug ? '' : 'generated on publish'}
           style={{ flex: 1, fontSize: '12px' }}
         />
-        <button className="btn btn-secondary btn-sm" onClick={save} disabled={saving || !changed}>
-          {saving ? 'Saving…' : 'Save'}
+        <button className="db-iconbtn lg" onClick={save} disabled={saving || !changed} title="Save link" aria-label="Save link">
+          {saving ? <Loader2 size={15} className="pitch-spin" /> : <Check size={15} />}
         </button>
+        {pres.status === 'published' && changed && (
+          <span className="db-dot" title="The current public link stops working when this is saved" />
+        )}
       </div>
-      {pres.status === 'published' && changed && (
-        <p style={{ fontSize: '11px', color: 'var(--warning)', marginTop: '6px' }}>
-          Warning: changing the slug of a published pitch kills the old link — anyone holding the current URL will get a 404.
-        </p>
-      )}
-      {error && <p style={{ fontSize: '11px', color: 'var(--danger)', marginTop: '6px' }}>{error}</p>}
+      {error && <p className="prod-error">{error}</p>}
     </div>
   );
 }

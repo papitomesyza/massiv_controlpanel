@@ -2,15 +2,14 @@ const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
 const path = require('path');
-const multer = require('multer');
 const { db } = require('../db/database');
-const { imageUploadOptions, storeImage } = require('../lib/mediaStore');
+const { singleImageUpload, storeImage } = require('../lib/mediaStore');
 const { publicPitchBase } = require('../lib/pitchDomain');
 const { organizeDay, legLookupFor } = require('../lib/shotlistOptimizer');
 const {
   windowsForSpace, solarSummary, resolveWindow, WINDOW_DEFS, parseTimeParts,
 } = require('../lib/sunWindows');
-const { hashPasscode } = require('../lib/shotlistAuth');
+const { hashPasscode, PASSCODE_MIN } = require('../lib/shotlistAuth');
 const {
   getShotlistById, getLocations, getCharacters, getDays, getBreaks, getScenes,
   getShotsForScene, getMediaByShot, getSceneMedia, getCharactersByShot, charactersForScene,
@@ -71,7 +70,7 @@ function cleanText(v, max = 4000) {
 }
 
 // The age a role is cast for. Either end may stand alone ("40+", "under 12"),
-// so neither is required — but when both are given they are put the right way
+// so neither is required, but when both are given they are put the right way
 // round rather than rejected, because a swapped pair is a typo, not a refusal.
 function cleanAgeRange(minValue, maxValue) {
   let min = cleanInt(minValue, { min: 0, max: 120 });
@@ -117,7 +116,7 @@ function generateSlug(title, excludeId) {
 }
 
 // The casting link goes to people outside the production, so its slug is not
-// derived from the title alone the way the crew slug is — a random suffix
+// derived from the title alone the way the crew slug is, a random suffix
 // means knowing the project name is not enough to find it.
 function generateCastingSlug(title) {
   const base = String(title || '').toLowerCase().trim()
@@ -135,8 +134,10 @@ function generateCastingSlug(title) {
 // Never leaks passcode_hash to the client.
 function publicShape(row) {
   if (!row) return row;
-  const { passcode_hash, ...rest } = row;
-  return { ...rest, has_passcode: !!passcode_hash };
+  const { passcode_hash, passcode_short, ...rest } = row;
+  // A passcode set before the 6 character minimum keeps working; the editor
+  // only suggests changing it.
+  return { ...rest, has_passcode: !!passcode_hash, passcode_weak: !!passcode_hash && passcode_short !== 0 };
 }
 
 function readPlan(shotlist) {
@@ -150,7 +151,7 @@ function readPlan(shotlist) {
 
 // ── Static paths first, so they are never read as an :id ─────────────────────
 
-// The client-facing base for public shot list links — same source of truth the
+// The client-facing base for public shot list links, same source of truth the
 // pitch links use, so a configured public domain is honoured here too.
 router.get('/public-base', (req, res) => {
   try {
@@ -174,7 +175,7 @@ router.get('/light-windows', (req, res) => {
   }
 });
 
-// Place search for the location picker — OpenStreetMap's Nominatim, proxied
+// Place search for the location picker, OpenStreetMap's Nominatim, proxied
 // through the server so the request carries a proper identifying User-Agent
 // (a browser cannot set one) and the panel never talks to a third party
 // directly. The client debounces; a failure here tells the user to pin
@@ -262,13 +263,10 @@ router.get('/geocode/reverse', async (req, res) => {
   }
 });
 
-// Shot media upload — images only, 25MB, web + thumb generated, original
+// Shot media upload, images only, 25MB, web + thumb generated, original
 // discarded. Identical rules to the pitch uploader, shared helper, own folder.
-const upload = multer(imageUploadOptions());
-
-router.post('/upload', upload.single('image'), async (req, res) => {
+router.post('/upload', singleImageUpload('image'), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'Image file required (jpeg, png or webp, max 25MB)' });
     const out = await storeImage(req.file.buffer, getMediaDir());
     res.json(out);
   } catch (err) {
@@ -284,7 +282,11 @@ router.get('/', (req, res) => {
       SELECT s.*, p.title AS project_title,
              (SELECT COUNT(*) FROM shotlist_scenes sc WHERE sc.shotlist_id = s.id) AS scene_count,
              (SELECT COUNT(*) FROM shots sh WHERE sh.shotlist_id = s.id) AS shot_count,
-             (SELECT COUNT(*) FROM shots sh WHERE sh.shotlist_id = s.id AND sh.status = 'completed') AS completed_count
+             (SELECT COUNT(*) FROM shots sh WHERE sh.shotlist_id = s.id AND sh.status = 'completed') AS completed_count,
+             (SELECT COUNT(*) FROM shotlist_days d WHERE d.shotlist_id = s.id) AS day_count,
+             (SELECT d.shoot_date FROM shotlist_days d WHERE d.shotlist_id = s.id
+               ORDER BY d.sort_order ASC, d.day_number ASC, d.id ASC LIMIT 1) AS first_day_date,
+             p.shoot_date AS project_shoot_date
       FROM shotlists s
       LEFT JOIN projects p ON p.id = s.project_id
       ORDER BY (s.shoot_date IS NULL), s.shoot_date DESC, s.updated_at DESC
@@ -309,7 +311,7 @@ router.post('/', (req, res) => {
     }
 
     // A shot list is never dayless: it is born with Day 1, carrying whatever
-    // date and call time was given — the same shape the backfill gives the
+    // date and call time was given, the same shape the backfill gives the
     // lists that existed before days did.
     const create = db.transaction(() => {
       const shotlistId = db.prepare(`
@@ -353,7 +355,7 @@ router.get('/:id', (req, res) => {
     const leg = legLookupFor(locations);
 
     // The light window belongs to the scene, resolved from that scene's own
-    // coordinates on ITS day's date — so a three-day shoot gets three answers.
+    // coordinates on ITS day's date, so a three-day shoot gets three answers.
     const shaped = scenes.map(scene => {
       const loc = scene.location_id != null ? locById.get(scene.location_id) : null;
       const day = scene.day_id != null ? dayById.get(scene.day_id) : days[0];
@@ -378,7 +380,7 @@ router.get('/:id', (req, res) => {
       };
     });
 
-    // One timeline per day, rebuilt live — scenes, generated company moves and
+    // One timeline per day, rebuilt live, scenes, generated company moves and
     // breaks, with the day's derived crew call and totals.
     const timelines = days.map(day => {
       const dayScenes = scenes.filter(sc => sc.day_id === day.id);
@@ -464,7 +466,7 @@ router.put('/:id', (req, res) => {
     );
 
     // Days own the dates now, so the legacy field only reaches through to a
-    // single day that has no date of its own — it never overwrites a day
+    // single day that has no date of its own, it never overwrites a day
     // somebody has already dated, and never touches a multi-day list.
     if (body.shoot_date !== undefined && cleanDate(body.shoot_date)) {
       const days = getDays(shotlist.id);
@@ -502,16 +504,16 @@ router.put('/:id/passcode', (req, res) => {
 
     const raw = req.body && req.body.passcode;
     if (raw === null || raw === undefined || String(raw) === '') {
-      db.prepare("UPDATE shotlists SET passcode_hash = NULL, updated_at = datetime('now') WHERE id = ?")
+      db.prepare("UPDATE shotlists SET passcode_hash = NULL, passcode_short = NULL, updated_at = datetime('now') WHERE id = ?")
         .run(shotlist.id);
       return res.json({ ok: true, has_passcode: false });
     }
 
     const passcode = String(raw);
-    if (passcode.length < 4 || passcode.length > 64) {
-      return res.status(400).json({ error: 'Passcode must be between 4 and 64 characters' });
+    if (passcode.length < PASSCODE_MIN || passcode.length > 64) {
+      return res.status(400).json({ error: `Passcode must be between ${PASSCODE_MIN} and 64 characters` });
     }
-    db.prepare("UPDATE shotlists SET passcode_hash = ?, updated_at = datetime('now') WHERE id = ?")
+    db.prepare("UPDATE shotlists SET passcode_hash = ?, passcode_short = 0, updated_at = datetime('now') WHERE id = ?")
       .run(hashPasscode(passcode), shotlist.id);
     res.json({ ok: true, has_passcode: true });
   } catch (err) {
@@ -588,7 +590,7 @@ router.post('/:id/casting/unpublish', (req, res) => {
   }
 });
 
-// A new link invalidates the old one — the way to cut off an agency that
+// A new link invalidates the old one, the way to cut off an agency that
 // should no longer have access without unsharing from everyone else later.
 router.post('/:id/casting/rotate', (req, res) => {
   try {
@@ -732,7 +734,7 @@ router.put('/:id/days/:dayId', (req, res) => {
   }
 });
 
-// A day only goes when nothing is scheduled on it — deleting a day must never
+// A day only goes when nothing is scheduled on it, deleting a day must never
 // take scenes down with it.
 router.delete('/:id/days/:dayId', (req, res) => {
   try {
@@ -843,7 +845,7 @@ router.put('/:id/characters/:characterId', (req, res) => {
       return res.status(400).json({ error: 'Character name required' });
     }
 
-    // The two ends are validated together — a range is only sane as a pair, so
+    // The two ends are validated together, a range is only sane as a pair, so
     // touching either one re-checks both. An explicit null clears that end.
     const age = (body.age_min !== undefined || body.age_max !== undefined)
       ? cleanAgeRange(
@@ -878,8 +880,8 @@ router.put('/:id/characters/:characterId', (req, res) => {
   }
 });
 
-// Cast order is the order everywhere — the picker chips, the casting grid and
-// the photo board all read sort_order — so dragging a part in the panel moves
+// Cast order is the order everywhere, the picker chips, the casting grid and
+// the photo board all read sort_order, so dragging a part in the panel moves
 // it on every surface. Scoped to this shot list, so an id from another one is
 // simply not updated.
 router.patch('/:id/characters/reorder', (req, res) => {
@@ -912,8 +914,8 @@ router.delete('/:id/characters/:characterId', (req, res) => {
   }
 });
 
-// Duplicating a part copies the brief — the age range, the costume note, the
-// casting photo and every wardrobe look — but NOT the shot links: the copy is
+// Duplicating a part copies the brief, the age range, the costume note, the
+// casting photo and every wardrobe look, but NOT the shot links: the copy is
 // a new part that is not in any scene yet. A numbered extra continues the
 // sequence rather than becoming "Extra 3 copy".
 router.post('/:id/characters/:characterId/duplicate', (req, res) => {
@@ -970,7 +972,7 @@ router.post('/:id/characters/:characterId/duplicate', (req, res) => {
 // ── Media library ─────────────────────────────────────────────────────────────
 // Upload once into the shot list, then pick the same file as a reference on one
 // shot, an angle on another and a scout photo on the scene. The attach tables
-// already reference files by name, so nothing here needs a new attach path —
+// already reference files by name, so nothing here needs a new attach path:
 // this is the catalogue of what has been uploaded, and where it is used.
 
 function libraryUsage(shotlistId) {
@@ -1020,7 +1022,7 @@ function registerInLibrary(shotlistId, filename, thumb) {
       VALUES (?, ?, ?, ?)
     `).run(shotlistId, filename, thumb || null, nextOrder);
   } catch (_) {
-    // Cataloguing is a convenience — it must never fail an attach.
+    // Cataloguing is a convenience, it must never fail an attach.
   }
 }
 
@@ -1050,7 +1052,7 @@ router.post('/:id/library', (req, res) => {
       'SELECT COALESCE(MAX(sort_order), -1) AS m FROM shotlist_media_library WHERE shotlist_id = ?'
     ).get(shotlist.id).m + 1;
 
-    // The same file registered twice is not an error — it is already there.
+    // The same file registered twice is not an error, it is already there.
     db.prepare(`
       INSERT OR IGNORE INTO shotlist_media_library (shotlist_id, filename, thumb_filename, label, sort_order)
       VALUES (?, ?, ?, ?, ?)
@@ -1084,7 +1086,7 @@ router.put('/:id/library/:mediaId', (req, res) => {
 });
 
 // Removing something from the library takes it out of the catalogue only.
-// Anywhere it is already attached keeps working — pulling a photo out from
+// Anywhere it is already attached keeps working, pulling a photo out from
 // under a shot that uses it would be a surprise, so it is refused instead
 // unless the caller says to detach it everywhere.
 router.delete('/:id/library/:mediaId', (req, res) => {
@@ -1131,8 +1133,8 @@ router.delete('/:id/library/:mediaId', (req, res) => {
 });
 
 // ── Scout photos on a scene ───────────────────────────────────────────────────
-// What the recce brings back is the PLACE — the room, the approach, the light
-// at that hour — and that is true of every shot taken there, so it hangs off
+// What the recce brings back is the PLACE, the room, the approach, the light
+// at that hour, and that is true of every shot taken there, so it hangs off
 // the scene. The framings live on the shots as angle photos.
 
 router.post('/:id/scenes/:sceneId/media', (req, res) => {
@@ -1161,8 +1163,8 @@ router.post('/:id/scenes/:sceneId/media', (req, res) => {
   }
 });
 
-// Naming a scout photo is what makes it useful on the day — "the approach",
-// "power here" — so the label is editable without re-uploading.
+// Naming a scout photo is what makes it useful on the day, "the approach",
+// "power here", so the label is editable without re-uploading.
 router.put('/:id/scene-media/:mediaId', (req, res) => {
   try {
     const row = db.prepare(`
@@ -1215,7 +1217,7 @@ router.post('/:id/characters/:characterId/media', (req, res) => {
     const body = req.body || {};
     const filename = cleanFilename(body.filename);
     if (!filename) return res.status(400).json({ error: 'Invalid filename' });
-    // A thumb that fails the guard is dropped rather than failing the upload —
+    // A thumb that fails the guard is dropped rather than failing the upload;
     // the full image still shows.
     const thumb = cleanFilename(body.thumb_filename);
 
@@ -1504,7 +1506,7 @@ router.put('/:id/scenes/:sceneId', (req, res) => {
   }
 });
 
-// Duplicating a scene copies its shots too — coverage is the point of a scene.
+// Duplicating a scene copies its shots too, coverage is the point of a scene.
 router.post('/:id/scenes/:sceneId/duplicate', (req, res) => {
   try {
     const scene = getScene(req.params.id, req.params.sceneId);
@@ -1578,7 +1580,7 @@ router.delete('/:id/scenes/:sceneId', (req, res) => {
   }
 });
 
-// Reorder the USER ordering of scenes — the optimised ordering is untouched.
+// Reorder the USER ordering of scenes, the optimised ordering is untouched.
 router.patch('/:id/scenes/reorder', (req, res) => {
   try {
     const { sceneIds } = req.body || {};
@@ -1924,7 +1926,7 @@ router.post('/:id/organize', async (req, res) => {
   }
 });
 
-// Apply — the ONLY thing that copies the optimiser ordering into the user
+// Apply, the ONLY thing that copies the optimiser ordering into the user
 // ordering, and only for the day it was run on. Both orderings still persist.
 router.post('/:id/apply-plan', (req, res) => {
   try {

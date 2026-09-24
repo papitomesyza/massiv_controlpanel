@@ -5,6 +5,7 @@ const path = require('path');
 const { db } = require('../db/database');
 const { syncPayment, removePayment } = require('../lib/flowSync');
 const { syncTaskCalendarEvent, syncProjectCalendarEvents } = require('../lib/calendarSync');
+const { followProjectShootDate } = require('../lib/shotlistStore');
 const { owedByProject } = require('../lib/financeFigures');
 
 const PHASES = ['Development', 'Pre-Production', 'Production', 'Post-Production'];
@@ -246,18 +247,23 @@ router.put('/:id', (req, res) => {
   const errAB = validateMoney(agreed_budget || 0, 'agreed_budget');
   if (errAB) return res.status(400).json({ error: errAB });
 
-  const prev = db.prepare('SELECT status FROM projects WHERE id = ?').get(req.params.id);
+  const prev = db.prepare('SELECT status, shoot_date FROM projects WHERE id = ?').get(req.params.id);
   const effectiveLocation = location_name || shoot_location || null;
-  db.prepare(`
-    UPDATE projects SET client_id=?, title=?, category_id=?, status=?, client_budget=?,
-      agreed_budget=?, notes=?, shoot_date=?, shoot_days=?, shoot_location=?,
-      location_name=?, location_lat=?, location_lng=?, shoot_start_time=?, shoot_end_time=?, deadline=? WHERE id=?
-  `).run(client_id || null, title, category_id || null, status, client_budget || 0, agreed_budget || 0,
-    notes || null, shoot_date || null, shoot_days || 1, effectiveLocation,
-    location_name || null, location_lat || null, location_lng || null,
-    shoot_start_time || null, shoot_end_time || null, deadline || null, req.params.id);
-  if (prev) recordStatusChange(req.params.id, prev.status, status);
-  syncProjectCalendarEvents(req.params.id, title, deadline || null, shoot_date || null, effectiveLocation, shoot_start_time || null, shoot_end_time || null);
+  // The project row, its calendar events and the linked shot list dates change
+  // together or not at all.
+  db.transaction(() => {
+    db.prepare(`
+      UPDATE projects SET client_id=?, title=?, category_id=?, status=?, client_budget=?,
+        agreed_budget=?, notes=?, shoot_date=?, shoot_days=?, shoot_location=?,
+        location_name=?, location_lat=?, location_lng=?, shoot_start_time=?, shoot_end_time=?, deadline=? WHERE id=?
+    `).run(client_id || null, title, category_id || null, status, client_budget || 0, agreed_budget || 0,
+      notes || null, shoot_date || null, shoot_days || 1, effectiveLocation,
+      location_name || null, location_lat || null, location_lng || null,
+      shoot_start_time || null, shoot_end_time || null, deadline || null, req.params.id);
+    if (prev) recordStatusChange(req.params.id, prev.status, status);
+    if (prev) followProjectShootDate(req.params.id, prev.shoot_date, shoot_date || null);
+    syncProjectCalendarEvents(req.params.id, title, deadline || null, shoot_date || null, effectiveLocation, shoot_start_time || null, shoot_end_time || null);
+  })();
   res.json({ ok: true });
 });
 

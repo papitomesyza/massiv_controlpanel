@@ -1,8 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const { db } = require('../db/database');
+const { pristinaToday } = require('../lib/pristinaDate');
 
-const { verifyCrewToken, issueCrewToken, checkPasscode } = require('../lib/shotlistAuth');
+const { verifyCrewToken, issueCrewToken, checkPasscode, PASSCODE_MIN } = require('../lib/shotlistAuth');
 const { getPublishedBySlug, logActivity, touch } = require('../lib/shotlistStore');
 
 // In-memory rate limiters
@@ -45,7 +46,7 @@ router.get('/expense/:token', (req, res) => {
   res.json({ valid: true, project_title: result.project_title, project_status: result.project_status });
 });
 
-// POST /api/public/expense/:token — multer applied upstream in server.js
+// POST /api/public/expense/:token, multer applied upstream in server.js
 router.post('/expense/:token', (req, res) => {
   const ip = req.ip || (req.connection && req.connection.remoteAddress) || 'unknown';
   const token = req.params.token;
@@ -76,7 +77,7 @@ router.post('/expense/:token', (req, res) => {
   // Store category as text on pending expense; do NOT create category row yet
   const categoryName = category === 'custom' ? (custom_category || 'Custom') : (category || 'Miscellaneous');
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = pristinaToday();
   const imagePath = req.file ? req.file.filename : null;
 
   // Insert as pending; category_id remains null until approval
@@ -99,7 +100,7 @@ router.get('/expense-categories', (req, res) => {
   res.json(cats.map(c => c.name));
 });
 
-// GET /api/public/collection/:token — read-only shared collection view
+// GET /api/public/collection/:token, read-only shared collection view
 router.get('/collection/:token', (req, res) => {
   try {
     const link = db.prepare('SELECT * FROM collection_share_links WHERE token = ?').get(req.params.token);
@@ -123,7 +124,7 @@ router.get('/collection/:token', (req, res) => {
   }
 });
 
-// GET /api/public/mind/:token — read-only shared Collections page
+// GET /api/public/mind/:token, read-only shared Collections page
 router.get('/mind/:token', (req, res) => {
   try {
     const link = db.prepare('SELECT * FROM mind_share_links WHERE token = ?').get(req.params.token);
@@ -177,12 +178,17 @@ router.get('/mind/:token', (req, res) => {
 // production passcode, which mints a crew token scoped to that one shot list.
 //
 // This is a public authentication surface, so the unlock endpoint is rate
-// limited the same way the public expense endpoint is, and every failure —
-// unknown slug, draft shot list, no passcode set, wrong passcode — returns the
+// limited the same way the public expense endpoint is, and every failure
+// (unknown slug, draft shot list, no passcode set, wrong passcode) returns the
 // identical response so nothing about the panel can be enumerated.
 
 const UNLOCK_IP_PER_MIN = 5;
 const UNLOCK_SLUG_PER_MIN = 10;
+// On top of the per minute limits: at most this many FAILED unlocks per slug in
+// a day. Past it every attempt gets the same 429 as the minute limits.
+const UNLOCK_SLUG_FAILS_PER_DAY = 50;
+const DAY_MS = 86400000;
+const unlockSlugFailures = new Map(); // slug -> { count, windowStart }
 
 function checkWindowLimit(map, key, windowMs) {
   const now = Date.now();
@@ -190,6 +196,23 @@ function checkWindowLimit(map, key, windowMs) {
   if (now - rec.windowStart > windowMs) { rec.count = 0; rec.windowStart = now; }
   return rec;
 }
+
+// The limiter maps are keyed by IPs, slugs and tokens that arrive from the
+// public internet, so entries whose window has passed are swept every five
+// minutes and the maps cannot grow without bound.
+const SWEEP_MS = 5 * 60000;
+const SWEPT = [
+  [unlockIpAttempts, 60000],
+  [unlockSlugAttempts, 60000],
+  [editTokenAttempts, 60000],
+  [unlockSlugFailures, DAY_MS],
+];
+function sweepLimiters(now = Date.now()) {
+  SWEPT.forEach(([map, windowMs]) => {
+    map.forEach((rec, key) => { if (now - rec.windowStart > windowMs) map.delete(key); });
+  });
+}
+setInterval(sweepLimiters, SWEEP_MS).unref();
 
 function unlockDenied(res) {
   return res.status(401).json({ error: 'invalid' });
@@ -209,7 +232,11 @@ router.post('/shotlist/:slug/unlock', (req, res) => {
     if (slugRec.count >= UNLOCK_SLUG_PER_MIN) {
       return res.status(429).json({ error: 'too_many_attempts' });
     }
-    // Every attempt counts, successful or not — a valid passcode is not a way
+    const failRec = checkWindowLimit(unlockSlugFailures, slug, DAY_MS);
+    if (failRec.count >= UNLOCK_SLUG_FAILS_PER_DAY) {
+      return res.status(429).json({ error: 'too_many_attempts' });
+    }
+    // Every attempt counts, successful or not, a valid passcode is not a way
     // around the limiter.
     ipRec.count++; unlockIpAttempts.set(ip, ipRec);
     slugRec.count++; unlockSlugAttempts.set(slug, slugRec);
@@ -218,9 +245,22 @@ router.post('/shotlist/:slug/unlock', (req, res) => {
     const passcode = (req.body && req.body.passcode) || '';
     if (!name) return res.status(400).json({ error: 'name_required' });
 
+    // Every failure, whatever its cause, counts toward the daily cap and gets
+    // the identical answer.
+    const failed = () => {
+      failRec.count++; unlockSlugFailures.set(slug, failRec);
+      return unlockDenied(res);
+    };
     const shotlist = getPublishedBySlug(slug);
-    if (!shotlist || !shotlist.passcode_hash) return unlockDenied(res);
-    if (!checkPasscode(passcode, shotlist.passcode_hash)) return unlockDenied(res);
+    if (!shotlist || !shotlist.passcode_hash) return failed();
+    if (!checkPasscode(passcode, shotlist.passcode_hash)) return failed();
+
+    // The hash cannot say how long the passcode is, so a passcode set before
+    // the 6 character minimum is measured here, the one place it is seen.
+    const short = String(passcode).length < PASSCODE_MIN ? 1 : 0;
+    if (shotlist.passcode_short !== short) {
+      db.prepare('UPDATE shotlists SET passcode_short = ? WHERE id = ?').run(short, shotlist.id);
+    }
 
     logActivity(shotlist.id, null, 'unlocked', name);
     res.json({ token: issueCrewToken(shotlist, name), name });

@@ -1,10 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const path = require('path');
-const multer = require('multer');
 const { db } = require('../db/database');
-const { imageUploadOptions, storeImage } = require('../lib/mediaStore');
-const { renderPresentation, SECTION_TYPES } = require('../lib/renderPresentation');
+const { singleImageUpload, storeImage } = require('../lib/mediaStore');
+const { renderPresentation, SECTION_TYPES, scrubDashes } = require('../lib/renderPresentation');
 const { publicPitchBase } = require('../lib/pitchDomain');
 
 function getMediaDir() {
@@ -34,14 +33,13 @@ function parseSection(row) {
   return { id: row.id, type: row.type, sort_order: row.sort_order, content };
 }
 
-// ── Media upload — images only, sharp produces web + thumb, original discarded ──
+// ── Media upload: images only, sharp produces web + thumb, original discarded ──
 // The processing itself lives in lib/mediaStore.js, shared with shot list
 // media. Same rules, same output, same presentation-media folder as before.
 
-const upload = multer(imageUploadOptions());
-
-router.post('/upload', upload.single('image'), async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'Image file required (jpeg, png or webp, max 25MB)' });
+// Same limits as the shot list uploader: one image, jpeg, png, webp or gif,
+// 25MB, each refusal with its own status and message.
+router.post('/upload', singleImageUpload('image'), async (req, res) => {
   try {
     const out = await storeImage(req.file.buffer, getMediaDir());
     res.json({ filename: out.filename, thumb: out.thumb });
@@ -65,18 +63,7 @@ const POLISH_SYSTEM = [
 ].join(' ');
 
 // Belt and suspenders: whatever the model returns, this endpoint is physically
-// incapable of emitting a long dash.
-function scrubDashes(text) {
-  let out = String(text == null ? '' : text);
-  out = out.replace(/[ \t]*[—―][ \t]*/g, ', ');     // em dash / horizontal bar
-  out = out.replace(/(\d)[ \t]*–[ \t]*(\d)/g, '$1-$2');  // en dash between digits
-  out = out.replace(/[ \t]*–[ \t]*/g, ', ');             // any remaining en dash
-  out = out.replace(/[ \t]{2,}/g, ' ');                            // doubled spaces
-  out = out.replace(/,[ \t]*,/g, ',');                             // ", ," artifacts
-  out = out.replace(/[ \t]+([,.!?;:])/g, '$1');
-  out = out.replace(/^[ \t,]+/, '');
-  return out.trim();
-}
+// incapable of emitting a long dash. scrubDashes is shared with the renderer.
 
 // The model is asked for a bare JSON array. Parse defensively anyway: strip
 // code fences, fall back to the first bracketed block, then to a numbered or
@@ -139,8 +126,16 @@ router.get('/ai-status', (req, res) => {
   }
 });
 
+// The polish request is one field of copy. The app parses JSON bodies up to
+// 50MB for other routes, so this one refuses anything larger than a field
+// could be before the text is even read.
+const POLISH_MAX_BODY = 16 * 1024;
+
 router.post('/ai-polish', async (req, res) => {
   try {
+    if (Number(req.get('content-length') || 0) > POLISH_MAX_BODY) {
+      return res.status(413).json({ error: 'Request too large (max 16KB)' });
+    }
     const text = req.body && typeof req.body.text === 'string' ? req.body.text : '';
     if (!text.trim()) return res.status(400).json({ error: 'text required' });
     if (text.length > 2000) return res.status(400).json({ error: 'text too long (max 2000 characters)' });
@@ -201,9 +196,22 @@ router.get('/', (req, res) => {
     SELECT p.*, (SELECT COUNT(*) FROM presentation_sections s WHERE s.presentation_id = p.id) AS section_count
     FROM presentations p ORDER BY p.updated_at DESC
   `).all();
+  // The first image in a pitch's running order is its cover on the list.
+  const coverStmt = db.prepare(
+    'SELECT content FROM presentation_sections WHERE presentation_id = ? ORDER BY sort_order ASC, id ASC'
+  );
+  const coverOf = id => {
+    for (const row of coverStmt.all(id)) {
+      let c = {};
+      try { c = JSON.parse(row.content || '{}'); } catch (_) { continue; }
+      const name = c.image || (Array.isArray(c.images) && c.images.find(Boolean));
+      if (name && typeof name === 'string' && !/[/\\]/.test(name)) return name;
+    }
+    return null;
+  };
   res.json({
     templates: rows.filter(r => r.is_template),
-    pitches: rows.filter(r => !r.is_template),
+    pitches: rows.filter(r => !r.is_template).map(r => ({ ...r, cover: coverOf(r.id) })),
   });
 });
 
@@ -260,12 +268,12 @@ router.put('/:id', (req, res) => {
 });
 
 router.delete('/:id', (req, res) => {
-  // DB rows only — media file cleanup is out of scope for phase 1
+  // DB rows only; media file cleanup is out of scope for phase 1
   db.prepare('DELETE FROM presentations WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
 
-// Duplicate — used by "new from template" and general duplication.
+// Duplicate, used by "new from template" and general duplication.
 // Media files are referenced, not copied. An optional sectionIds array copies
 // only those sections (order preserved); omitted means every section.
 router.post('/:id/duplicate', (req, res) => {
@@ -318,7 +326,7 @@ router.post('/:id/sections', (req, res) => {
   res.json({ id: result.lastInsertRowid });
 });
 
-// Reorder — ordered id array, transaction (same pattern as tasks reorder)
+// Reorder: ordered id array, transaction (same pattern as tasks reorder)
 router.patch('/:id/sections/reorder', (req, res) => {
   const { sectionIds } = req.body;
   if (!Array.isArray(sectionIds)) return res.status(400).json({ error: 'sectionIds array required' });
@@ -384,7 +392,7 @@ router.post('/:id/unpublish', (req, res) => {
   res.json({ ok: true });
 });
 
-// ── Preview — same rendered HTML as the public route, drafts included ─────────
+// ── Preview: same rendered HTML as the public route, drafts included ─────────
 // The builder embeds this in an iframe which cannot send an Authorization
 // header, so server.js authenticates this one route via a ?token= query
 // parameter validated against the sessions table (the only endpoint allowed

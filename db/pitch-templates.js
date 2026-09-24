@@ -1,4 +1,4 @@
-// Seeded pitch presentation templates — inserted exactly once, guarded by the
+// Seeded pitch presentation templates, inserted exactly once, guarded by the
 // pitches_templates_seeded settings key. User edits to these rows must survive
 // every boot, so nothing here is ever re-applied after the first seed.
 // Section content shapes must match the nine types defined in routes/pitches.js.
@@ -23,12 +23,12 @@ module.exports = [
       { type: 'split', content: {
         image: '',
         heading: 'The Concept',
-        body: 'We treat [PROJECT] as a story, not a lookbook. One character, one location, one arc — shot with the discipline of a film still. Every frame should feel like it was pulled from a scene that kept going after the shutter closed. The collection leads; the styling, light and gesture do the talking.',
+        body: 'We treat [PROJECT] as a story, not a lookbook. One character, one location, one arc, shot with the discipline of a film still. Every frame should feel like it was pulled from a scene that kept going after the shutter closed. The collection leads; the styling, light and gesture do the talking.',
         image_side: 'right',
       }},
       { type: 'full_image', content: {
         image: '',
-        caption: 'Key look — the frame the whole story hangs on',
+        caption: 'Key look: the frame the whole story hangs on',
       }},
       { type: 'image_grid', content: {
         images: [],
@@ -37,7 +37,7 @@ module.exports = [
         }},
       { type: 'moodboard', content: {
         images: [],
-        note: 'Texture, tone and attitude — hard light against soft fabric, colour kept quiet so the silhouettes carry the frame.',
+        note: 'Texture, tone and attitude: hard light against soft fabric, colour kept quiet so the silhouettes carry the frame.',
       }},
       { type: 'deliverables', content: {
         heading: 'What [CLIENT] receives',
@@ -84,7 +84,7 @@ module.exports = [
       { type: 'split', content: {
         image: '',
         heading: 'Why this works',
-        body: 'Instead of one-off shoots that run dry in a week, we build [CLIENT] a repeatable visual system: consistent light, consistent colour, consistent framing. One shoot day produces a full month of posts that all feel like they belong to the same brand — because they do.',
+        body: 'Instead of one-off shoots that run dry in a week, we build [CLIENT] a repeatable visual system: consistent light, consistent colour, consistent framing. One shoot day produces a full month of posts that all feel like they belong to the same brand, because they do.',
         image_side: 'left',
       }},
       { type: 'image_grid', content: {
@@ -135,12 +135,12 @@ module.exports = [
       { type: 'split', content: {
         image: '',
         heading: 'The campaign idea',
-        body: 'We shoot the stills campaign on the TVC set, with the same cast, wardrobe and lighting design — so every billboard, print ad and thumbnail is unmistakably the same world as the film. No mismatched agency stock, no reshoots: one production, one visual language, every channel covered.',
+        body: 'We shoot the stills campaign on the TVC set, with the same cast, wardrobe and lighting design, so every billboard, print ad and thumbnail is unmistakably the same world as the film. No mismatched agency stock, no reshoots: one production, one visual language, every channel covered.',
         image_side: 'right',
       }},
       { type: 'full_image', content: {
         image: '',
-        caption: 'Key visual — built for billboards, cropped for everything else',
+        caption: 'Key visual: built for billboards, cropped for everything else',
       }},
       { type: 'moodboard', content: {
         images: [],
@@ -189,12 +189,12 @@ module.exports = [
       }},
       { type: 'moodboard', content: {
         images: [],
-        note: 'World-building references — colour, grain and light pulled from the video treatment so the stills live in the same universe.',
+        note: 'World-building references: colour, grain and light pulled from the video treatment so the stills live in the same universe.',
       }},
       { type: 'split', content: {
         image: '',
         heading: 'On-set, not after',
-        body: 'We shoot during the video production itself — same set, same styling, same energy. Between setups we steal the artist for minutes at a time and walk away with cover art, press shots and single artwork that no separate photo day could fake.',
+        body: 'We shoot during the video production itself: same set, same styling, same energy. Between setups we steal the artist for minutes at a time and walk away with cover art, press shots and single artwork that no separate photo day could fake.',
         image_side: 'left',
       }},
       { type: 'image_grid', content: {

@@ -437,15 +437,15 @@ function initDb() {
     );
   `);
 
-  // Default tax settings — INSERT OR IGNORE so existing values are never overwritten
+  // Default tax settings, INSERT OR IGNORE so existing values are never overwritten
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_rate', '18')").run();
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_label', 'Tax')").run();
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_enabled', '1')").run();
 
-  // Profile setup — seed as incomplete for new installs; existing users get the wizard once
+  // Profile setup, seed as incomplete for new installs; existing users get the wizard once
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('profile_completed', '0')").run();
 
-  // Invoice defaults — seed counter at 34 (last issued was 33/25)
+  // Invoice defaults, seed counter at 34 (last issued was 33/25)
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('invoice_next_num', '34')").run();
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('invoice_last_year', '25')").run();
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('invoice_language', 'sq')").run();
@@ -464,7 +464,7 @@ function initDb() {
     `);
   } catch (_) {}
 
-  // Schema migrations — safe to run on every boot
+  // Schema migrations, safe to run on every boot
   [
     'ALTER TABLE crew ADD COLUMN is_company INTEGER DEFAULT 0',
     'ALTER TABLE crew ADD COLUMN service_type TEXT',
@@ -636,12 +636,12 @@ function initDb() {
     }
   } catch (_) {}
 
-  // Session cleanup — drop any sessions whose expiry is already in the past
+  // Session cleanup, drop any sessions whose expiry is already in the past
   try {
     db.prepare("DELETE FROM sessions WHERE expires_at < datetime('now')").run();
   } catch (_) {}
 
-  // Indexes — created only if missing
+  // Indexes, created only if missing
   try {
     db.exec(`CREATE TABLE IF NOT EXISTS mind_accounts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -726,7 +726,7 @@ function initDb() {
     CREATE INDEX IF NOT EXISTS idx_presentation_sections_presentation ON presentation_sections(presentation_id);
   `);
 
-  // Seeds — templates are inserted exactly once; user edits to them must
+  // Seeds, templates are inserted exactly once; user edits to them must
   // survive every boot, so the guard key is checked before touching anything.
   try {
     const seeded = db.prepare("SELECT value FROM settings WHERE key = 'pitches_templates_seeded'").get();
@@ -752,7 +752,7 @@ function initDb() {
   }
 
   // ── Shot lists (Tools → Production) ──
-  // Ordering: creates, then alters, then backfills, then indexes. No seeds —
+  // Ordering: creates, then alters, then backfills, then indexes. No seeds:
   // this feature ships with no example data of any kind.
 
   // Creates
@@ -848,8 +848,8 @@ function initDb() {
     );
 
     -- Scout photos belong to the SCENE, not to a shot: what the recce brings
-    -- back is the place — the room, the approach, the power, the light at that
-    -- hour — and that is true of every shot taken there. The per-shot photos
+    -- back is the place, the room, the approach, the power, the light at that
+    -- hour, and that is true of every shot taken there. The per-shot photos
     -- are the framings, which is a different thing and lives on shot_media.
     CREATE TABLE IF NOT EXISTS shotlist_scene_media (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -924,7 +924,7 @@ function initDb() {
 
     -- Wardrobe attached to a part. A character normally has more than one
     -- look, so this is a list rather than a column: each row is one costume
-    -- photo, optionally named ("Look 2 — rain coat") for continuity.
+    -- photo, optionally named ("Look 2, rain coat") for continuity.
     CREATE TABLE IF NOT EXISTS shotlist_character_media (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       character_id INTEGER NOT NULL,
@@ -982,7 +982,7 @@ function initDb() {
     'ALTER TABLE shotlist_scenes ADD COLUMN move_setup_minutes INTEGER',
     // When the unit actually travels. Without it the move leaves the moment the
     // previous scene ends, which is wrong whenever that scene did not need the
-    // whole unit — a dawn drone shot ends at 06:00 but the company does not
+    // whole unit, a dawn drone shot ends at 06:00 but the company does not
     // depart until 08:00. NULL keeps the old "leave immediately" behaviour.
     'ALTER TABLE shotlist_scenes ADD COLUMN move_locked_start_time TEXT',
     // Travel time is normally derived from the distance between the two pins,
@@ -990,7 +990,7 @@ function initDb() {
     // keeps the computed figure; a number replaces it.
     'ALTER TABLE shotlist_scenes ADD COLUMN move_travel_minutes INTEGER',
 
-    // How long the resulting clip runs in the edit — NOT duration_minutes,
+    // How long the resulting clip runs in the edit, NOT duration_minutes,
     // which is how long the shot takes to capture on the day.
     'ALTER TABLE shots ADD COLUMN clip_length_seconds INTEGER',
     'ALTER TABLE shots ADD COLUMN lens TEXT',
@@ -1001,6 +1001,10 @@ function initDb() {
     // Company move defaults for the whole shot list, editable in the panel.
     'ALTER TABLE shotlists ADD COLUMN move_wrap_minutes INTEGER DEFAULT 20',
     'ALTER TABLE shotlists ADD COLUMN move_setup_minutes INTEGER DEFAULT 25',
+    // Whether the crew passcode is shorter than the 6 character minimum: 1 short,
+    // 0 long enough, NULL set before the rule and not yet seen. The hash cannot
+    // say, so it is recorded when a passcode is set and learned on unlock.
+    'ALTER TABLE shotlists ADD COLUMN passcode_short INTEGER',
 
     // The age a role is cast for, which is a range and not the performer's own
     // age. Either end may stand alone: "40+" and "under 12" are both real
@@ -1012,7 +1016,7 @@ function initDb() {
     // crew eats at the location it is already at, before anything is wrapped;
     // after_move means it wraps, travels, sets up and eats at the new place.
     // after_move is the default because that is how a meal is actually served
-    // on set — nobody eats halfway through loading the truck.
+    // on set, nobody eats halfway through loading the truck.
     "ALTER TABLE shotlist_breaks ADD COLUMN placement TEXT DEFAULT 'after_move'",
 
     // The casting share link is its own publication, separate from the crew
@@ -1023,7 +1027,7 @@ function initDb() {
     'ALTER TABLE shotlists ADD COLUMN casting_published_at TEXT',
   ].forEach(sql => { try { db.exec(sql); } catch (_) {} });
 
-  // Backfills — sort_order is the user ordering, so any row that somehow
+  // Backfills, sort_order is the user ordering, so any row that somehow
   // arrived without one falls back to its id. The IS NULL guard makes every
   // later boot a no-op.
   try {
@@ -1121,7 +1125,7 @@ function initDb() {
 
   // Everything already attached anywhere in a shot list is catalogued into its
   // library, so an existing list does not open onto an empty picker. Filenames
-  // are unique per list, so re-running inserts nothing — the guard is the
+  // are unique per list, so re-running inserts nothing, the guard is the
   // UNIQUE constraint itself rather than a settings key.
   try {
     const register = db.prepare(`
@@ -1155,7 +1159,7 @@ function initDb() {
   }
 
   // Scout photos moved up to the scene, so what is left on a shot is the
-  // framing photographed on the recce — an angle. The rows are renamed rather
+  // framing photographed on the recce, an angle. The rows are renamed rather
   // than moved: a photo attached to one shot describes that shot's angle, and
   // guessing which of them was really a picture of the room would lose more
   // than it gained. The settings guard makes this run exactly once.
@@ -1173,7 +1177,7 @@ function initDb() {
   // Every break that existed before sides did belongs on the after_move side:
   // that is where a meal is really eaten, and it is the behaviour that was
   // wanted all along. SQLite fills the new column with its default for rows
-  // that already exist, so this only catches a row that somehow holds NULL —
+  // that already exist, so this only catches a row that somehow holds NULL,
   // and the IS NULL guard makes every later boot a no-op either way.
   try {
     const r = db.prepare(
@@ -1192,7 +1196,7 @@ function initDb() {
       const rows = db.prepare(
         "SELECT id, shotlist_id, talent FROM shots WHERE talent IS NOT NULL AND TRIM(talent) != ''"
       ).all();
-      // Somebody typed as "Extra 4" is an extra, and comes back as one — so the
+      // Somebody typed as "Extra 4" is an extra, and comes back as one, so the
       // numbered-extra control carries on from where the old list left off
       // instead of offering a number that is already taken.
       const kindOf = name => (/^extras?\s*\d*$/i.test(name.trim()) ? 'extra' : 'principal');
@@ -1251,7 +1255,7 @@ function initDb() {
     CREATE INDEX IF NOT EXISTS idx_shot_activity_shotlist ON shot_activity(shotlist_id);
   `);
 
-  // Password migration — run once on boot
+  // Password migration, run once on boot
   migratePassword();
 }
 

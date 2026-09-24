@@ -1,9 +1,9 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 
-// The card grid both Tools pages are built from. One card per tool: a title, a
-// one-line description and an icon. Disabled cards stay visible so what is
-// coming later is legible, but they never navigate.
+// The card grid both Tools pages are built from. One card per tool: an icon and
+// a title. Disabled cards stay visible so what is coming later is legible, but
+// they never navigate.
 export function ToolCard({ icon: Icon, title, description, to, disabled, badge }) {
   const navigate = useNavigate();
 
@@ -20,7 +20,7 @@ export function ToolCard({ icon: Icon, title, description, to, disabled, badge }
         {title}
         {badge && <span className="tool-card-badge">{badge}</span>}
       </span>
-      <span className="tool-card-desc">{description}</span>
+      {description && <span className="tool-card-desc">{description}</span>}
     </button>
   );
 }

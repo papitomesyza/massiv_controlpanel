@@ -1,0 +1,37 @@
+/* Tools: Pitches and Production. Built on the Database card system (db-card,
+   db-dot, db-iconbtn) and the Collections tile (coll-tile); only what these
+   pages add lives here. Every colour is a token, so both themes follow. */
+
+.prod-head { display: flex; align-items: center; gap: 10px; }
+.prod-head .page-title { flex: 1; min-width: 0; }
+
+.prod-dots { display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; }
+.prod-date { font-size: 12px; color: var(--color-mid-gray); font-variant-numeric: tabular-nums; }
+
+/* A template tile: its accent as a swatch where a card shows its avatar. */
+.prod-swatch {
+  width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--color-white, #fff);
+}
+
+.prod-section { margin-bottom: 28px; }
+.prod-section-head {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 12px; color: var(--color-ink-soft);
+}
+
+/* The editor's date that has drifted from its project. */
+.prod-drift { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; }
+
+/* Inline error under a control, in place of a native alert. */
+.prod-error { font-size: 12px; color: var(--color-ember-text); margin: 6px 0 0; }
+
+/* Save state, as a dot rather than a word. */
+.prod-save { display: inline-flex; align-items: center; justify-content: center; width: 18px; flex-shrink: 0; }
+.prod-save .db-dot { width: 6px; height: 6px; }
+.prod-save .db-dot.saving { background: var(--color-mid-gray); animation: prod-pulse 1s ease-in-out infinite; }
+@keyframes prod-pulse { 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .prod-save .db-dot.saving { animation: none; } }
+
+.prod-range { display: inline-flex; align-items: center; gap: 3px; font-variant-numeric: tabular-nums; }

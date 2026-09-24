@@ -4,7 +4,8 @@ import {
   ArrowLeft, Plus, X, Trash2, GripVertical, ChevronDown, ChevronRight, Copy,
   Globe, EyeOff, Link2, Check, Settings2, MapPin, KeyRound, FileText, Image as ImageIcon,
   Loader2, Wand2, History, RotateCcw, Sun, Clapperboard, Lock, Unlock, Users, UserPlus,
-  Truck, Coffee, CalendarDays, Timer, Film, AlertTriangle, Share2,
+  Truck, Coffee, CalendarDays, Timer, Film, AlertTriangle, Share2, ArrowRight,
+  CalendarCheck, User, UserCog, Home, Trees, ExternalLink,
 } from 'lucide-react';
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors,
@@ -12,9 +13,16 @@ import {
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import Overlay from '../components/Overlay';
+import DateField from '../components/DateField';
+import Ring from '../components/Ring';
+import { IconToggles } from '../components/DbBits';
+import { DialogProvider, useDialogs } from '../components/Dialogs';
 import LocationPicker from '../components/LocationPicker';
 import OpusPolish, { useAiPolishAvailable } from '../components/OpusPolish';
 import { api, fmtDate } from '../api';
+import { pristinaDateOf, pristinaTimeOf } from '../lib/pristinaDate';
+import '../styles/mind.css';
+import '../styles/production.css';
 
 const SHOT_TYPES = [
   'Wide', 'Medium', 'Close-up', 'Detail', 'Portrait', 'Group', 'Product',
@@ -34,7 +42,7 @@ const BREAK_KINDS = [
 
 const CHARACTER_KINDS = [['principal', 'Principal'], ['extra', 'Extra']];
 
-// "6h 45m" — how a call sheet writes a duration.
+// "6h 45m": how a call sheet writes a duration.
 function fmtDuration(minutes) {
   const m = Math.max(0, Math.round(Number(minutes) || 0));
   const h = Math.floor(m / 60);
@@ -43,7 +51,7 @@ function fmtDuration(minutes) {
   return rest ? `${h}h ${rest}m` : `${h}h`;
 }
 
-// "30–40", "40+", "under 12" — the age a role is cast for, worded exactly as
+// "30 to 40", "40+", "under 12": the age a role is cast for, worded exactly as
 // the crew page and the PDFs word it.
 function fmtAgeRange(min, max) {
   const lo = min == null || min === '' ? null : Number(min);
@@ -52,10 +60,10 @@ function fmtAgeRange(min, max) {
   if (lo != null && hi == null) return `${lo}+`;
   if (lo == null && hi != null) return `under ${hi}`;
   if (lo === hi) return String(lo);
-  return `${lo}–${hi}`;
+  return `${lo} to ${hi}`;
 }
 
-// "2:05" — clip seconds as a running time.
+// "2:05": clip seconds as a running time.
 function fmtClip(seconds) {
   const s = Math.max(0, Math.round(Number(seconds) || 0));
   const m = Math.floor(s / 60);
@@ -68,8 +76,8 @@ function thumbFor(m) {
   return name ? `/shotlist-media/${name}` : null;
 }
 
-// The web copy is only ever a .webp when the upload was animated — stills are
-// always written as .jpg — so the flag needs no column of its own.
+// The web copy is only ever a .webp when the upload was animated; stills are
+// always written as .jpg, so the flag needs no column of its own.
 function isAnimated(m) {
   return /\.webp$/i.test((m && m.filename) || '');
 }
@@ -79,6 +87,31 @@ function dayLabel(day) {
   return `Day ${day.day_number || 1}`;
 }
 
+// A time range as the app shows it: the two times either side of an arrow.
+// Server labels arrive as "09:00 to 11:30", the public wording.
+function TimeRange({ label }) {
+  const parts = String(label || '').split(' to ');
+  if (parts.length !== 2) return <>{label}</>;
+  return <span className="prod-range">{parts[0]}<ArrowRight size={10} />{parts[1]}</span>;
+}
+
+// A stored UTC stamp shown on the Pristina clock.
+function pristinaStamp(instant) {
+  const date = pristinaDateOf(instant);
+  const time = pristinaTimeOf(instant);
+  if (!date) return '';
+  return `${fmtDate(date)} ${time || ''}`.trim();
+}
+
+// Save state as a dot: muted when saved, pulsing while saving, ember on failure.
+function SaveDot({ state }) {
+  const title = state === 'saving' ? 'Saving' : state === 'error' ? 'Save failed' : 'Saved';
+  return (
+    <span className="prod-save" title={title} aria-label={title}>
+      <span className={`db-dot ${state === 'saving' ? 'saving' : state === 'error' ? '' : 'muted'}`} />
+    </span>
+  );
+}
 // ── Small field primitives, matching the pitch builder's shapes ──────────────
 
 function Field({ label, children, style }) {
@@ -123,16 +156,15 @@ function SelectField({ label, value, onChange, options, style }) {
 function LockField({ label, value, onChange, hint }) {
   return (
     <Field label={label}>
-      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }} title={hint}>
         <input className="input" type="time" style={{ flex: 1 }} value={value || ''}
           onChange={e => onChange(e.target.value || null)} />
         {value && (
-          <button type="button" className="btn btn-ghost btn-sm" title="Unlock" onClick={() => onChange(null)}>
-            <Unlock size={13} />
+          <button type="button" className="db-iconbtn" title="Unlock" aria-label="Unlock" onClick={() => onChange(null)}>
+            <Unlock size={15} />
           </button>
         )}
       </div>
-      {hint && <p className="shotlist-hint">{hint}</p>}
     </Field>
   );
 }
@@ -145,6 +177,7 @@ function LockField({ label, value, onChange, hint }) {
 function LibraryModal({ shotlistId, library, onClose, onPick }) {
   const [chosen, setChosen] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
 
   function toggle(m) {
     setChosen(prev => (prev.some(x => x.id === m.id)
@@ -155,27 +188,34 @@ function LibraryModal({ shotlistId, library, onClose, onPick }) {
   async function use() {
     if (!chosen.length) return;
     setBusy(true);
+    setError('');
     try {
       await onPick(chosen);
       onClose();
     } catch (err) {
-      alert(err.message || 'Could not use those');
+      setError(err.message || 'Could not use those');
       setBusy(false);
     }
   }
 
   return (
-    <Overlay title="Choose from the library" onClose={onClose} dirty={chosen.length > 0}>
+    <Overlay
+      title={<ImageIcon size={16} />}
+      label="Library"
+      onClose={onClose}
+      dirty={chosen.length > 0}
+      footer={<>
+        <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" onClick={use} disabled={busy || !chosen.length} title="Use" aria-label="Use">
+          {busy ? <Loader2 size={15} className="pitch-spin" /> : <Check size={15} />}
+          {chosen.length ? ` ${chosen.length}` : ''}
+        </button>
+      </>}
+    >
       {library.length === 0 ? (
-        <p className="shotlist-hint" style={{ marginTop: 0 }}>
-          Nothing uploaded to this shot list yet. Upload from here or from the Library panel and it
-          becomes available everywhere.
-        </p>
+        <div className="db-empty"><ImageIcon size={24} /></div>
       ) : (
         <>
-          <p className="shotlist-hint" style={{ marginTop: 0 }}>
-            Tap to select. The same photo can be used in as many places as you like.
-          </p>
           <div className="shotlist-library-grid">
             {library.map(m => {
               const on = chosen.some(x => x.id === m.id);
@@ -196,18 +236,14 @@ function LibraryModal({ shotlistId, library, onClose, onPick }) {
           </div>
         </>
       )}
-      <div className="modal-footer">
-        <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-        <button className="btn btn-primary" onClick={use} disabled={busy || !chosen.length}>
-          {busy ? 'Adding…' : `Use ${chosen.length || ''}`.trim()}
-        </button>
-      </div>
+      {error && <p className="prod-error">{error}</p>}
     </Overlay>
   );
 }
 
 // The panel: everything uploaded to this shot list, with where it is used.
 function LibraryPanel({ shotlistId, library, onChanged }) {
+  const { notify, ask } = useDialogs();
   const inputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
 
@@ -227,7 +263,7 @@ function LibraryPanel({ shotlistId, library, onChanged }) {
       }
       await onChanged();
     } catch (err) {
-      alert(err.message || 'Upload failed');
+      notify('Upload failed', err.message || 'The image could not be uploaded.');
     } finally {
       setUploading(false);
     }
@@ -237,7 +273,7 @@ function LibraryPanel({ shotlistId, library, onChanged }) {
     try {
       await api.put(`/shotlists/${shotlistId}/library/${m.id}`, { label });
       await onChanged();
-    } catch (err) { alert(err.message || 'Could not rename it'); }
+    } catch (err) { notify('Not renamed', err.message || 'Could not rename it.'); }
   }
 
   async function remove(m) {
@@ -246,34 +282,33 @@ function LibraryPanel({ shotlistId, library, onChanged }) {
       await onChanged();
     } catch (err) {
       // Used somewhere: say where, and offer to take it out everywhere.
-      if (/used in/.test(err.message || '')
-        && confirm(`${err.message}\n\nDelete it everywhere it is used?`)) {
+      if (/used in/.test(err.message || '')) {
+        const ok = await ask({
+          title: 'Delete it everywhere it is used?',
+          message: err.message,
+          confirmLabel: 'Delete',
+          tone: 'danger',
+        });
+        if (!ok) return;
         try {
           await api.del(`/shotlists/${shotlistId}/library/${m.id}?detach=1`);
           await onChanged();
-        } catch (e2) { alert(e2.message || 'Could not remove it'); }
-      } else if (!/used in/.test(err.message || '')) {
-        alert(err.message || 'Could not remove it');
+        } catch (e2) { notify('Not removed', e2.message || 'Could not remove it.'); }
+      } else {
+        notify('Not removed', err.message || 'Could not remove it.');
       }
     }
   }
 
   return (
     <div className="card" style={{ padding: '12px 14px' }}>
-      <div className="shotlist-panel-head">
+      <div className="shotlist-panel-head" title="Library">
         <ImageIcon size={14} color="var(--accent)" />
-        <span>Library</span>
-        <button className="btn btn-secondary btn-sm" onClick={() => inputRef.current?.click()} disabled={uploading}>
-          {uploading ? <Loader2 size={13} className="pitch-spin" /> : <Plus size={13} />} Upload
+        <span className="db-count"><span className="db-dot" />{library.length}</span>
+        <button className="db-iconbtn" onClick={() => inputRef.current?.click()} disabled={uploading} title="Upload" aria-label="Upload">
+          {uploading ? <Loader2 size={15} className="pitch-spin" /> : <Plus size={15} />}
         </button>
       </div>
-
-      {library.length === 0 && (
-        <p className="shotlist-hint" style={{ marginTop: 0 }}>
-          Everything you upload for this shot list lands here. Upload once, then pick it as a scout
-          photo, an angle or a reference wherever you need it.
-        </p>
-      )}
 
       <div className="shotlist-library-grid">
         {library.map(m => (
@@ -286,10 +321,10 @@ function LibraryPanel({ shotlistId, library, onChanged }) {
                 <X size={10} />
               </button>
             </div>
-            <input className="input" defaultValue={m.label || ''} placeholder="Name it"
+            <input className="input" defaultValue={m.label || ''}
               onBlur={e => { if ((e.target.value || '') !== (m.label || '')) rename(m, e.target.value); }} />
-            <span className="shotlist-library-used">
-              {m.used_count ? `used ${m.used_count}×` : 'unused'}
+            <span className="shotlist-library-used" title={m.used_count ? `Used ${m.used_count}` : 'Unused'}>
+              {m.used_count ? <span className="db-count"><span className="db-dot" />{m.used_count}</span> : <span className="db-dot muted" />}
             </span>
           </div>
         ))}
@@ -304,6 +339,7 @@ function LibraryPanel({ shotlistId, library, onChanged }) {
 // ── Shot media picker (reference / angle) ────────────────────────────────────
 
 function MediaPicker({ shotlistId, shot, kind, library, onChanged }) {
+  const { notify } = useDialogs();
   const inputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   const [picking, setPicking] = useState(false);
@@ -334,7 +370,7 @@ function MediaPicker({ shotlistId, shot, kind, library, onChanged }) {
       }
       await onChanged();
     } catch (err) {
-      alert(err.message || 'Upload failed');
+      notify('Upload failed', err.message || 'The image could not be uploaded.');
     } finally {
       setUploading(false);
     }
@@ -344,19 +380,17 @@ function MediaPicker({ shotlistId, shot, kind, library, onChanged }) {
     try {
       await api.del(`/shotlists/${shotlistId}/media/${m.id}`);
       await onChanged();
-    } catch (err) { alert(err.message || 'Could not remove the image'); }
+    } catch (err) { notify('Not removed', err.message || 'Could not remove the image.'); }
   }
 
   return (
-    <Field label={kind === 'angle'
-      ? `Angle photos from the recce (${items.length})`
-      : `Reference photos (${items.length})`}>
+    <Field label={<>{kind === 'angle' ? 'Angles' : 'References'} <span className="db-count"><span className="db-dot" />{items.length}</span></>}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
         {items.map(m => (
           <div key={m.id} style={{ position: 'relative' }}>
             <img src={thumbFor(m)} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border-default)' }} />
             {isAnimated(m) && (
-              <span title="Animated — plays full size" style={{
+              <span title="Animated, plays full size" style={{
                 position: 'absolute', bottom: 2, left: 2, fontSize: '8px', fontWeight: 800,
                 letterSpacing: '0.06em', padding: '1px 3px', borderRadius: 3,
                 background: 'rgba(0,0,0,0.72)', color: '#fff',
@@ -437,13 +471,8 @@ function CharacterPicker({ characters, selected, onChange, onAddExtra }) {
   }
 
   return (
-    <Field label={`In this shot (${chosen.size})`}>
+    <Field label={<>Cast <span className="db-count"><span className="db-dot" />{chosen.size}</span></>}>
       <div className="shotlist-char-picker">
-        {characters.length === 0 && (
-          <span className="shotlist-hint" style={{ margin: 0 }}>
-            No cast yet — add characters in the panel on the right, or start with an extra.
-          </span>
-        )}
         {characters.map(c => (
           <button
             key={c.id}
@@ -451,7 +480,7 @@ function CharacterPicker({ characters, selected, onChange, onAddExtra }) {
             className={`shotlist-char-chip${chosen.has(c.id) ? ' on' : ''}`}
             onClick={() => toggle(c.id)}
             title={[c.name, fmtAgeRange(c.age_min, c.age_max) && `age ${fmtAgeRange(c.age_min, c.age_max)}`, c.performer]
-              .filter(Boolean).join(' — ')}
+              .filter(Boolean).join(' · ')}
           >
             {c.photo_thumb_filename || c.photo_filename ? (
               <img src={`/shotlist-media/${c.photo_thumb_filename || c.photo_filename}`} alt="" />
@@ -461,8 +490,8 @@ function CharacterPicker({ characters, selected, onChange, onAddExtra }) {
             {c.name}
           </button>
         ))}
-        <button type="button" className="shotlist-char-chip add" onClick={addExtra} disabled={adding}>
-          {adding ? <Loader2 size={10} className="pitch-spin" /> : <UserPlus size={10} />} Extra
+        <button type="button" className="shotlist-char-chip add" onClick={addExtra} disabled={adding} title="Add an extra" aria-label="Add an extra">
+          {adding ? <Loader2 size={10} className="pitch-spin" /> : <UserPlus size={10} />}
         </button>
       </div>
     </Field>
@@ -475,6 +504,7 @@ function CharacterPicker({ characters, selected, onChange, onAddExtra }) {
 // scene. Each photo can be named, which is what makes it useful on the day.
 
 function ScoutPicker({ shotlistId, scene, library, onChanged }) {
+  const { notify } = useDialogs();
   const inputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   const [picking, setPicking] = useState(false);
@@ -505,7 +535,7 @@ function ScoutPicker({ shotlistId, scene, library, onChanged }) {
       }
       await onChanged();
     } catch (err) {
-      alert(err.message || 'Upload failed');
+      notify('Upload failed', err.message || 'The image could not be uploaded.');
     } finally {
       setUploading(false);
     }
@@ -515,18 +545,18 @@ function ScoutPicker({ shotlistId, scene, library, onChanged }) {
     try {
       await api.put(`/shotlists/${shotlistId}/scene-media/${m.id}`, { label });
       await onChanged();
-    } catch (err) { alert(err.message || 'Could not rename the photo'); }
+    } catch (err) { notify('Not renamed', err.message || 'Could not rename the photo.'); }
   }
 
   async function remove(m) {
     try {
       await api.del(`/shotlists/${shotlistId}/scene-media/${m.id}`);
       await onChanged();
-    } catch (err) { alert(err.message || 'Could not remove the photo'); }
+    } catch (err) { notify('Not removed', err.message || 'Could not remove the photo.'); }
   }
 
   return (
-    <Field label={`Scout photos from the recce (${items.length})`}>
+    <Field label={<>Scout <span className="db-count"><span className="db-dot" />{items.length}</span></>}>
       <div className="shotlist-wardrobe">
         {items.map(m => (
           <div key={m.id} className="shotlist-wardrobe-item shotlist-scout-item">
@@ -544,7 +574,7 @@ function ScoutPicker({ shotlistId, scene, library, onChanged }) {
               </button>
             </div>
             <input
-              className="input" defaultValue={m.label || ''} placeholder="Name it"
+              className="input" defaultValue={m.label || ''}
               onBlur={e => { if ((e.target.value || '') !== (m.label || '')) rename(m, e.target.value); }}
             />
           </div>
@@ -564,10 +594,6 @@ function ScoutPicker({ shotlistId, scene, library, onChanged }) {
         <LibraryModal shotlistId={shotlistId} library={library || []}
           onClose={() => setPicking(false)} onPick={attach} />
       )}
-      <p className="shotlist-hint">
-        The location as the recce found it. Name them — “the approach”, “power here” — and the crew
-        sees them on the scene, above its shots.
-      </p>
     </Field>
   );
 }
@@ -601,7 +627,7 @@ function SortableShot({
         </span>
         <span className="shotlist-num">{shot.shot_number || index + 1}</span>
         <span style={{ fontSize: '13px', fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {shot.title || 'Untitled shot'}
+          {shot.title || ''}
         </span>
         {shot.locked_start_time && (
           <span className="shotlist-chip hard" title={`Locked to ${shot.locked_start_time}`}>
@@ -609,20 +635,20 @@ function SortableShot({
           </span>
         )}
         {shot.shot_type && <span className="shotlist-chip">{shot.shot_type}</span>}
-        <span className="shotlist-chip" title="Time to capture on the day">{shot.duration_minutes || 30}m</span>
+        <span className="shotlist-chip" title="Capture time">{shot.duration_minutes || 30}m</span>
         {shot.clip_length_seconds ? (
-          <span className="shotlist-chip" title="Length of the clip in the edit">{fmtClip(shot.clip_length_seconds)}</span>
+          <span className="shotlist-chip" title="Clip length"><Film size={9} /> {fmtClip(shot.clip_length_seconds)}</span>
         ) : null}
         {(shot.characters || []).length > 0 && (
           <span className="shotlist-chip" title={(shot.characters || []).map(c => c.name).join(', ')}>
             <Users size={9} /> {(shot.characters || []).length}
           </span>
         )}
-        <button className="btn-ghost" style={{ padding: '3px 5px' }} title="Duplicate shot"
+        <button className="db-iconbtn sm" title="Duplicate shot" aria-label="Duplicate shot"
           onClick={e => { e.stopPropagation(); onDuplicate(shot); }}>
           <Copy size={12} />
         </button>
-        <button className="btn-ghost" style={{ padding: '3px 5px', color: 'var(--danger)' }} title="Delete shot"
+        <button className="db-iconbtn sm danger" title="Delete shot" aria-label="Delete shot"
           onClick={e => { e.stopPropagation(); onDelete(shot); }}>
           <Trash2 size={12} />
         </button>
@@ -633,37 +659,37 @@ function SortableShot({
         <div className="shotlist-shot-body">
           <div className="shotlist-field-row">
             <TextField label="Shot number" value={shot.shot_number} onChange={v => onChange(shot.id, { shot_number: v })} />
-            <TextField label="Title" value={shot.title} onChange={v => onChange(shot.id, { title: v })} placeholder="e.g. Drone city view" />
+            <TextField label="Title" value={shot.title} onChange={v => onChange(shot.id, { title: v })} />
           </div>
 
           <TextField
             label="Description" value={shot.description} onChange={v => onChange(shot.id, { description: v })}
-            textarea polish aiEnabled={aiEnabled} placeholder="What happens in this shot"
+            textarea polish aiEnabled={aiEnabled}
           />
 
           <div className="shotlist-field-row">
             <SelectField
               label="Shot type" value={shot.shot_type || ''} onChange={v => onChange(shot.id, { shot_type: v })}
-              options={[{ value: '', label: '— none —' }, ...SHOT_TYPES.map(t => ({ value: t, label: t }))]}
+              options={[{ value: '', label: '' }, ...SHOT_TYPES.map(t => ({ value: t, label: t }))]}
             />
             {/* The two durations are different things and are labelled so they
                 can never be confused: one is time on the day, one is screen time. */}
-            <Field label="Capture time on the day (minutes)">
+            <Field label="Capture (min)">
               <input className="input" type="number" min="5" step="5" value={shot.duration_minutes || 30}
                 onChange={e => onChange(shot.id, { duration_minutes: Number(e.target.value) })} />
             </Field>
           </div>
 
           <div className="shotlist-field-row">
-            <Field label="Clip length in the edit (seconds)">
-              <input className="input" type="number" min="0" step="1" placeholder="e.g. 12"
+            <Field label="Clip (sec)">
+              <input className="input" type="number" min="0" step="1"
                 value={shot.clip_length_seconds == null ? '' : shot.clip_length_seconds}
                 onChange={e => onChange(shot.id, {
                   clip_length_seconds: e.target.value === '' ? null : Number(e.target.value),
                 })} />
             </Field>
             <LockField
-              label="Locked start time"
+              label={<Lock size={11} />}
               value={shot.locked_start_time}
               onChange={v => onChange(shot.id, { locked_start_time: v })}
               hint="A locked shot pins its scene to this minute, ahead of the light."
@@ -673,10 +699,10 @@ function SortableShot({
           <div className="shotlist-field-row">
             <SelectField
               label="Lens" value={shot.lens || ''} onChange={v => onChange(shot.id, { lens: v || null })}
-              options={[{ value: '', label: '— none —' }, ...LENSES.map(([value, label]) => ({ value, label }))]}
+              options={[{ value: '', label: '' }, ...LENSES.map(([value, label]) => ({ value, label }))]}
             />
-            <TextField label="Focal length or lens name" value={shot.lens_detail}
-              onChange={v => onChange(shot.id, { lens_detail: v })} placeholder="e.g. 35mm or Zeiss Supreme" />
+            <TextField label="Focal length" value={shot.lens_detail}
+              onChange={v => onChange(shot.id, { lens_detail: v })} />
           </div>
 
           <CharacterPicker
@@ -689,7 +715,7 @@ function SortableShot({
           <TextField label="Costume" value={shot.costume} onChange={v => onChange(shot.id, { costume: v })} />
           <TextField label="Props" value={shot.props} onChange={v => onChange(shot.id, { props: v })} />
           <TextField
-            label="Set design for this shot (deviation from the scene)" value={shot.set_design}
+            label="Set design" value={shot.set_design}
             onChange={v => onChange(shot.id, { set_design: v })} textarea rows={2}
           />
           <TextField
@@ -699,9 +725,9 @@ function SortableShot({
 
           {scenes.length > 1 && (
             <SelectField
-              label="Move to scene" value={String(shot.scene_id)}
+              label={<Clapperboard size={11} />} value={String(shot.scene_id)}
               onChange={v => onChange(shot.id, { scene_id: Number(v) })}
-              options={scenes.map(sc => ({ value: String(sc.id), label: `${sc.scene_number ? `${sc.scene_number}. ` : ''}${sc.title || 'Untitled scene'}` }))}
+              options={scenes.map(sc => ({ value: String(sc.id), label: `${sc.scene_number ? `${sc.scene_number}. ` : ''}${sc.title || ''}` }))}
             />
           )}
 
@@ -764,35 +790,37 @@ function SortableScene({
           <GripVertical size={15} />
         </span>
         <span className="shotlist-scene-num">{scene.scene_number || index + 1}</span>
-        <span className="shotlist-scene-title">{scene.title || 'Untitled scene'}</span>
-        <span className="shotlist-chip">{scene.space === 'interior' ? 'INT' : 'EXT'}</span>
+        <span className="shotlist-scene-title">{scene.title || ''}</span>
+        <span className="shotlist-chip" title={scene.space === 'interior' ? 'Interior' : 'Exterior'}>
+          {scene.space === 'interior' ? <Home size={9} /> : <Trees size={9} />}
+        </span>
         {lockTime && (
           <span className="shotlist-chip hard" title={scene.locked_start_time ? `Scene locked to ${lockTime}` : `A shot in this scene is locked to ${lockTime}`}>
             <Lock size={9} /> {lockTime}
           </span>
         )}
         {scene.light_window_label && (
-          <span className={`shotlist-chip${scene.light_window_hard ? ' hard' : ''}`} title={scene.light_window_range}>
-            {scene.light_window_label}
+          <span className={`shotlist-chip${scene.light_window_hard ? ' hard' : ''}`} title={`${scene.light_window_label} ${scene.light_window_range || ''}`.trim()}>
+            <Sun size={9} />
           </span>
         )}
-        <span className="shotlist-chip">{shots.length} shot{shots.length === 1 ? '' : 's'}</span>
+        <span className="shotlist-chip" title="Shots"><Film size={9} /> {shots.length}</span>
         {(scene.scout_photos || []).length > 0 && (
-          <span className="shotlist-chip" title="Scout photos from the recce">
+          <span className="shotlist-chip" title="Scout photos">
             <ImageIcon size={9} /> {scene.scout_photos.length}
           </span>
         )}
-        <span className="shotlist-chip" title="Capture time on the day">{fmtDuration(scene.duration_minutes)}</span>
+        <span className="shotlist-chip" title="Capture time"><Timer size={9} /> {fmtDuration(scene.duration_minutes)}</span>
         {scene.clip_seconds ? (
-          <span className="shotlist-chip" title="Clip length in the edit">
+          <span className="shotlist-chip" title="Clip length">
             <Film size={9} /> {fmtClip(scene.clip_seconds)}
           </span>
         ) : null}
-        <button className="btn-ghost" style={{ padding: '3px 5px' }} title="Duplicate scene with its shots"
+        <button className="db-iconbtn sm" title="Duplicate scene with its shots" aria-label="Duplicate scene"
           onClick={e => { e.stopPropagation(); onDuplicate(scene); }}>
           <Copy size={13} />
         </button>
-        <button className="btn-ghost" style={{ padding: '3px 5px', color: 'var(--danger)' }} title="Delete scene"
+        <button className="db-iconbtn sm danger" title="Delete scene" aria-label="Delete scene"
           onClick={e => { e.stopPropagation(); onDelete(scene); }}>
           <Trash2 size={13} />
         </button>
@@ -802,20 +830,19 @@ function SortableScene({
       {expanded && (
         <div className="shotlist-scene-body">
           <div className="shotlist-field-row">
-            <TextField label="Scene number" value={scene.scene_number} onChange={v => onChange(scene.id, { scene_number: v })} />
-            <TextField label="Scene title" value={scene.title} onChange={v => onChange(scene.id, { title: v })} placeholder="e.g. The Eagle" />
+            <TextField label="Number" value={scene.scene_number} onChange={v => onChange(scene.id, { scene_number: v })} />
+            <TextField label="Title" value={scene.title} onChange={v => onChange(scene.id, { title: v })} />
           </div>
 
           <TextField
-            label="Scene description" value={scene.description} onChange={v => onChange(scene.id, { description: v })}
+            label="Description" value={scene.description} onChange={v => onChange(scene.id, { description: v })}
             textarea rows={4} polish aiEnabled={aiEnabled}
-            placeholder="The screenplay for this scene: what happens, who is in it, how it plays"
           />
 
           <SelectField
             label="Location" value={scene.location_id == null ? '' : String(scene.location_id)}
             onChange={v => onChange(scene.id, { location_id: v ? Number(v) : null })}
-            options={[{ value: '', label: '— none —' }, ...locations.map(l => ({ value: String(l.id), label: l.name }))]}
+            options={[{ value: '', label: '' }, ...locations.map(l => ({ value: String(l.id), label: l.name }))]}
           />
 
           <div className="shotlist-field-row">
@@ -831,16 +858,16 @@ function SortableScene({
             />
           </div>
           {scene.light_window_range && (
-            <p className="shotlist-window-note">
-              <Sun size={11} /> {scene.light_window_label}: {scene.light_window_range}
-              {scene.light_window_approximate ? ' — pin this scene’s location for exact times' : ''}
+            <p className="shotlist-window-note" title={scene.light_window_approximate ? 'Approximate until the location is pinned' : undefined}>
+              <Sun size={11} /> <TimeRange label={scene.light_window_range} />
+              {scene.light_window_approximate && <span className="db-dot muted" />}
             </p>
           )}
 
           <div className="shotlist-field-row">
             {days.length > 1 ? (
               <SelectField
-                label="Shoot day" value={scene.day_id == null ? '' : String(scene.day_id)}
+                label={<CalendarDays size={11} />} value={scene.day_id == null ? '' : String(scene.day_id)}
                 onChange={v => onChange(scene.id, { day_id: v ? Number(v) : null })}
                 options={days.map(d => ({
                   value: String(d.id),
@@ -849,7 +876,7 @@ function SortableScene({
               />
             ) : <div style={{ flex: 1 }} />}
             <LockField
-              label="Locked start time"
+              label={<Lock size={11} />}
               value={scene.locked_start_time}
               onChange={v => onChange(scene.id, { locked_start_time: v })}
               hint="Immovable. It outranks the light window and the optimiser."
@@ -859,31 +886,30 @@ function SortableScene({
           {/* Set design lives on the scene: that is the room, the dressing, the
               world. A shot only records where it deviates. */}
           <TextField
-            label="Set design for this scene" value={scene.set_design}
+            label="Set design" value={scene.set_design}
             onChange={v => onChange(scene.id, { set_design: v })} textarea rows={3} polish aiEnabled={aiEnabled}
-            placeholder="How the space is dressed for this scene"
           />
 
-          {/* Company move into this scene — defaults come from the shot list. */}
+          {/* Company move into this scene; empty fields take the shot list defaults. */}
           <div className="shotlist-move-fields">
-            <div className="shotlist-move-title">
-              <Truck size={12} /> Company move into this scene
+            <div className="shotlist-move-title" title="Company move into this scene">
+              <Truck size={12} />
             </div>
             <div className="shotlist-field-row">
-              <Field label="Wrap out (minutes)">
+              <Field label="Wrap out (min)">
                 <input
                   className="input" type="number" min="0" step="5"
-                  placeholder={`Default ${shotlist.move_wrap_minutes ?? 20}`}
+                  placeholder={String(shotlist.move_wrap_minutes ?? 20)}
                   value={scene.move_wrap_minutes == null ? '' : scene.move_wrap_minutes}
                   onChange={e => onChange(scene.id, {
                     move_wrap_minutes: e.target.value === '' ? null : Number(e.target.value),
                   })}
                 />
               </Field>
-              <Field label="Set up on arrival (minutes)">
+              <Field label="Set up (min)">
                 <input
                   className="input" type="number" min="0" step="5"
-                  placeholder={`Default ${shotlist.move_setup_minutes ?? 25}`}
+                  placeholder={String(shotlist.move_setup_minutes ?? 25)}
                   value={scene.move_setup_minutes == null ? '' : scene.move_setup_minutes}
                   onChange={e => onChange(scene.id, {
                     move_setup_minutes: e.target.value === '' ? null : Number(e.target.value),
@@ -895,30 +921,23 @@ function SortableScene({
               label="Depart at"
               value={scene.move_locked_start_time}
               onChange={v => onChange(scene.id, { move_locked_start_time: v })}
-              hint="When the unit actually travels. Leave empty and it leaves as soon as the previous scene ends — set it when that scene did not need the whole crew, like a dawn drone shot."
+              hint="When the unit actually travels. Empty leaves as soon as the previous scene ends."
             />
-            <p className="shotlist-hint">
-              An override sticks until you clear it. Empty means the shot list defaults; travel time is added on top.
-            </p>
           </div>
 
-          <TextField label="Scene notes" value={scene.notes} onChange={v => onChange(scene.id, { notes: v })} textarea rows={2} />
+          <TextField label="Notes" value={scene.notes} onChange={v => onChange(scene.id, { notes: v })} textarea rows={2} />
 
           <ScoutPicker shotlistId={shotlistId} scene={scene} library={library} onChanged={onReload} />
 
           {/* Coverage */}
           <div className="shotlist-shots-header">
-            <span>Shots</span>
-            <button className="btn btn-secondary btn-sm" onClick={() => onAddShot(scene)}>
-              <Plus size={13} /> Add shot
+            <span title="Shots"><Film size={13} /></span>
+            <button className="db-iconbtn" onClick={() => onAddShot(scene)} title="Add shot" aria-label="Add shot">
+              <Plus size={15} />
             </button>
           </div>
 
-          {shots.length === 0 ? (
-            <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '0 0 8px' }}>
-              No shots yet. Add the coverage for this scene.
-            </p>
-          ) : (
+          {shots.length === 0 ? null : (
             <DndContext sensors={shotSensors} collisionDetection={closestCenter} onDragEnd={handleShotDragEnd}>
               <SortableContext items={shots.map(s => `shot-${s.id}`)} strategy={verticalListSortingStrategy}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -954,10 +973,10 @@ function SortableScene({
 
 // ── Shoot days ───────────────────────────────────────────────────────────────
 
-function DayTabs({ days, activeDayId, counts, onSelect, onAdd, onEdit }) {
+function DayTabs({ days, activeDayId, counts, onSelect, onAdd, onEdit, drift }) {
   return (
     <div className="shotlist-day-tabs">
-      {days.map(d => (
+      {days.map((d, i) => (
         <button
           key={d.id}
           className={`shotlist-day-tab${d.id === activeDayId ? ' on' : ''}`}
@@ -965,8 +984,9 @@ function DayTabs({ days, activeDayId, counts, onSelect, onAdd, onEdit }) {
         >
           <CalendarDays size={12} />
           <span className="shotlist-day-tab-name">{dayLabel(d)}</span>
-          <span className="shotlist-day-tab-date">{d.shoot_date ? fmtDate(d.shoot_date) : 'No date'}</span>
-          <span className="shotlist-chip">{counts.get(d.id) || 0}</span>
+          {d.shoot_date && <span className="shotlist-day-tab-date">{fmtDate(d.shoot_date)}</span>}
+          {i === 0 && drift}
+          <span className="shotlist-chip" title="Scenes">{counts.get(d.id) || 0}</span>
           {d.id === activeDayId && (
             <span
               className="shotlist-day-tab-edit" title="Day settings"
@@ -977,14 +997,15 @@ function DayTabs({ days, activeDayId, counts, onSelect, onAdd, onEdit }) {
           )}
         </button>
       ))}
-      <button className="btn btn-ghost btn-sm" onClick={onAdd} title="Add a shoot day">
-        <Plus size={13} /> Day
+      <button className="db-iconbtn" onClick={onAdd} title="Add a shoot day" aria-label="Add a shoot day">
+        <Plus size={15} />
       </button>
     </div>
   );
 }
 
 function DayModal({ shotlistId, day, sceneCount, canDelete, onClose, onSaved }) {
+  const { ask } = useDialogs();
   const [draft, setDraft] = useState({ ...day });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -1008,7 +1029,8 @@ function DayModal({ shotlistId, day, sceneCount, canDelete, onClose, onSaved }) 
   }
 
   async function remove() {
-    if (!confirm(`Delete ${dayLabel(day)}?`)) return;
+    const ok = await ask({ title: `Delete ${dayLabel(day)}?`, confirmLabel: 'Delete', tone: 'danger' });
+    if (!ok) return;
     setSaving(true); setError('');
     try {
       await api.del(`/shotlists/${shotlistId}/days/${day.id}`);
@@ -1021,64 +1043,63 @@ function DayModal({ shotlistId, day, sceneCount, canDelete, onClose, onSaved }) 
   }
 
   return (
-    <Overlay title={`${dayLabel(day)} settings`} onClose={onClose}>
+    <Overlay
+      title={dayLabel(day)}
+      onClose={onClose}
+      footer={<>
+        {canDelete && (
+          <button className="db-iconbtn lg danger" style={{ marginRight: 'auto' }} onClick={remove}
+            disabled={saving} title="Delete this day" aria-label="Delete this day">
+            <Trash2 size={16} />
+          </button>
+        )}
+        <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" onClick={save} disabled={saving}>
+          {saving ? 'Saving...' : 'Save'}
+        </button>
+      </>}
+    >
       <div style={{ display: 'flex', gap: '10px' }}>
         <div className="form-row" style={{ width: 90 }}>
-          <label className="form-label">Day number</label>
+          <label className="form-label">Day</label>
           <input className="input" type="number" min="1" value={draft.day_number || 1}
             onChange={e => setDraft({ ...draft, day_number: Number(e.target.value) })} />
         </div>
         <div className="form-row" style={{ flex: 1 }}>
           <label className="form-label">Shoot date</label>
-          <input className="input" type="date" value={draft.shoot_date || ''}
-            onChange={e => setDraft({ ...draft, shoot_date: e.target.value || null })} />
+          <DateField value={draft.shoot_date || ''}
+            onChange={v => setDraft({ ...draft, shoot_date: v || null })} />
         </div>
       </div>
       <div style={{ display: 'flex', gap: '10px' }}>
         <div className="form-row" style={{ flex: 1 }}>
-          <label className="form-label">Earliest start</label>
+          <label className="form-label" title="When the day may begin. Crew call is derived from the first shot.">Earliest start</label>
           <input className="input" type="time" value={draft.crew_call || ''}
             onChange={e => setDraft({ ...draft, crew_call: e.target.value || null })} />
-          <p className="shotlist-hint">
-            When the day may begin. Crew call is derived from the first shot, not from this.
-          </p>
         </div>
         <div className="form-row" style={{ width: 150 }}>
-          <label className="form-label">Crew call offset (min)</label>
+          <label className="form-label" title="Crew call sits this far before the first shot.">Call offset (min)</label>
           <input className="input" type="number" min="0" step="5" value={draft.crew_call_offset_minutes ?? 30}
             onChange={e => setDraft({ ...draft, crew_call_offset_minutes: Number(e.target.value) })} />
-          <p className="shotlist-hint">Crew call sits this far before the first shot.</p>
         </div>
       </div>
       <div className="form-row">
-        <label className="form-label">Day notes</label>
+        <label className="form-label">Notes</label>
         <textarea className="input" rows={2} value={draft.notes || ''}
           onChange={e => setDraft({ ...draft, notes: e.target.value })} />
       </div>
-      {error && <p style={{ color: 'var(--danger)', fontSize: '12px' }}>{error}</p>}
-      <div className="modal-footer">
-        {canDelete && (
-          <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} onClick={remove}
-            disabled={saving} title={sceneCount ? 'Move this day’s scenes elsewhere first' : 'Delete this day'}>
-            <Trash2 size={13} /> Delete day
-          </button>
-        )}
-        <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-        <button className="btn btn-primary" onClick={save} disabled={saving}>
-          {saving ? 'Saving…' : 'Save day'}
-        </button>
-      </div>
+      {error && <p className="prod-error">{error}</p>}
     </Overlay>
   );
 }
 
-// The shape of the day in numbers — the same figures the crew page and the
+// The shape of the day in numbers: the same figures the crew page and the
 // call sheet print.
 function DayTotals({ day, totals, warnings }) {
   const cells = [
-    ['Crew call', totals.crew_call || '—', 'strong'],
-    ['First shot', totals.first_shot_call || '—'],
-    ['Wrap', totals.wrap || '—'],
+    ['Crew call', totals.crew_call || '', 'strong'],
+    ['First shot', totals.first_shot_call || ''],
+    ['Wrap', totals.wrap || ''],
     ['On set', fmtDuration(totals.on_set_minutes)],
     ['Shooting', fmtDuration(totals.shooting_minutes)],
     ['Travel', `${fmtDuration(totals.travel_minutes)}${totals.travel_km ? ` · ${totals.travel_km} km` : ''}`],
@@ -1091,17 +1112,17 @@ function DayTotals({ day, totals, warnings }) {
         <CalendarDays size={13} color="var(--accent)" />
         <span>{dayLabel(day)}{day && day.shoot_date ? ` · ${fmtDate(day.shoot_date)}` : ''}</span>
         {totals.locked_count > 0 && (
-          <span className="shotlist-chip hard"><Lock size={9} /> {totals.locked_count} locked</span>
+          <span className="shotlist-chip hard" title="Locked"><Lock size={9} /> {totals.locked_count}</span>
         )}
         {totals.move_count > 0 && (
-          <span className="shotlist-chip"><Truck size={9} /> {totals.move_count} move{totals.move_count === 1 ? '' : 's'}</span>
+          <span className="shotlist-chip" title="Company moves"><Truck size={9} /> {totals.move_count}</span>
         )}
       </div>
       <div className="shotlist-day-totals-grid">
         {cells.map(([k, v, strong]) => (
           <div key={k} className={`shotlist-total${strong ? ' strong' : ''}`}>
             <span className="shotlist-total-k">{k}</span>
-            <span className="shotlist-total-v">{v}</span>
+            <span className="shotlist-total-v">{v || <span className="db-dot muted" />}</span>
           </div>
         ))}
       </div>
@@ -1119,7 +1140,7 @@ function DayTotals({ day, totals, warnings }) {
 // The day as it actually runs: scenes, the company moves between them and the
 // breaks, on one clock.
 // A company move is generated between two scenes rather than stored as a row,
-// but it is still an event you should be able to click and set — so the
+// but it is still an event you should be able to click and set, so the
 // timeline row opens an editor for it. Everything it holds is editable: when
 // the unit leaves, how long the wrap, the travel and the set up take.
 function MoveModal({ shotlistId, move, onClose, onSaved }) {
@@ -1152,11 +1173,18 @@ function MoveModal({ shotlistId, move, onClose, onSaved }) {
   }
 
   return (
-    <Overlay title={`Company move to ${move.to_name || 'the next location'}`} onClose={onClose}>
-      <p className="shotlist-hint" style={{ marginTop: 0 }}>
-        {move.from_name || 'The previous location'} → {move.to_name || 'the next location'}
-        {move.travel_km ? ` · ${move.travel_km} km apart` : ''}
-      </p>
+    <Overlay
+      title={<span className="prod-range"><Truck size={15} /> {move.from_name || ''}<ArrowRight size={13} />{move.to_name || ''}</span>}
+      label="Company move"
+      onClose={onClose}
+      footer={<>
+        <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" onClick={save} disabled={saving}>
+          {saving ? 'Saving...' : 'Save'}
+        </button>
+      </>}
+    >
+      {move.travel_km ? <p className="prod-date" style={{ marginTop: 0 }}>{move.travel_km} km</p> : null}
 
       <div style={{ display: 'flex', gap: '10px' }}>
         <div className="form-row" style={{ flex: 1 }}>
@@ -1165,9 +1193,19 @@ function MoveModal({ shotlistId, move, onClose, onSaved }) {
             onChange={e => setDraft({ ...draft, move_wrap_minutes: e.target.value === '' ? null : Number(e.target.value) })} />
         </div>
         <div className="form-row" style={{ flex: 1 }}>
-          <label className="form-label">Travel (min)</label>
-          <input className="input" type="number" min="0" step="5" value={travelShown ?? ''}
-            onChange={e => setDraft({ ...draft, move_travel_minutes: e.target.value === '' ? null : Number(e.target.value) })} />
+          <label className="form-label" title={`Distance estimate ${move.travel_computed_minutes ?? move.travel_minutes} min`}>
+            Travel (min) {draft.move_travel_minutes != null && <span className="db-dot" title="Set by hand" />}
+          </label>
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            <input className="input" type="number" min="0" step="5" value={travelShown ?? ''}
+              onChange={e => setDraft({ ...draft, move_travel_minutes: e.target.value === '' ? null : Number(e.target.value) })} />
+            {draft.move_travel_minutes != null && (
+              <button type="button" className="db-iconbtn" title="Use the estimate" aria-label="Use the estimate"
+                onClick={() => setDraft({ ...draft, move_travel_minutes: null })}>
+                <RotateCcw size={15} />
+              </button>
+            )}
+          </div>
         </div>
         <div className="form-row" style={{ flex: 1 }}>
           <label className="form-label">Set up (min)</label>
@@ -1176,51 +1214,26 @@ function MoveModal({ shotlistId, move, onClose, onSaved }) {
         </div>
       </div>
 
-      <p className="shotlist-hint" style={{ marginTop: 0 }}>
-        {draft.move_travel_minutes == null
-          ? `Travel is estimated from the distance (${move.travel_computed_minutes ?? move.travel_minutes} min). Type over it if the road says otherwise.`
-          : `Travel is set by hand. The distance estimate is ${move.travel_computed_minutes ?? move.travel_minutes} min.`}
-        {draft.move_travel_minutes != null && (
-          <>
-            {' '}
-            <button type="button" className="btn-ghost" style={{ padding: 0, textDecoration: 'underline' }}
-              onClick={() => setDraft({ ...draft, move_travel_minutes: null })}>
-              Use the estimate
-            </button>
-          </>
-        )}
-      </p>
-
       <div className="form-row">
-        <label className="form-label">Depart at</label>
+        <label className="form-label" title="Empty leaves the moment the previous scene ends.">Depart at</label>
         <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
           <input className="input" type="time" style={{ flex: 1 }} value={draft.move_locked_start_time || ''}
             onChange={e => setDraft({ ...draft, move_locked_start_time: e.target.value || null })} />
           {draft.move_locked_start_time && (
-            <button type="button" className="btn btn-ghost btn-sm" title="Leave as soon as the previous scene ends"
+            <button type="button" className="db-iconbtn" title="Leave as soon as the previous scene ends" aria-label="Unlock"
               onClick={() => setDraft({ ...draft, move_locked_start_time: null })}>
-              <Unlock size={13} />
+              <Unlock size={15} />
             </button>
           )}
         </div>
-        <p className="shotlist-hint">
-          Empty means the unit leaves the moment the previous scene ends. Set it when that scene did not
-          need the whole crew.
-        </p>
       </div>
 
-      <div className="shotlist-move-total">
-        <span>Total on the day</span>
+      <div className="shotlist-move-total" title="Total on the day">
+        <Timer size={13} />
         <b>{fmtDuration(total)}</b>
       </div>
 
-      {error && <p style={{ color: 'var(--danger)', fontSize: '12px' }}>{error}</p>}
-      <div className="modal-footer">
-        <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-        <button className="btn btn-primary" onClick={save} disabled={saving}>
-          {saving ? 'Saving…' : 'Save move'}
-        </button>
-      </div>
+      {error && <p className="prod-error">{error}</p>}
     </Overlay>
   );
 }
@@ -1231,10 +1244,8 @@ function TimelinePreview({ shotlistId, timeline, onChanged }) {
   if (!items.length) return null;
   return (
     <div className="card" style={{ padding: '12px 14px' }}>
-      <div className="shotlist-panel-head">
+      <div className="shotlist-panel-head" title="Day timeline">
         <Timer size={14} color="var(--accent)" />
-        <span>Day timeline</span>
-        <span className="shotlist-hint" style={{ margin: 0 }}>Tap a company move to set its times</span>
       </div>
       <div className="shotlist-timeline">
         {items.map((it, i) => {
@@ -1247,16 +1258,14 @@ function TimelinePreview({ shotlistId, timeline, onChanged }) {
                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setEditingMove(it); } }}>
                 <span className="shotlist-tl-time">{it.start_label}</span>
                 <Truck size={12} />
-                <span className="shotlist-tl-title">
-                  Company move{it.to_name ? ` to ${it.to_name}` : ''}
-                </span>
+                <span className="shotlist-tl-title">{it.to_name || ''}</span>
                 {it.locked && (
-                  <span className="shotlist-chip hard"><Lock size={9} /> departs {it.locked_time}</span>
+                  <span className="shotlist-chip hard" title="Departs"><Lock size={9} /> {it.locked_time}</span>
                 )}
-                <span className="shotlist-tl-note">
-                  wrap {it.wrap_minutes}m + travel {it.travel_minutes}m{it.travel_overridden ? '*' : ''} + set up {it.setup_minutes}m = {fmtDuration(it.duration_minutes)}
-                  {it.overridden ? ' (override)' : ''}
-                  {it.hold_minutes > 0 ? ` · unit holds ${fmtDuration(it.hold_minutes)} first` : ''}
+                {(it.overridden || it.travel_overridden) && <span className="db-dot" title="Set by hand" />}
+                <span className="shotlist-tl-note"
+                  title={`Wrap ${it.wrap_minutes}m, travel ${it.travel_minutes}m, set up ${it.setup_minutes}m${it.hold_minutes > 0 ? `, hold ${fmtDuration(it.hold_minutes)}` : ''}`}>
+                  {fmtDuration(it.duration_minutes)}
                 </span>
               </div>
             );
@@ -1267,14 +1276,14 @@ function TimelinePreview({ shotlistId, timeline, onChanged }) {
                 <span className="shotlist-tl-time">{it.start_label}</span>
                 <Coffee size={12} />
                 <span className="shotlist-tl-title">{it.label}</span>
-                {it.fixed && <span className="shotlist-chip hard"><Lock size={9} /> fixed</span>}
+                {it.fixed && <span className="shotlist-chip hard" title="Fixed"><Lock size={9} /></span>}
                 {/* The side only means something where a move exists. */}
                 {it.placement_applies && (
-                  <span className="shotlist-chip">
-                    {it.placement === 'before_move' ? 'before the move' : 'after the move'}
+                  <span className="shotlist-chip" title={it.placement === 'before_move' ? 'Before the move' : 'After the move'}>
+                    {it.placement === 'before_move' ? <><Truck size={9} /><ArrowRight size={9} /></> : <><ArrowRight size={9} /><Truck size={9} /></>}
                   </span>
                 )}
-                {it.end_of_day && <span className="shotlist-chip">end of day</span>}
+                {it.end_of_day && <span className="shotlist-chip" title="End of day"><CalendarDays size={9} /></span>}
                 <span className="shotlist-tl-note">
                   {it.location_name ? `${it.location_name} · ` : ''}{fmtDuration(it.duration_minutes)}
                 </span>
@@ -1285,13 +1294,13 @@ function TimelinePreview({ shotlistId, timeline, onChanged }) {
             <div key={`s${i}`} className="shotlist-tl-row scene">
               <span className="shotlist-tl-time">{it.start_label}</span>
               <span className="shotlist-scene-num">{it.scene_number}</span>
-              <span className="shotlist-tl-title">{it.title || 'Untitled scene'}</span>
+              <span className="shotlist-tl-title">{it.title || ''}</span>
               {it.locked && <span className="shotlist-chip hard"><Lock size={9} /> {it.locked_time}</span>}
               {it.light_window_label && (
-                <span className={`shotlist-chip${it.light_window_hard ? ' hard' : ''}`}>{it.light_window_label}</span>
+                <span className={`shotlist-chip${it.light_window_hard ? ' hard' : ''}`} title={it.light_window_label}><Sun size={9} /></span>
               )}
               <span className="shotlist-tl-note">
-                {it.shot_count} shot{it.shot_count === 1 ? '' : 's'} · {fmtDuration(it.duration_minutes)} · ends {it.end_label}
+                <span title="Shots"><Film size={9} /> {it.shot_count}</span> · {fmtDuration(it.duration_minutes)} · <TimeRange label={`${it.start_label} to ${it.end_label}`} />
               </span>
             </div>
           );
@@ -1313,9 +1322,10 @@ function TimelinePreview({ shotlistId, timeline, onChanged }) {
 // ── Meals and breaks ─────────────────────────────────────────────────────────
 
 function BreaksPanel({ shotlistId, dayId, breaks, scenes, timeline, onChanged }) {
+  const { notify, ask } = useDialogs();
   const [busy, setBusy] = useState(false);
 
-  // Which scenes are arrived at by a company move — the only ones where the
+  // Which scenes are arrived at by a company move: the only ones where the
   // side of the break means anything.
   const movesByScene = new Map(
     ((timeline && timeline.items) || []).filter(i => i.kind === 'move').map(i => [i.scene_id, i])
@@ -1340,7 +1350,7 @@ function BreaksPanel({ shotlistId, dayId, breaks, scenes, timeline, onChanged })
         sort_order: sortOrder,
       });
       await onChanged();
-    } catch (err) { alert(err.message || 'Could not add the break'); }
+    } catch (err) { notify('Break not added', err.message || 'Could not add the break.'); }
     finally { setBusy(false); }
   }
 
@@ -1348,45 +1358,40 @@ function BreaksPanel({ shotlistId, dayId, breaks, scenes, timeline, onChanged })
     try {
       await api.put(`/shotlists/${shotlistId}/breaks/${b.id}`, body);
       await onChanged();
-    } catch (err) { alert(err.message || 'Could not save the break'); }
+    } catch (err) { notify('Break not saved', err.message || 'Could not save the break.'); }
   }
 
   async function remove(b) {
-    if (!confirm(`Remove "${b.label}"?`)) return;
+    const ok = await ask({ title: `Remove "${b.label}"?`, confirmLabel: 'Remove', tone: 'danger' });
+    if (!ok) return;
     try {
       await api.del(`/shotlists/${shotlistId}/breaks/${b.id}`);
       await onChanged();
-    } catch (err) { alert(err.message || 'Could not remove the break'); }
+    } catch (err) { notify('Break not removed', err.message || 'Could not remove the break.'); }
   }
 
   const positions = [
     ...scenes.map((s, i) => ({
       value: String(i),
-      label: `At ${s.scene_number ? `${s.scene_number}. ` : ''}${s.title || 'scene'}`,
+      label: `${s.scene_number ? `${s.scene_number}. ` : ''}${s.title || ''}`,
     })),
-    { value: String(END_OF_DAY), label: 'End of the day' },
+    { value: String(END_OF_DAY), label: 'End of day' },
   ];
 
   return (
     <div className="card" style={{ padding: '12px 14px' }}>
-      <div className="shotlist-panel-head">
+      <div className="shotlist-panel-head" title="Meals and breaks">
         <Coffee size={14} color="var(--accent)" />
-        <span>Meals and breaks</span>
-        <button className="btn btn-ghost btn-sm" onClick={() => add(END_OF_DAY)} disabled={busy || !dayId}
-          title="A wrap meal or a dinner after the last scene">
-          <Plus size={13} /> End of day
+        <span className="db-count"><span className="db-dot" />{breaks.length}</span>
+        <button className="db-iconbtn" onClick={() => add(END_OF_DAY)} disabled={busy || !dayId}
+          title="End of day meal" aria-label="End of day meal">
+          <CalendarDays size={15} />
         </button>
-        <button className="btn btn-secondary btn-sm" onClick={() => add(Math.ceil(scenes.length / 2))}
-          disabled={busy || !dayId}>
-          <Plus size={13} /> Add
+        <button className="db-iconbtn" onClick={() => add(Math.ceil(scenes.length / 2))}
+          disabled={busy || !dayId} title="Add a break" aria-label="Add a break">
+          <Plus size={15} />
         </button>
       </div>
-
-      {breaks.length === 0 && (
-        <p className="shotlist-hint" style={{ marginTop: 0 }}>
-          Nothing scheduled. A day over six hours from crew call is flagged until it has a meal.
-        </p>
-      )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {breaks.map(b => (
@@ -1397,10 +1402,9 @@ function BreaksPanel({ shotlistId, dayId, breaks, scenes, timeline, onChanged })
                 {BREAK_KINDS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </select>
               <input className="input" style={{ flex: 1, minWidth: 0 }} value={b.label || ''}
-                onChange={e => patch(b, { label: e.target.value })} placeholder="Label" />
-              <button className="btn-ghost" style={{ padding: '4px 6px', color: 'var(--danger)' }}
-                title="Remove" onClick={() => remove(b)}>
-                <Trash2 size={12} />
+                onChange={e => patch(b, { label: e.target.value })} />
+              <button className="db-iconbtn danger" title="Remove" aria-label="Remove" onClick={() => remove(b)}>
+                <Trash2 size={14} />
               </button>
             </div>
             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
@@ -1408,12 +1412,12 @@ function BreaksPanel({ shotlistId, dayId, breaks, scenes, timeline, onChanged })
                 title="A fixed time is immovable; empty lets the break float in the running order"
                 onChange={e => patch(b, { start_time: e.target.value || null })} />
               {b.start_time ? (
-                <button className="btn btn-ghost btn-sm" title="Let this break float again"
+                <button className="db-iconbtn" title="Let this break float again" aria-label="Unlock"
                   onClick={() => patch(b, { start_time: null })}>
-                  <Unlock size={12} />
+                  <Unlock size={14} />
                 </button>
               ) : (
-                <span className="shotlist-chip">floats</span>
+                <span className="db-dot muted" title="Floats" />
               )}
               <input className="input" type="number" min="5" step="5" style={{ width: 72 }}
                 value={b.duration_minutes || 30} title="Minutes"
@@ -1432,19 +1436,13 @@ function BreaksPanel({ shotlistId, dayId, breaks, scenes, timeline, onChanged })
                 value={b.placement === 'before_move' ? 'before_move' : 'after_move'}
                 onChange={e => patch(b, { placement: e.target.value })}>
                 <option value="after_move">
-                  After the move — eaten at {movesByScene.get(sceneAt(b.sort_order || 0)?.id)?.to_name || 'the new location'}
+                  After the move, at {movesByScene.get(sceneAt(b.sort_order || 0)?.id)?.to_name || 'the new location'}
                 </option>
                 <option value="before_move">
-                  Before the move — eaten where the crew already is
+                  Before the move
                 </option>
               </select>
-            ) : (
-              <p className="shotlist-hint" style={{ marginTop: 0 }}>
-                {(b.sort_order || 0) >= scenes.length
-                  ? 'Eaten where the day finishes.'
-                  : 'No company move here, so there is no side to choose — it sits before the scene.'}
-              </p>
-            )}
+            ) : null}
           </div>
         ))}
       </div>
@@ -1458,6 +1456,7 @@ function BreaksPanel({ shotlistId, dayId, breaks, scenes, timeline, onChanged })
 // the photos hang off the character id.
 
 function WardrobePicker({ shotlistId, character, library, onChanged }) {
+  const { notify } = useDialogs();
   const inputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   const [picking, setPicking] = useState(false);
@@ -1488,7 +1487,7 @@ function WardrobePicker({ shotlistId, character, library, onChanged }) {
       }
       await onChanged();
     } catch (err) {
-      alert(err.message || 'Upload failed');
+      notify('Upload failed', err.message || 'The image could not be uploaded.');
     } finally {
       setUploading(false);
     }
@@ -1498,19 +1497,19 @@ function WardrobePicker({ shotlistId, character, library, onChanged }) {
     try {
       await api.put(`/shotlists/${shotlistId}/character-media/${m.id}`, { label });
       await onChanged();
-    } catch (err) { alert(err.message || 'Could not rename the look'); }
+    } catch (err) { notify('Not renamed', err.message || 'Could not rename the look.'); }
   }
 
   async function remove(m) {
     try {
       await api.del(`/shotlists/${shotlistId}/character-media/${m.id}`);
       await onChanged();
-    } catch (err) { alert(err.message || 'Could not remove the photo'); }
+    } catch (err) { notify('Not removed', err.message || 'Could not remove the photo.'); }
   }
 
   return (
     <div className="form-row">
-      <label className="form-label">Wardrobe ({items.length})</label>
+      <label className="form-label">Wardrobe <span className="db-count"><span className="db-dot" />{items.length}</span></label>
       <div className="shotlist-wardrobe">
         {items.map(m => (
           <div key={m.id} className="shotlist-wardrobe-item">
@@ -1524,7 +1523,7 @@ function WardrobePicker({ shotlistId, character, library, onChanged }) {
               </button>
             </div>
             <input
-              className="input" defaultValue={m.label || ''} placeholder="Name this look"
+              className="input" defaultValue={m.label || ''}
               onBlur={e => { if ((e.target.value || '') !== (m.label || '')) rename(m, e.target.value); }}
             />
           </div>
@@ -1546,33 +1545,31 @@ function WardrobePicker({ shotlistId, character, library, onChanged }) {
         <LibraryModal shotlistId={shotlistId} library={library || []}
           onClose={() => setPicking(false)} onPick={attach} />
       )}
-      <p className="shotlist-hint">
-        Fittings and continuity stills. They travel with the part into every scene it appears in.
-      </p>
     </div>
   );
 }
 
 // ── Characters ───────────────────────────────────────────────────────────────
 
-// The casting agency's link. A separate publication from the crew link — an
-// agency gets the cast grid and nothing else — and it can be rotated to cut
+// The casting agency's link. A separate publication from the crew link (an
+// agency gets the cast grid and nothing else), and it can be rotated to cut
 // off a link that has travelled further than intended.
 function CastingShare({ shotlistId, shotlist, base, onChanged }) {
+  const { notify, ask } = useDialogs();
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const shared = shotlist.casting_status === 'published';
   const url = shotlist.casting_slug ? `${base.base}/c/${shotlist.casting_slug}` : null;
 
-  async function act(path, confirmText) {
-    if (confirmText && !confirm(confirmText)) return;
+  async function act(path, question) {
+    if (question && !(await ask(question))) return;
     setBusy(true);
     try {
       await api.post(`/shotlists/${shotlistId}/casting/${path}`, {});
       await onChanged();
     } catch (err) {
-      alert(err.message || 'Could not update the casting link');
+      notify('Casting link not updated', err.message || 'Could not update the casting link.');
     } finally {
       setBusy(false);
     }
@@ -1596,46 +1593,33 @@ function CastingShare({ shotlistId, shotlist, base, onChanged }) {
 
   return (
     <div className="shotlist-casting-share">
-      <div className="shotlist-casting-head">
+      <div className="shotlist-casting-head" title="Casting link">
         <Share2 size={12} />
-        <span>Casting link</span>
-        {shared && <span className="shotlist-chip">shared</span>}
-      </div>
-
-      {shared && url ? (
-        <>
-          <div className="shotlist-casting-url">
-            <a href={url} target="_blank" rel="noreferrer">{url}</a>
-            <button className="btn-ghost" style={{ padding: '3px 5px', color: copied ? 'var(--success)' : undefined }}
-              onClick={copy} title={`Copy the casting link (${base.host})`}>
-              {copied ? <Check size={12} /> : <Link2 size={12} />}
+        {shared && <span className="db-dot ink" title="Shared" />}
+        {shared && url ? (
+          <span style={{ display: 'inline-flex', gap: '2px', marginLeft: 'auto' }}>
+            <button className="db-iconbtn" onClick={copy} title={`Copy the casting link (${base.host})`} aria-label="Copy the casting link">
+              {copied ? <Check size={14} /> : <Link2 size={14} />}
             </button>
-          </div>
-          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{base.host}</span>
-          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-            <button className="btn btn-ghost btn-sm" disabled={busy}
-              onClick={() => act('unpublish', 'Stop sharing the casting? The agency link stops working.')}>
-              <EyeOff size={12} /> Stop sharing
+            <a className="db-iconbtn" href={url} target="_blank" rel="noreferrer" title="Open" aria-label="Open">
+              <ExternalLink size={14} />
+            </a>
+            <button className="db-iconbtn" disabled={busy} title="New link" aria-label="New link"
+              onClick={() => act('rotate', { title: 'Make a new casting link?', message: 'The old one stops working immediately.', confirmLabel: 'New link', tone: 'danger' })}>
+              <RotateCcw size={14} />
             </button>
-            <button className="btn btn-ghost btn-sm" disabled={busy}
-              onClick={() => act('rotate', 'Make a new casting link? The old one stops working immediately.')}>
-              <RotateCcw size={12} /> New link
+            <button className="db-iconbtn danger" disabled={busy} title="Stop sharing" aria-label="Stop sharing"
+              onClick={() => act('unpublish', { title: 'Stop sharing the casting?', message: 'The agency link stops working.', confirmLabel: 'Stop sharing', tone: 'danger' })}>
+              <EyeOff size={14} />
             </button>
-          </div>
-          <p className="shotlist-hint">
-            Cast, age ranges, costume notes and wardrobe only — no schedule, no locations, no call times. Read only.
-          </p>
-        </>
-      ) : (
-        <>
-          <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => act('publish')}>
-            <Share2 size={12} /> Share with a casting agency
+          </span>
+        ) : (
+          <button className="db-iconbtn" style={{ marginLeft: 'auto' }} disabled={busy} onClick={() => act('publish')}
+            title="Share with a casting agency" aria-label="Share with a casting agency">
+            <Globe size={14} />
           </button>
-          <p className="shotlist-hint">
-            A view-only grid of the cast on your public domain. It shows nothing else from the shot list.
-          </p>
-        </>
-      )}
+        )}
+      </div>
     </div>
   );
 }
@@ -1674,21 +1658,20 @@ function SortableCharacter({ character: c, onEdit, onDuplicate, onDelete }) {
       )}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: '13px', fontWeight: 600 }}>{c.name}</div>
-        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-          {c.kind === 'extra' ? 'Extra' : 'Principal'}
-          {fmtAgeRange(c.age_min, c.age_max) ? ` · age ${fmtAgeRange(c.age_min, c.age_max)}` : ''}
-          {c.performer ? ` · ${c.performer}` : ''}
-          {(c.wardrobe || []).length ? ` · ${c.wardrobe.length} look${c.wardrobe.length === 1 ? '' : 's'}` : ''}
+        <div style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <span title={c.kind === 'extra' ? 'Extra' : 'Principal'}>{c.kind === 'extra' ? <User size={10} /> : <UserCog size={10} />}</span>
+          {fmtAgeRange(c.age_min, c.age_max) && <span title="Casting age">{fmtAgeRange(c.age_min, c.age_max)}</span>}
+          {c.performer && <span>{c.performer}</span>}
         </div>
       </div>
-      <button className="btn-ghost" style={{ padding: '4px 6px' }} title="Edit" onClick={() => onEdit(c)}>
+      <button className="db-iconbtn sm" title="Edit" aria-label="Edit" onClick={() => onEdit(c)}>
         <Settings2 size={12} />
       </button>
-      <button className="btn-ghost" style={{ padding: '4px 6px' }}
-        title="Duplicate this part with its brief and wardrobe" onClick={() => onDuplicate(c)}>
+      <button className="db-iconbtn sm"
+        title="Duplicate this part with its brief and wardrobe" aria-label="Duplicate" onClick={() => onDuplicate(c)}>
         <Copy size={12} />
       </button>
-      <button className="btn-ghost" style={{ padding: '4px 6px', color: 'var(--danger)' }} title="Delete" onClick={() => onDelete(c)}>
+      <button className="db-iconbtn sm danger" title="Delete" aria-label="Delete" onClick={() => onDelete(c)}>
         <Trash2 size={12} />
       </button>
     </div>
@@ -1696,7 +1679,9 @@ function SortableCharacter({ character: c, onEdit, onDuplicate, onDelete }) {
 }
 
 function CharactersPanel({ shotlistId, shotlist, base, characters, library, onChanged, onAddExtra, onReload }) {
+  const { notify, ask } = useDialogs();
   const [editing, setEditing] = useState(null);
+  const [editError, setEditError] = useState('');
   const [busy, setBusy] = useState(false);
   const fileRef = useRef(null);
   const [uploading, setUploading] = useState(false);
@@ -1712,8 +1697,8 @@ function CharactersPanel({ shotlistId, shotlist, base, characters, library, onCh
   );
 
   // Wardrobe is saved the moment it is uploaded, so the open modal takes the
-  // fresh list back from the server — but only that field, or it would discard
-  // whatever is half-typed in the others.
+  // fresh list back from the server, but only that field, or it would discard
+  // whatever is half typed in the others.
   useEffect(() => {
     if (!editing || !editing.id) return;
     const fresh = characters.find(c => c.id === editing.id);
@@ -1721,8 +1706,14 @@ function CharactersPanel({ shotlistId, shotlist, base, characters, library, onCh
     setEditing(prev => (prev && prev.id === fresh.id ? { ...prev, wardrobe: fresh.wardrobe } : prev));
   }, [characters]);
 
+  function openEditor(value) {
+    setEditError('');
+    setEditing(value);
+  }
+
   async function save() {
-    if (!editing.name || !editing.name.trim()) { alert('Give the character a name'); return; }
+    if (!editing.name || !editing.name.trim()) { setEditError('Give the character a name'); return; }
+    setEditError('');
     try {
       const body = {
         name: editing.name, performer: editing.performer, kind: editing.kind,
@@ -1736,15 +1727,21 @@ function CharactersPanel({ shotlistId, shotlist, base, characters, library, onCh
       else await api.post(`/shotlists/${shotlistId}/characters`, body);
       setEditing(null);
       await onChanged();
-    } catch (err) { alert(err.message || 'Could not save the character'); }
+    } catch (err) { setEditError(err.message || 'Could not save the character'); }
   }
 
   async function remove(c) {
-    if (!confirm(`Delete "${c.name}"? They are removed from every shot they were in.`)) return;
+    const ok = await ask({
+      title: `Delete "${c.name}"?`,
+      message: 'They are removed from every shot they were in.',
+      confirmLabel: 'Delete',
+      tone: 'danger',
+    });
+    if (!ok) return;
     try {
       await api.del(`/shotlists/${shotlistId}/characters/${c.id}`);
       await onChanged();
-    } catch (err) { alert(err.message || 'Could not delete the character'); }
+    } catch (err) { notify('Not deleted', err.message || 'Could not delete the character.'); }
   }
 
   async function uploadPhoto(e) {
@@ -1757,7 +1754,7 @@ function CharactersPanel({ shotlistId, shotlist, base, characters, library, onCh
       fd.append('image', file);
       const res = await api.postForm('/shotlists/upload', fd);
       setEditing(prev => ({ ...prev, photo_filename: res.filename, photo_thumb_filename: res.thumb }));
-    } catch (err) { alert(err.message || 'Upload failed'); }
+    } catch (err) { setEditError(err.message || 'Upload failed'); }
     finally { setUploading(false); }
   }
 
@@ -1770,7 +1767,7 @@ function CharactersPanel({ shotlistId, shotlist, base, characters, library, onCh
     try {
       await api.post(`/shotlists/${shotlistId}/characters/${c.id}/duplicate`, {});
       await onChanged();
-    } catch (err) { alert(err.message || 'Could not duplicate the character'); }
+    } catch (err) { notify('Not duplicated', err.message || 'Could not duplicate the character.'); }
   }
 
   async function handleDragEnd({ active, over }) {
@@ -1790,29 +1787,23 @@ function CharactersPanel({ shotlistId, shotlist, base, characters, library, onCh
       await onChanged();
     } catch (err) {
       setList(characters);
-      alert(err.message || 'Could not reorder the cast');
+      notify('Order not saved', err.message || 'The new order could not be saved.');
     }
   }
 
   return (
     <div className="card" style={{ padding: '12px 14px' }}>
-      <div className="shotlist-panel-head">
+      <div className="shotlist-panel-head" title="Cast">
         <Users size={14} color="var(--accent)" />
-        <span>Cast</span>
-        <button className="btn btn-ghost btn-sm" onClick={addExtra} disabled={busy} title="Add the next numbered extra">
-          <UserPlus size={13} /> Extra
+        <span className="db-count"><span className="db-dot" />{characters.length}</span>
+        <button className="db-iconbtn" onClick={addExtra} disabled={busy} title="Add the next numbered extra" aria-label="Add an extra">
+          <UserPlus size={15} />
         </button>
-        <button className="btn btn-secondary btn-sm"
-          onClick={() => setEditing({ name: '', performer: '', kind: 'principal', costume: '', notes: '' })}>
-          <Plus size={13} /> Add
+        <button className="db-iconbtn" title="Add character" aria-label="Add character"
+          onClick={() => openEditor({ name: '', performer: '', kind: 'principal', costume: '', notes: '' })}>
+          <Plus size={15} />
         </button>
       </div>
-
-      {characters.length === 0 && (
-        <p className="shotlist-hint" style={{ marginTop: 0 }}>
-          No cast yet. Add them once here and pick them on each shot.
-        </p>
-      )}
 
       <DndContext sensors={castSensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={list.map(c => `char-${c.id}`)} strategy={verticalListSortingStrategy}>
@@ -1821,7 +1812,7 @@ function CharactersPanel({ shotlistId, shotlist, base, characters, library, onCh
               <SortableCharacter
                 key={c.id}
                 character={c}
-                onEdit={ch => setEditing({ ...ch })}
+                onEdit={ch => openEditor({ ...ch })}
                 onDuplicate={duplicate}
                 onDelete={remove}
               />
@@ -1829,21 +1820,23 @@ function CharactersPanel({ shotlistId, shotlist, base, characters, library, onCh
           </div>
         </SortableContext>
       </DndContext>
-      {list.length > 1 && (
-        <p className="shotlist-hint" style={{ marginTop: 0 }}>
-          Drag to reorder — this is the order the shot picker, the casting page and the photo board use.
-        </p>
-      )}
 
       <CastingShare shotlistId={shotlistId} shotlist={shotlist} base={base} onChanged={onReload} />
 
       {editing && (
-        <Overlay title={editing.id ? 'Edit character' : 'Add character'} onClose={() => setEditing(null)}>
+        <Overlay
+          title={editing.id ? editing.name || 'Character' : 'Character'}
+          onClose={() => setEditing(null)}
+          footer={<>
+            <button className="btn btn-ghost" onClick={() => setEditing(null)}>Cancel</button>
+            <button className="btn btn-primary" onClick={save}>Save</button>
+          </>}
+        >
           <div style={{ display: 'flex', gap: '10px' }}>
             <div className="form-row" style={{ flex: 1 }}>
-              <label className="form-label">Character *</label>
+              <label className="form-label">Character</label>
               <input className="input" value={editing.name || ''} autoFocus
-                onChange={e => setEditing({ ...editing, name: e.target.value })} placeholder="e.g. The Falconer" />
+                onChange={e => setEditing({ ...editing, name: e.target.value })} />
             </div>
             <div className="form-row" style={{ width: 130 }}>
               <label className="form-label">Kind</label>
@@ -1856,37 +1849,31 @@ function CharactersPanel({ shotlistId, shotlist, base, characters, library, onCh
           <div className="form-row">
             <label className="form-label">Performer</label>
             <input className="input" value={editing.performer || ''}
-              onChange={e => setEditing({ ...editing, performer: e.target.value })} placeholder="Who plays them" />
+              onChange={e => setEditing({ ...editing, performer: e.target.value })} />
           </div>
           {/* The age the ROLE is cast for, which is not the performer's own
               age. Either end can stand alone. */}
           <div className="form-row">
-            <label className="form-label">Age range for casting</label>
+            <label className="form-label" title="The age the role is cast for. Either end can stand alone.">Casting age</label>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               <input
                 className="input" type="number" min="0" max="120" style={{ flex: 1 }} placeholder="From"
                 value={editing.age_min == null ? '' : editing.age_min}
                 onChange={e => setEditing({ ...editing, age_min: e.target.value === '' ? null : Number(e.target.value) })}
               />
-              <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>to</span>
+              <ArrowRight size={13} color="var(--text-muted)" />
               <input
                 className="input" type="number" min="0" max="120" style={{ flex: 1 }} placeholder="To"
                 value={editing.age_max == null ? '' : editing.age_max}
                 onChange={e => setEditing({ ...editing, age_max: e.target.value === '' ? null : Number(e.target.value) })}
               />
               {(editing.age_min != null || editing.age_max != null) && (
-                <button className="btn btn-ghost btn-sm" title="Clear the age range"
+                <button className="db-iconbtn" title="Clear the age range" aria-label="Clear the age range"
                   onClick={() => setEditing({ ...editing, age_min: null, age_max: null })}>
-                  <X size={13} />
+                  <X size={15} />
                 </button>
               )}
             </div>
-            <p className="shotlist-hint">
-              {fmtAgeRange(editing.age_min, editing.age_max)
-                ? `Casting for ${fmtAgeRange(editing.age_min, editing.age_max)}. `
-                : ''}
-              Leave one end empty for an open range — "40 to blank" reads as 40+.
-            </p>
           </div>
           <div className="form-row">
             <label className="form-label">Costume</label>
@@ -1900,14 +1887,14 @@ function CharactersPanel({ shotlistId, shotlist, base, characters, library, onCh
                 <img src={`/shotlist-media/${editing.photo_thumb_filename || editing.photo_filename}`} alt=""
                   style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border-default)' }} />
               ) : null}
-              <button className="btn btn-secondary btn-sm" onClick={() => fileRef.current?.click()} disabled={uploading}>
-                {uploading ? <Loader2 size={13} className="pitch-spin" /> : <ImageIcon size={13} />}
-                {editing.photo_filename ? 'Replace' : 'Upload'}
+              <button className="db-iconbtn" onClick={() => fileRef.current?.click()} disabled={uploading}
+                title={editing.photo_filename ? 'Replace' : 'Upload'} aria-label={editing.photo_filename ? 'Replace' : 'Upload'}>
+                {uploading ? <Loader2 size={15} className="pitch-spin" /> : <ImageIcon size={15} />}
               </button>
               {editing.photo_filename && (
-                <button className="btn btn-ghost btn-sm"
+                <button className="db-iconbtn danger" title="Remove" aria-label="Remove"
                   onClick={() => setEditing({ ...editing, photo_filename: null, photo_thumb_filename: null })}>
-                  Remove
+                  <X size={15} />
                 </button>
               )}
               <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp"
@@ -1920,10 +1907,9 @@ function CharactersPanel({ shotlistId, shotlist, base, characters, library, onCh
             <WardrobePicker shotlistId={shotlistId} character={editing} library={library} onChanged={onChanged} />
           ) : (
             <div className="form-row">
-              <label className="form-label">Wardrobe</label>
-              <p className="shotlist-hint" style={{ marginTop: 0 }}>
-                Save this character first, then reopen it to attach wardrobe photos.
-              </p>
+              <label className="form-label" title="Save this character first, then reopen it to attach wardrobe photos.">
+                Wardrobe <span className="db-dot muted" />
+              </label>
             </div>
           )}
           <div className="form-row">
@@ -1931,10 +1917,7 @@ function CharactersPanel({ shotlistId, shotlist, base, characters, library, onCh
             <textarea className="input" rows={2} value={editing.notes || ''}
               onChange={e => setEditing({ ...editing, notes: e.target.value })} />
           </div>
-          <div className="modal-footer">
-            <button className="btn btn-ghost" onClick={() => setEditing(null)}>Cancel</button>
-            <button className="btn btn-primary" onClick={save}>Save character</button>
-          </div>
+          {editError && <p className="prod-error">{editError}</p>}
         </Overlay>
       )}
     </div>
@@ -1944,67 +1927,70 @@ function CharactersPanel({ shotlistId, shotlist, base, characters, library, onCh
 // ── Locations panel ──────────────────────────────────────────────────────────
 
 function LocationsPanel({ shotlistId, locations, onChanged }) {
+  const { notify, ask } = useDialogs();
   const [editing, setEditing] = useState(null);
+  const [editError, setEditError] = useState('');
 
   function startNew() {
+    setEditError('');
     setEditing({ name: '', address: '', lat: null, lng: null, notes: '' });
   }
 
   async function save() {
-    if (!editing.name || !editing.name.trim()) { alert('Give the location a name'); return; }
+    if (!editing.name || !editing.name.trim()) { setEditError('Give the location a name'); return; }
+    setEditError('');
     try {
       if (editing.id) await api.put(`/shotlists/${shotlistId}/locations/${editing.id}`, editing);
       else await api.post(`/shotlists/${shotlistId}/locations`, editing);
       setEditing(null);
       await onChanged();
-    } catch (err) { alert(err.message || 'Could not save the location'); }
+    } catch (err) { setEditError(err.message || 'Could not save the location'); }
   }
 
   async function remove(loc) {
-    if (!confirm(`Delete location "${loc.name}"? Scenes using it keep their other details.`)) return;
+    const ok = await ask({
+      title: `Delete location "${loc.name}"?`,
+      message: 'Scenes using it keep their other details.',
+      confirmLabel: 'Delete',
+      tone: 'danger',
+    });
+    if (!ok) return;
     try {
       await api.del(`/shotlists/${shotlistId}/locations/${loc.id}`);
       await onChanged();
-    } catch (err) { alert(err.message || 'Could not delete the location'); }
+    } catch (err) { notify('Not deleted', err.message || 'Could not delete the location.'); }
   }
 
   return (
     <div className="card" style={{ padding: '12px 14px' }}>
-      <div className="shotlist-panel-head">
+      <div className="shotlist-panel-head" title="Locations">
         <MapPin size={14} color="var(--accent)" />
-        <span>Locations</span>
-        <button className="btn btn-secondary btn-sm" onClick={startNew}><Plus size={13} /> Add</button>
+        <span className="db-count"><span className="db-dot" />{locations.length}</span>
+        <button className="db-iconbtn" onClick={startNew} title="Add location" aria-label="Add location"><Plus size={15} /></button>
       </div>
-
-      {locations.length === 0 && (
-        <p className="shotlist-hint" style={{ marginTop: 0 }}>
-          No locations yet. Pin one so scene light windows and travel times are real.
-        </p>
-      )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
         {locations.map(l => (
           <div key={l.id} className="shotlist-loc-row">
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: '13px', fontWeight: 600 }}>{l.name}</div>
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                {l.address || 'No address'}
-                {l.lat != null && l.lng != null ? ` · ${Number(l.lat).toFixed(4)}, ${Number(l.lng).toFixed(4)}` : ' · not pinned'}
-              </div>
+              {l.address && <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{l.address}</div>}
             </div>
-            {l.lat != null && l.lng != null && (
+            {l.lat != null && l.lng != null ? (
               <a
-                className="btn-ghost" style={{ padding: '4px 6px' }} title="Open directions"
+                className="db-iconbtn sm" title="Open directions" aria-label="Open directions"
                 href={`https://www.google.com/maps/dir/?api=1&destination=${l.lat},${l.lng}`}
                 target="_blank" rel="noreferrer"
               >
                 <MapPin size={12} />
               </a>
+            ) : (
+              <span className="db-dot" title="Not pinned" />
             )}
-            <button className="btn-ghost" style={{ padding: '4px 6px' }} title="Edit" onClick={() => setEditing({ ...l })}>
+            <button className="db-iconbtn sm" title="Edit" aria-label="Edit" onClick={() => { setEditError(''); setEditing({ ...l }); }}>
               <Settings2 size={12} />
             </button>
-            <button className="btn-ghost" style={{ padding: '4px 6px', color: 'var(--danger)' }} title="Delete" onClick={() => remove(l)}>
+            <button className="db-iconbtn sm danger" title="Delete" aria-label="Delete" onClick={() => remove(l)}>
               <Trash2 size={12} />
             </button>
           </div>
@@ -2012,10 +1998,17 @@ function LocationsPanel({ shotlistId, locations, onChanged }) {
       </div>
 
       {editing && (
-        <Overlay title={editing.id ? 'Edit location' : 'Add location'} onClose={() => setEditing(null)}>
+        <Overlay
+          title={editing.id ? editing.name || 'Location' : 'Location'}
+          onClose={() => setEditing(null)}
+          footer={<>
+            <button className="btn btn-ghost" onClick={() => setEditing(null)}>Cancel</button>
+            <button className="btn btn-primary" onClick={save}>Save</button>
+          </>}
+        >
           <div className="form-row">
-            <label className="form-label">Label *</label>
-            <input className="input" value={editing.name || ''} onChange={e => setEditing({ ...editing, name: e.target.value })} placeholder="e.g. Rugova Canyon" />
+            <label className="form-label">Label</label>
+            <input className="input" value={editing.name || ''} onChange={e => setEditing({ ...editing, name: e.target.value })} />
           </div>
           <div className="form-row">
             <label className="form-label">Address</label>
@@ -2026,10 +2019,7 @@ function LocationsPanel({ shotlistId, locations, onChanged }) {
             <label className="form-label">Notes</label>
             <textarea className="input" rows={2} value={editing.notes || ''} onChange={e => setEditing({ ...editing, notes: e.target.value })} />
           </div>
-          <div className="modal-footer">
-            <button className="btn btn-ghost" onClick={() => setEditing(null)}>Cancel</button>
-            <button className="btn btn-primary" onClick={save}>Save location</button>
-          </div>
+          {editError && <p className="prod-error">{editError}</p>}
         </Overlay>
       )}
     </div>
@@ -2040,6 +2030,7 @@ function LocationsPanel({ shotlistId, locations, onChanged }) {
 // One day at a time: a day is the unit that gets scheduled.
 
 function OrganizePanel({ shotlistId, day, scenes, plan, onPlanned, onApplied }) {
+  const { notify, ask } = useDialogs();
   const [startSceneId, setStartSceneId] = useState(scenes.length ? String(scenes[0].id) : '');
   const [running, setRunning] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -2067,13 +2058,18 @@ function OrganizePanel({ shotlistId, day, scenes, plan, onPlanned, onApplied }) 
   }
 
   async function apply() {
-    if (!confirm(`Apply the optimised scene order for ${dayLabel(day)}? It becomes your order. The optimised plan is kept too.`)) return;
+    const ok = await ask({
+      title: `Apply the optimised order for ${dayLabel(day)}?`,
+      message: 'It becomes your order. The optimised plan is kept too.',
+      confirmLabel: 'Apply',
+    });
+    if (!ok) return;
     setApplying(true);
     try {
       await api.post(`/shotlists/${shotlistId}/apply-plan`, { dayId: day ? day.id : null });
       await onApplied();
     } catch (err) {
-      alert(err.message || 'Could not apply the plan');
+      notify('Plan not applied', err.message || 'Could not apply the plan.');
     } finally {
       setApplying(false);
     }
@@ -2085,66 +2081,51 @@ function OrganizePanel({ shotlistId, day, scenes, plan, onPlanned, onApplied }) 
 
   return (
     <div className="card" style={{ padding: '12px 14px' }}>
-      <div className="shotlist-panel-head">
+      <div className="shotlist-panel-head" title={`Organize ${dayLabel(day)}`}>
         <Wand2 size={14} color="var(--accent)" />
-        <span>Organize {dayLabel(day)}</span>
       </div>
 
-      <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}
+        title="Locked times and fixed breaks first, then the light, then travel. Scenes at one location stay together.">
         <div style={{ flex: 1, minWidth: 160 }}>
-          <label className="form-label" style={{ fontSize: '11px' }}>Start with scene</label>
-          <select className="select" style={{ width: '100%' }} value={startSceneId} onChange={e => setStartSceneId(e.target.value)}>
+          <select className="select" style={{ width: '100%' }} value={startSceneId} onChange={e => setStartSceneId(e.target.value)}
+            aria-label="Start with scene" title="Start with scene">
             {scenes.map(s => (
               <option key={s.id} value={s.id}>
-                {s.scene_number ? `${s.scene_number}. ` : ''}{s.title || 'Untitled scene'}
+                {s.scene_number ? `${s.scene_number}. ` : ''}{s.title || ''}
               </option>
             ))}
           </select>
         </div>
-        <button className="btn btn-primary btn-sm" onClick={run} disabled={running || scenes.length === 0}>
-          {running ? <Loader2 size={13} className="pitch-spin" /> : <Wand2 size={13} />}
-          {running ? 'Planning…' : 'Organize this'}
+        <button className="btn btn-primary" onClick={run} disabled={running || scenes.length === 0} title="Organize this" aria-label="Organize this">
+          {running ? <Loader2 size={15} className="pitch-spin" /> : <Wand2 size={15} />}
         </button>
       </div>
 
-      <p className="shotlist-hint">
-        Locked times and fixed breaks first, then the light, then travel — and scenes at the same
-        location are kept together even when a detour would be shorter.
-      </p>
-
-      {error && <p style={{ color: 'var(--danger)', fontSize: '12px', marginTop: '8px' }}>{error}</p>}
+      {error && <p className="prod-error">{error}</p>}
 
       {p && (
         <div style={{ marginTop: '14px' }}>
-          <div className="shotlist-mode-note">
-            {p.distance_mode === 'google'
-              ? 'Distances: Google road distances and durations'
-              : 'Distances: straight-line estimate (no Google key configured)'}
+          <div className="shotlist-mode-note" title={p.distance_mode === 'google' ? 'Google road distances' : 'Straight line estimate'}>
+            <MapPin size={11} /> {p.distance_mode === 'google' ? 'Google' : <span className="db-dot muted" />}
           </div>
 
           {c && (
             <div className="shotlist-compare">
-              <div>
-                <span className="shotlist-compare-k">My order</span>
-                <span>
-                  {c.current.move_count} move{c.current.move_count === 1 ? '' : 's'} · {c.current.travel_km} km ·
-                  {' '}{c.current.travel_minutes} min travel · call {c.current.crew_call || '—'} · ends {c.current.end_label || '—'} ·
-                  {' '}{c.current.warning_count} warning{c.current.warning_count === 1 ? '' : 's'}
-                </span>
-              </div>
-              <div>
-                <span className="shotlist-compare-k">Optimised</span>
-                <span>
-                  {c.optimised.move_count} move{c.optimised.move_count === 1 ? '' : 's'} · {c.optimised.travel_km} km ·
-                  {' '}{c.optimised.travel_minutes} min travel · call {c.optimised.crew_call || '—'} · ends {c.optimised.end_label || '—'} ·
-                  {' '}{c.optimised.warning_count} warning{c.optimised.warning_count === 1 ? '' : 's'}
-                </span>
-              </div>
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                {c.moved_count} scene{c.moved_count === 1 ? '' : 's'} move ·
-                {' '}{c.moves_saved > 0 ? `${c.moves_saved} fewer company move${c.moves_saved === 1 ? '' : 's'}` : 'same number of company moves'} ·
-                {' '}{c.move_minutes_saved > 0 ? `${fmtDuration(c.move_minutes_saved)} of travel saved` : 'no travel saved'} ·
-                {' '}fixes {c.fixes.length} · introduces {c.introduces.length}
+              {[['current', User, 'My order'], ['optimised', Wand2, 'Optimised']].map(([k, Icon, title]) => (
+                <div key={k} title={title}>
+                  <span className="shotlist-compare-k"><Icon size={12} /></span>
+                  <span>
+                    <span title="Company moves"><Truck size={10} /> {c[k].move_count}</span> · {c[k].travel_km} km · {c[k].travel_minutes} min
+                    {c[k].crew_call ? <> · <TimeRange label={`${c[k].crew_call} to ${c[k].end_label || ''}`} /></> : null}
+                    {c[k].warning_count ? <> · <span title="Warnings"><AlertTriangle size={10} /> {c[k].warning_count}</span></> : null}
+                  </span>
+                </div>
+              ))}
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}
+                title={`${c.moved_count} scenes move, ${c.moves_saved} fewer company moves, fixes ${c.fixes.length}, introduces ${c.introduces.length}`}>
+                <Clapperboard size={10} /> {c.moved_count}
+                {c.move_minutes_saved > 0 ? <> · <Truck size={10} /> {fmtDuration(c.move_minutes_saved)}</> : null}
               </div>
             </div>
           )}
@@ -2155,11 +2136,11 @@ function OrganizePanel({ shotlistId, day, scenes, plan, onPlanned, onApplied }) 
               return (
                 <div key={`${r.scene_id}-${i}`} className="shotlist-plan-row">
                   <span className="shotlist-plan-time">{r.start_label}</span>
-                  <span className="shotlist-plan-title">{r.title || 'Untitled scene'}</span>
+                  <span className="shotlist-plan-title">{r.title || ''}</span>
                   {r.locked && <span className="shotlist-chip hard"><Lock size={9} /> {r.locked_time}</span>}
-                  <span className="shotlist-chip">{r.shot_count} shot{r.shot_count === 1 ? '' : 's'}</span>
+                  <span className="shotlist-chip" title="Shots"><Film size={9} /> {r.shot_count}</span>
                   {r.light_window_label && (
-                    <span className={`shotlist-chip${r.light_window_hard ? ' hard' : ''}`}>{r.light_window_label}</span>
+                    <span className={`shotlist-chip${r.light_window_hard ? ' hard' : ''}`} title={r.light_window_label}><Sun size={9} /></span>
                   )}
                   {move && move.moved && (
                     <span className="shotlist-plan-move">#{move.from_position} → #{move.to_position}</span>
@@ -2170,8 +2151,8 @@ function OrganizePanel({ shotlistId, day, scenes, plan, onPlanned, onApplied }) 
           </div>
 
           {c && c.unsatisfied.length > 0 && (
-            <div className="shotlist-fixes" style={{ borderColor: 'var(--danger)' }}>
-              Could not be honoured:
+            <div className="shotlist-fixes" style={{ borderColor: 'var(--danger)' }} title="Could not be honoured">
+              <AlertTriangle size={12} />
               <ul>{c.unsatisfied.map((w, i) => <li key={i}>{w.message}</li>)}</ul>
             </div>
           )}
@@ -2183,14 +2164,15 @@ function OrganizePanel({ shotlistId, day, scenes, plan, onPlanned, onApplied }) 
           )}
 
           {c && c.fixes.length > 0 && (
-            <div className="shotlist-fixes">
-              Fixed by this plan:
+            <div className="shotlist-fixes" title="Fixed by this plan">
+              <Check size={12} />
               <ul>{c.fixes.map((w, i) => <li key={i}>{w.message}</li>)}</ul>
             </div>
           )}
 
-          <button className="btn btn-secondary btn-sm" style={{ marginTop: '10px' }} onClick={apply} disabled={applying}>
-            {applying ? 'Applying…' : 'Apply to my order'}
+          <button className="btn btn-secondary" style={{ marginTop: '10px' }} onClick={apply} disabled={applying}
+            title="Apply to my order" aria-label="Apply to my order">
+            {applying ? <Loader2 size={15} className="pitch-spin" /> : <Check size={15} />}
           </button>
         </div>
       )}
@@ -2200,12 +2182,27 @@ function OrganizePanel({ shotlistId, day, scenes, plan, onPlanned, onApplied }) 
 
 // ── Main editor ──────────────────────────────────────────────────────────────
 
+const ORDER_TOGGLES = [
+  { key: 'user', Icon: User, title: 'My order' },
+  { key: 'optimized', Icon: Wand2, title: 'Optimised order' },
+];
+
 export default function ShotlistEditor() {
+  return (
+    <DialogProvider>
+      <ShotlistEditorPage />
+    </DialogProvider>
+  );
+}
+
+function ShotlistEditorPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const aiEnabled = useAiPolishAvailable();
+  const { notify, ask } = useDialogs();
 
   const [shotlist, setShotlist] = useState(null);
+  const [project, setProject] = useState(null);
   const [days, setDays] = useState([]);
   const [scenes, setScenes] = useState([]);
   const [characters, setCharacters] = useState([]);
@@ -2244,6 +2241,7 @@ export default function ShotlistEditor() {
 
   function applyData(data) {
     setShotlist(data.shotlist);
+    setProject(data.project || null);
     setDays(data.days || []);
     setScenes(data.scenes || []);
     setCharacters(data.characters || []);
@@ -2273,9 +2271,12 @@ export default function ShotlistEditor() {
     load()
       .catch(() => navigate('/production/shotlists'))
       .finally(() => setLoading(false));
-    api.get('/shotlists/light-windows').then(setWindows).catch(() => {});
-    api.get('/shotlists/public-base').then(b => { if (b && b.base) setBase(b); }).catch(() => {});
-    api.get('/projects').then(p => setProjects(Array.isArray(p) ? p : [])).catch(() => {});
+    api.get('/shotlists/light-windows').then(setWindows)
+      .catch(err => notify('Light windows not loaded', err.message || 'The light windows could not be loaded.'));
+    api.get('/shotlists/public-base').then(b => { if (b && b.base) setBase(b); })
+      .catch(() => { /* the current origin stays */ });
+    api.get('/projects').then(p => setProjects(Array.isArray(p) ? p : []))
+      .catch(err => notify('Projects not loaded', err.message || 'The projects could not be loaded.'));
   }, [id]);
 
   const flush = useCallback(async () => {
@@ -2295,8 +2296,8 @@ export default function ShotlistEditor() {
       }
       if (listPatch) await api.put(`/shotlists/${id}`, listPatch);
       setSaveState('saved');
-      // Light windows, timelines and totals are all resolved server-side, so
-      // pull everything back after a save — but only if nothing new has been
+      // Light windows, timelines and totals are all resolved server side, so
+      // pull everything back after a save, but only if nothing new has been
       // typed since, or the refetch would overwrite it.
       const data = await api.get(`/shotlists/${id}`);
       if (dirtyScenes.current.size === 0 && dirtyShots.current.size === 0 && !dirtyList.current) {
@@ -2322,7 +2323,7 @@ export default function ShotlistEditor() {
     if (patch.day_id !== undefined) {
       clearTimeout(saveTimer.current);
       setSaveState('saving');
-      flush().catch(() => {});
+      flush();
       return;
     }
     queueSave();
@@ -2338,7 +2339,8 @@ export default function ShotlistEditor() {
     if (patch.scene_id !== undefined) {
       clearTimeout(saveTimer.current);
       setSaveState('saving');
-      flush().then(load).catch(() => {});
+      flush().then(load)
+        .catch(err => notify('Shot list not reloaded', err.message || 'The shot list could not be reloaded.'));
       return;
     }
     queueSave();
@@ -2374,7 +2376,7 @@ export default function ShotlistEditor() {
       applyData(data);
       return res;
     } catch (err) {
-      alert(err.message || 'Could not add the extra');
+      notify('Extra not added', err.message || 'Could not add the extra.');
       return null;
     }
   }
@@ -2384,7 +2386,7 @@ export default function ShotlistEditor() {
       const res = await api.post(`/shotlists/${id}/days`, {});
       await load();
       setActiveDayId(res.id);
-    } catch (err) { alert(err.message || 'Could not add the day'); }
+    } catch (err) { notify('Day not added', err.message || 'Could not add the day.'); }
   }
 
   async function addScene() {
@@ -2397,7 +2399,7 @@ export default function ShotlistEditor() {
       setSaveState('saved');
     } catch (err) {
       setSaveState('error');
-      alert(err.message || 'Could not add the scene');
+      notify('Scene not added', err.message || 'Could not add the scene.');
     }
   }
 
@@ -2406,17 +2408,23 @@ export default function ShotlistEditor() {
       await flush();
       await api.post(`/shotlists/${id}/scenes/${scene.id}/duplicate`, {});
       await load();
-    } catch (err) { alert(err.message || 'Could not duplicate the scene'); }
+    } catch (err) { notify('Scene not duplicated', err.message || 'Could not duplicate the scene.'); }
   }
 
   async function deleteScene(scene) {
     const count = (scene.shots || []).length;
-    if (!confirm(`Delete "${scene.title || 'this scene'}"${count ? ` and its ${count} shot${count === 1 ? '' : 's'}` : ''}? This cannot be undone.`)) return;
+    const ok = await ask({
+      title: `Delete "${scene.title || 'this scene'}"${count ? ` and its ${count} shot${count === 1 ? '' : 's'}` : ''}?`,
+      message: 'This cannot be undone.',
+      confirmLabel: 'Delete',
+      tone: 'danger',
+    });
+    if (!ok) return;
     try {
       dirtyScenes.current.delete(scene.id);
       await api.del(`/shotlists/${id}/scenes/${scene.id}`);
       await load();
-    } catch (err) { alert(err.message || 'Could not delete the scene'); }
+    } catch (err) { notify('Scene not deleted', err.message || 'Could not delete the scene.'); }
   }
 
   async function addShot(scene) {
@@ -2429,7 +2437,7 @@ export default function ShotlistEditor() {
       setSaveState('saved');
     } catch (err) {
       setSaveState('error');
-      alert(err.message || 'Could not add the shot');
+      notify('Shot not added', err.message || 'Could not add the shot.');
     }
   }
 
@@ -2438,22 +2446,31 @@ export default function ShotlistEditor() {
       await flush();
       await api.post(`/shotlists/${id}/shots/${shot.id}/duplicate`, {});
       await load();
-    } catch (err) { alert(err.message || 'Could not duplicate the shot'); }
+    } catch (err) { notify('Shot not duplicated', err.message || 'Could not duplicate the shot.'); }
   }
 
   async function deleteShot(shot) {
-    if (!confirm(`Delete "${shot.title || 'this shot'}"? This cannot be undone.`)) return;
+    const ok = await ask({
+      title: `Delete "${shot.title || 'this shot'}"?`,
+      message: 'This cannot be undone.',
+      confirmLabel: 'Delete',
+      tone: 'danger',
+    });
+    if (!ok) return;
     try {
       dirtyShots.current.delete(shot.id);
       await api.del(`/shotlists/${id}/shots/${shot.id}`);
       await load();
-    } catch (err) { alert(err.message || 'Could not delete the shot'); }
+    } catch (err) { notify('Shot not deleted', err.message || 'Could not delete the shot.'); }
   }
 
-  // Scenes are dragged within a day, but sort_order is global — so the reorder
-  // call carries every scene, with only this day's positions rewritten.
+  // Scenes are dragged within a day, but sort_order is global, so the reorder
+  // call carries every scene, with only this day's positions rewritten. The new
+  // order shows at once; when the server refuses it the previous order comes
+  // back and a notice says so.
   async function handleSceneDragEnd({ active, over }) {
     if (!over || active.id === over.id) return;
+    const previous = scenes;
     const dayScenes = scenes.filter(s => s.day_id === activeDayId);
     const ids = dayScenes.map(s => `scene-${s.id}`);
     const oldIndex = ids.indexOf(active.id);
@@ -2469,16 +2486,25 @@ export default function ShotlistEditor() {
       await api.patch(`/shotlists/${id}/scenes/reorder`, { sceneIds: next.map(s => s.id) });
       await load();
       setSaveState('saved');
-    } catch (err) { setSaveState('error'); }
+    } catch (err) {
+      setScenes(previous);
+      setSaveState('saved');
+      notify('Order not saved', err.message || 'The new order could not be saved.');
+    }
   }
 
   async function handleShotsReorder(scene, nextShots) {
+    const previous = scene.shots || [];
     setScenes(prev => prev.map(s => s.id === scene.id ? { ...s, shots: nextShots } : s));
     try {
       setSaveState('saving');
       await api.patch(`/shotlists/${id}/scenes/${scene.id}/shots/reorder`, { shotIds: nextShots.map(s => s.id) });
       setSaveState('saved');
-    } catch (err) { setSaveState('error'); }
+    } catch (err) {
+      setScenes(prev => prev.map(s => s.id === scene.id ? { ...s, shots: previous } : s));
+      setSaveState('saved');
+      notify('Order not saved', err.message || 'The new order could not be saved.');
+    }
   }
 
   async function publish() {
@@ -2488,27 +2514,65 @@ export default function ShotlistEditor() {
       const res = await api.post(`/shotlists/${id}/publish`, {});
       setShotlist(prev => ({ ...prev, status: 'published', slug: res.slug }));
     } catch (err) {
-      alert(err.message || 'Could not publish');
+      notify('Not published', err.message || 'The shot list could not be published.');
     } finally { setWorking(false); }
   }
 
   async function unpublish() {
-    if (!confirm('Unpublish this shot list? The crew link stops working until you publish again.')) return;
+    const ok = await ask({
+      title: 'Unpublish this shot list?',
+      message: 'The crew link stops working until you publish again.',
+      confirmLabel: 'Unpublish',
+      tone: 'danger',
+    });
+    if (!ok) return;
     setWorking(true);
     try {
       await api.post(`/shotlists/${id}/unpublish`, {});
       setShotlist(prev => ({ ...prev, status: 'draft' }));
     } catch (err) {
-      alert(err.message || 'Could not unpublish');
+      notify('Not unpublished', err.message || 'The shot list could not be unpublished.');
     } finally { setWorking(false); }
   }
 
   async function resetStatuses() {
-    if (!confirm('Reset every shot back to pending? Completion marks from the crew are cleared.')) return;
+    const ok = await ask({
+      title: 'Reset every shot back to pending?',
+      message: 'Completion marks from the crew are cleared.',
+      confirmLabel: 'Reset',
+      tone: 'danger',
+    });
+    if (!ok) return;
     try {
       await api.post(`/shotlists/${id}/reset-status`, {});
       await load();
-    } catch (err) { alert(err.message || 'Could not reset the statuses'); }
+    } catch (err) { notify('Statuses not reset', err.message || 'Could not reset the statuses.'); }
+  }
+
+  async function downloadPdf(kind, filename) {
+    try {
+      await api.download(`/shotlists/${id}/pdf/${kind}`, filename);
+    } catch (err) {
+      notify('PDF not created', err.message || 'The PDF could not be created.');
+    }
+  }
+
+  // Day 1 back onto the project's shoot date. A single day list also takes the
+  // date on the list itself, the same pair the project date change moves.
+  async function followProject() {
+    const first = days[0];
+    if (!first || !project || !project.shoot_date) return;
+    const date = String(project.shoot_date).slice(0, 10);
+    try {
+      await api.put(`/shotlists/${id}/days/${first.id}`, { shoot_date: date });
+      if (days.length === 1 && shotlist.shoot_date !== date) {
+        await flush();
+        await api.put(`/shotlists/${id}`, { shoot_date: date });
+      }
+      await load();
+    } catch (err) {
+      notify('Date not changed', err.message || 'Day 1 could not be moved to the project date.');
+    }
   }
 
   async function copyText(text) {
@@ -2546,10 +2610,28 @@ export default function ShotlistEditor() {
   const dayTimeline = timelines.find(t => t.day_id === activeDayId) || null;
   const dayPlan = plan && plan.days && activeDayId != null ? plan.days[activeDayId] : null;
 
+  // A linked list whose first day no longer reads the project's shoot date.
+  const projectDate = project && project.shoot_date ? String(project.shoot_date).slice(0, 10) : null;
+  const firstDate = days.length ? days[0].shoot_date : shotlist.shoot_date;
+  const drifted = !!(shotlist.project_id && projectDate && String(firstDate || '').slice(0, 10) !== projectDate);
+  const driftMark = drifted ? (
+    <span className="prod-drift" onClick={e => e.stopPropagation()}>
+      <span className="db-dot" title={`Project ${fmtDate(projectDate)}`} />
+      <span
+        role="button" tabIndex={0} className="db-iconbtn sm"
+        title={`Set Day 1 to ${fmtDate(projectDate)}`} aria-label="Set Day 1 to the project date"
+        onClick={followProject}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); followProject(); } }}
+      >
+        <CalendarCheck size={12} />
+      </span>
+    </span>
+  ) : null;
+
   return (
     <div>
       <div className="pitch-editor-header">
-        <button className="btn-ghost" style={{ padding: '6px 8px', flexShrink: 0 }} onClick={() => navigate('/production/shotlists')} title="Back to shot lists">
+        <button className="db-iconbtn lg" style={{ flexShrink: 0 }} onClick={() => navigate('/production/shotlists')} title="Shot lists" aria-label="Shot lists">
           <ArrowLeft size={16} />
         </button>
         <input
@@ -2558,75 +2640,65 @@ export default function ShotlistEditor() {
           onChange={e => handleListChange({ title: e.target.value })}
           placeholder="Shot list title"
         />
-        <span className={`badge ${isPublished ? 'badge-active' : 'badge-pending'}`} style={{ flexShrink: 0 }}>{shotlist.status}</span>
-        <span style={{ fontSize: '11px', color: saveState === 'error' ? 'var(--danger)' : 'var(--text-muted)', flexShrink: 0, minWidth: 52, textAlign: 'right' }}>
-          {saveState === 'saving' ? 'Saving…' : saveState === 'error' ? 'Save failed' : 'Saved'}
-        </span>
-        <button className="btn btn-ghost btn-sm" onClick={() => setShowSettings(true)} title="Shot list settings">
-          <Settings2 size={14} />
+        {isPublished && <span className="db-dot ink" title="Published" />}
+        <SaveDot state={saveState} />
+        <button className="db-iconbtn lg" onClick={() => setShowSettings(true)} title="Shot list settings" aria-label="Shot list settings">
+          <Settings2 size={16} />
         </button>
-        <button className="btn btn-ghost btn-sm" onClick={() => setShowPasscode(true)} title="Crew passcode">
-          <KeyRound size={14} /> {shotlist.has_passcode ? 'Passcode set' : 'Set passcode'}
+        <button className="db-iconbtn lg" onClick={() => setShowPasscode(true)} title={shotlist.has_passcode ? 'Crew passcode' : 'Set crew passcode'} aria-label="Crew passcode"
+          style={{ position: 'relative' }}>
+          <KeyRound size={16} />
+          {shotlist.passcode_weak ? (
+            <span className="db-dot" title="Shorter than 6 characters: change it" style={{ position: 'absolute', top: 5, right: 5 }} />
+          ) : !shotlist.has_passcode ? (
+            <span className="db-dot muted" style={{ position: 'absolute', top: 5, right: 5 }} />
+          ) : null}
         </button>
-        <button className="btn btn-ghost btn-sm" onClick={() => api.download(`/shotlists/${id}/pdf/callsheet`, `Call-Sheet-${shotlist.title || 'shotlist'}.pdf`)} title="Download call sheet">
-          <FileText size={14} /> Call sheet
+        <button className="db-iconbtn lg" onClick={() => downloadPdf('callsheet', `Call-Sheet-${shotlist.title || 'shotlist'}.pdf`)} title="Call sheet" aria-label="Call sheet">
+          <FileText size={16} />
         </button>
-        <button className="btn btn-ghost btn-sm" onClick={() => api.download(`/shotlists/${id}/pdf/photoboard`, `Photo-Board-${shotlist.title || 'shotlist'}.pdf`)} title="Download photo board">
-          <ImageIcon size={14} /> Photo board
+        <button className="db-iconbtn lg" onClick={() => downloadPdf('photoboard', `Photo-Board-${shotlist.title || 'shotlist'}.pdf`)} title="Photo board" aria-label="Photo board">
+          <ImageIcon size={16} />
         </button>
         {isPublished && (
-          <button className="btn btn-secondary btn-sm" onClick={unpublish} disabled={working}>
-            <EyeOff size={13} /> Unpublish
+          <button className="db-iconbtn lg" onClick={unpublish} disabled={working} title="Unpublish" aria-label="Unpublish">
+            <EyeOff size={16} />
           </button>
         )}
-        <button className="btn btn-primary btn-sm" onClick={publish} disabled={working}>
-          <Globe size={13} /> {isPublished ? 'Republish' : 'Publish'}
+        <button className="btn btn-primary" onClick={publish} disabled={working} title={isPublished ? 'Republish' : 'Publish'} aria-label={isPublished ? 'Republish' : 'Publish'}>
+          <Globe size={16} />
         </button>
       </div>
 
       {isPublished && publicUrl && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px', fontSize: '12px', color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
-          <Globe size={12} color="var(--success)" />
-          <a href={publicUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--text-secondary)' }}>{publicUrl}</a>
-          <button className="btn-ghost" style={{ padding: '3px 5px', color: copied ? 'var(--success)' : undefined }} onClick={() => copyText(publicUrl)} title={`Copy crew link (${base.host})`}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '14px', fontSize: '12px', color: 'var(--text-secondary)', minWidth: 0 }}>
+          <a href={publicUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{publicUrl}</a>
+          <button className="db-iconbtn sm" onClick={() => copyText(publicUrl)} title={`Copy crew link (${base.host})`} aria-label="Copy crew link">
             {copied ? <Check size={12} /> : <Link2 size={12} />}
           </button>
-          {/* Which domain a copied link points at, the same way the pitch
-              share control shows it. */}
-          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{base.host}</span>
           {!shotlist.has_passcode && (
-            <span style={{ fontSize: '11px', color: 'var(--warning)' }}>
-              No passcode: the crew can read the list but cannot tick shots off or write set design.
-            </span>
+            <span className="db-dot" title="No passcode: the crew can read the list but cannot tick shots off or write set design" />
           )}
         </div>
       )}
 
       {/* Which ordering the public page and the PDFs present */}
       <div className="shotlist-order-toggle">
-        <span className="shotlist-order-label">Published ordering</span>
-        <button
-          className={`btn btn-sm ${shotlist.order_mode !== 'optimized' ? 'btn-primary' : 'btn-ghost'}`}
-          onClick={() => handleListChange({ order_mode: 'user' })}
-        >
-          My order
-        </button>
-        <button
-          className={`btn btn-sm ${shotlist.order_mode === 'optimized' ? 'btn-primary' : 'btn-ghost'}`}
-          onClick={() => handleListChange({ order_mode: 'optimized' })}
-        >
-          Optimised order
-        </button>
-        <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: 'auto' }}>
-          {days.length} day{days.length === 1 ? '' : 's'} · {scenes.length} scene{scenes.length === 1 ? '' : 's'} · {shotCount} shot{shotCount === 1 ? '' : 's'}
-          {totals ? ` · ${fmtDuration(totals.on_set_minutes)} on set · ${fmtClip(totals.clip_seconds)} of clips` : ''}
-          {completed ? ` · ${completed} complete` : ''}
+        <IconToggles
+          options={ORDER_TOGGLES}
+          value={shotlist.order_mode === 'optimized' ? 'optimized' : 'user'}
+          onChange={v => handleListChange({ order_mode: v })}
+          label="Published ordering"
+        />
+        <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'var(--text-muted)' }}>
+          {totals ? <span title="On set"><Timer size={11} /> {fmtDuration(totals.on_set_minutes)}</span> : null}
+          <Ring value={completed} max={shotCount} size={26} title={`${completed} / ${shotCount}`} />
         </span>
-        <button className="btn btn-ghost btn-sm" onClick={() => setShowActivity(true)}>
-          <History size={13} /> Activity
+        <button className="db-iconbtn" onClick={() => setShowActivity(true)} title="Activity" aria-label="Activity">
+          <History size={15} />
         </button>
-        <button className="btn btn-ghost btn-sm" onClick={resetStatuses}>
-          <RotateCcw size={13} /> Reset statuses
+        <button className="db-iconbtn" onClick={resetStatuses} title="Reset statuses" aria-label="Reset statuses">
+          <RotateCcw size={15} />
         </button>
       </div>
 
@@ -2637,6 +2709,7 @@ export default function ShotlistEditor() {
         onSelect={setActiveDayId}
         onAdd={addDay}
         onEdit={setEditingDay}
+        drift={driftMark}
       />
 
       <div className="shotlist-editor">
@@ -2646,13 +2719,7 @@ export default function ShotlistEditor() {
           )}
 
           {dayScenes.length === 0 && (
-            <div className="card" style={{ padding: '32px 20px', textAlign: 'center' }}>
-              <Clapperboard size={28} color="var(--text-muted)" style={{ margin: '0 auto 10px', display: 'block' }} />
-              <p style={{ color: 'var(--text-secondary)', fontSize: '13px', margin: 0 }}>
-                Nothing on {dayLabel(activeDay)} yet. Start with a scene: set where it happens and in what
-                light, then add the shots inside it.
-              </p>
-            </div>
+            <div className="card db-empty"><Clapperboard size={28} /></div>
           )}
 
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleSceneDragEnd}>
@@ -2691,8 +2758,9 @@ export default function ShotlistEditor() {
             </SortableContext>
           </DndContext>
 
-          <button className="btn btn-secondary" style={{ justifyContent: 'center' }} onClick={addScene}>
-            <Plus size={15} /> Add scene to {dayLabel(activeDay)}
+          <button className="btn btn-secondary" style={{ justifyContent: 'center' }} onClick={addScene}
+            title={`Add scene to ${dayLabel(activeDay)}`} aria-label="Add scene">
+            <Plus size={15} /> <Clapperboard size={15} />
           </button>
 
           <TimelinePreview shotlistId={id} timeline={dayTimeline} onChanged={load} />
@@ -2748,7 +2816,11 @@ export default function ShotlistEditor() {
       )}
 
       {showSettings && (
-        <Overlay title="Shot list settings" onClose={() => setShowSettings(false)}>
+        <Overlay
+          title="Shot list settings"
+          onClose={() => setShowSettings(false)}
+          footer={<button className="btn btn-primary" onClick={() => setShowSettings(false)}>Done</button>}
+        >
           <div className="form-row">
             <label className="form-label">Project</label>
             <select
@@ -2756,54 +2828,48 @@ export default function ShotlistEditor() {
               value={shotlist.project_id == null ? '' : String(shotlist.project_id)}
               onChange={e => {
                 const value = e.target.value;
-                const project = projects.find(p => String(p.id) === value);
+                const linked = projects.find(p => String(p.id) === value);
                 const patch = { project_id: value ? Number(value) : null };
                 // Linking a project prefills the title and shoot date
-                if (project) {
-                  if (!shotlist.title || !shotlist.title.trim()) patch.title = project.title;
-                  if (!shotlist.shoot_date && project.shoot_date) patch.shoot_date = String(project.shoot_date).slice(0, 10);
+                if (linked) {
+                  if (!shotlist.title || !shotlist.title.trim()) patch.title = linked.title;
+                  if (!shotlist.shoot_date && linked.shoot_date) patch.shoot_date = String(linked.shoot_date).slice(0, 10);
                 }
+                setProject(linked ? { id: linked.id, title: linked.title, shoot_date: linked.shoot_date } : null);
                 handleListChange(patch);
               }}
             >
-              <option value="">— none —</option>
+              <option value="" />
               {projects.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
             </select>
           </div>
-          <div style={{ display: 'flex', gap: '10px' }}>
+          <div style={{ display: 'flex', gap: '10px' }}
+            title="Each shoot day carries its own date and times. These two stay for lists made before days existed.">
             <div className="form-row" style={{ flex: 1 }}>
               <label className="form-label">Shoot date</label>
-              <input className="input" type="date" value={shotlist.shoot_date || ''} onChange={e => handleListChange({ shoot_date: e.target.value || null })} />
+              <DateField value={shotlist.shoot_date || ''} onChange={v => handleListChange({ shoot_date: v || null })} />
             </div>
             <div className="form-row" style={{ flex: 1 }}>
               <label className="form-label">Call time</label>
               <input className="input" type="time" value={shotlist.call_time || ''} onChange={e => handleListChange({ call_time: e.target.value || null })} />
             </div>
           </div>
-          <p className="shotlist-hint" style={{ marginTop: 0 }}>
-            Each shoot day carries its own date and times — these two stay for anything made before days existed.
-          </p>
 
-          <div style={{ display: 'flex', gap: '10px' }}>
+          <div style={{ display: 'flex', gap: '10px' }}
+            title="Every company move is wrap out, travel and set up. A scene can override both.">
             <div className="form-row" style={{ flex: 1 }}>
-              <label className="form-label">Default wrap out (minutes)</label>
+              <label className="form-label">Wrap out (min)</label>
               <input className="input" type="number" min="0" step="5" value={shotlist.move_wrap_minutes ?? 20}
                 onChange={e => handleListChange({ move_wrap_minutes: Number(e.target.value) })} />
             </div>
             <div className="form-row" style={{ flex: 1 }}>
-              <label className="form-label">Default set up (minutes)</label>
+              <label className="form-label">Set up (min)</label>
               <input className="input" type="number" min="0" step="5" value={shotlist.move_setup_minutes ?? 25}
                 onChange={e => handleListChange({ move_setup_minutes: Number(e.target.value) })} />
             </div>
           </div>
-          <p className="shotlist-hint" style={{ marginTop: 0 }}>
-            Every company move is wrap out + travel + set up. A scene can override both.
-          </p>
 
           <NotesField value={shotlist.notes} onChange={v => handleListChange({ notes: v })} aiEnabled={aiEnabled} />
-          <div className="modal-footer">
-            <button className="btn btn-primary" onClick={() => setShowSettings(false)}>Done</button>
-          </div>
         </Overlay>
       )}
 
@@ -2811,30 +2877,37 @@ export default function ShotlistEditor() {
         <PasscodeModal
           shotlistId={id}
           hasPasscode={!!shotlist.has_passcode}
+          weak={!!shotlist.passcode_weak}
           onClose={() => setShowPasscode(false)}
-          onSaved={has => setShotlist(prev => ({ ...prev, has_passcode: has }))}
+          onSaved={has => setShotlist(prev => ({ ...prev, has_passcode: has, passcode_weak: false }))}
         />
       )}
 
       {showActivity && (
-        <Overlay title="Activity" onClose={() => setShowActivity(false)}>
+        <Overlay
+          title={<History size={16} />}
+          label="Activity"
+          onClose={() => setShowActivity(false)}
+          footer={<>
+            <button className="db-iconbtn lg" style={{ marginRight: 'auto' }} onClick={resetStatuses} title="Reset all statuses" aria-label="Reset all statuses">
+              <RotateCcw size={16} />
+            </button>
+            <button className="btn btn-primary" onClick={() => setShowActivity(false)}>Close</button>
+          </>}
+        >
           {activity.length === 0 ? (
-            <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Nothing recorded yet.</p>
+            <div className="db-empty"><History size={24} /></div>
           ) : (
             <div className="shotlist-activity">
               {activity.map(a => (
                 <div key={a.id} className="shotlist-activity-row">
                   <span className="shotlist-activity-action">{a.action.replace(/_/g, ' ')}</span>
-                  <span style={{ flex: 1, minWidth: 0 }}>{a.actor_name || 'Someone'}</span>
-                  <span style={{ color: 'var(--text-muted)' }}>{fmtDate(String(a.created_at || '').slice(0, 10))} {String(a.created_at || '').slice(11, 16)}</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>{a.actor_name || ''}</span>
+                  <span style={{ color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums' }}>{pristinaStamp(a.created_at)}</span>
                 </div>
               ))}
             </div>
           )}
-          <div className="modal-footer">
-            <button className="btn btn-ghost" onClick={resetStatuses}>Reset all statuses</button>
-            <button className="btn btn-primary" onClick={() => setShowActivity(false)}>Close</button>
-          </div>
         </Overlay>
       )}
     </div>
@@ -2852,14 +2925,20 @@ function NotesField({ value, onChange, aiEnabled }) {
   );
 }
 
-// The passcode is write-only from the panel: it is stored bcrypt-hashed and
-// never comes back, so the field always starts empty.
-function PasscodeModal({ shotlistId, hasPasscode, onClose, onSaved }) {
+// The passcode is write only from the panel: it is stored bcrypt hashed and
+// never comes back, so the field always starts empty. New and changed
+// passcodes need 6 characters; a shorter one set before the rule keeps
+// working and is marked with an ember dot until it is changed.
+const PASSCODE_MIN = 6;
+
+function PasscodeModal({ shotlistId, hasPasscode, weak, onClose, onSaved }) {
   const [passcode, setPasscode] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const tooShort = passcode.length > 0 && passcode.length < PASSCODE_MIN;
 
   async function save(clear) {
+    if (!clear && passcode.length < PASSCODE_MIN) { setError(`At least ${PASSCODE_MIN} characters`); return; }
     setSaving(true); setError('');
     try {
       const res = await api.put(`/shotlists/${shotlistId}/passcode`, { passcode: clear ? null : passcode });
@@ -2872,31 +2951,39 @@ function PasscodeModal({ shotlistId, hasPasscode, onClose, onSaved }) {
   }
 
   return (
-    <Overlay title={hasPasscode ? 'Change crew passcode' : 'Set crew passcode'} onClose={onClose}>
-      <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '12px' }}>
-        Anyone with the link can read the shot list. Only someone with this passcode can tick shots off
-        and write set design — on the scene, or as a note on one shot. Nothing else on the page can be
-        changed from the link. With no passcode set, those controls are hidden entirely, and changing the
-        passcode signs every device out.
-      </p>
-      <div className="form-row">
-        <label className="form-label">Passcode</label>
-        <input
-          className="input" type="text" value={passcode} autoFocus
-          onChange={e => setPasscode(e.target.value)}
-          placeholder={hasPasscode ? 'Enter a new passcode' : 'At least 4 characters'}
-        />
-      </div>
-      {error && <p style={{ color: 'var(--danger)', fontSize: '12px' }}>{error}</p>}
-      <div className="modal-footer">
+    <Overlay
+      title={<KeyRound size={16} />}
+      label="Crew passcode"
+      onClose={onClose}
+      footer={<>
         {hasPasscode && (
-          <button className="btn btn-ghost" onClick={() => save(true)} disabled={saving}>Remove passcode</button>
+          <button className="db-iconbtn lg danger" style={{ marginRight: 'auto' }} onClick={() => save(true)} disabled={saving}
+            title="Remove passcode" aria-label="Remove passcode">
+            <Trash2 size={16} />
+          </button>
         )}
         <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-        <button className="btn btn-primary" onClick={() => save(false)} disabled={saving || passcode.trim().length < 4}>
-          {saving ? 'Saving…' : 'Save passcode'}
+        <button className="btn btn-primary" onClick={() => save(false)} disabled={saving || passcode.length < PASSCODE_MIN}>
+          {saving ? 'Saving...' : 'Save'}
         </button>
+      </>}
+    >
+      <div className="form-row"
+        title="Anyone with the link can read the list. The passcode lets the crew tick shots off and write set design. Changing it signs every device out.">
+        <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          Passcode
+          {weak && <span className="db-dot" title="The current passcode is shorter than 6 characters" />}
+        </label>
+        <input
+          className="input" type="text" value={passcode} autoFocus
+          onChange={e => { setPasscode(e.target.value); setError(''); }}
+          aria-invalid={tooShort || undefined}
+        />
+        <span className="db-count" style={{ marginTop: '6px' }} title={`At least ${PASSCODE_MIN} characters`}>
+          <span className={`db-dot ${passcode.length >= PASSCODE_MIN ? 'ink' : 'muted'}`} />{passcode.length} / {PASSCODE_MIN}
+        </span>
       </div>
+      {error && <p className="prod-error">{error}</p>}
     </Overlay>
   );
 }
