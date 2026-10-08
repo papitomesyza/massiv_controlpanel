@@ -125,7 +125,87 @@ app.get('/api/uploads/:filename', requireAuth, (req, res) => {
   res.sendFile(filePath);
 });
 
+// ── Audit spine ────────────────────────────────────────────────────────────
+// One row per mutating /api request. actor: hermes (service token) or andi
+// (session). source: X-CoS-Source header when present, else a default. This is
+// what lets a payment logged in the panel and an edit driven from chat land in
+// one ordered stream, read back through GET /api/audit/changes.
+const AUDIT_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const AUDIT_SKIP = [
+  /^\/api\/auth(\/|$)/,
+  /^\/api\/public(\/|$)/,
+  /^\/api\/vault(\/|$)/,
+  /^\/api\/settings\/change-password(\/|$)/,
+  /^\/api\/settings\/backup(\/|$)/,
+];
+
+function auditEntityType(routePath) {
+  const m = routePath.match(/^\/api\/([a-z0-9-]+)/i);
+  if (!m) return 'api';
+  const seg = m[1].toLowerCase();
+  const map = {
+    clients: 'client', crew: 'crew', projects: 'project', budgets: 'budget',
+    invoices: 'invoice', calendar: 'calendar_event', collections: 'collection',
+    'mind-accounts': 'mind_account', leads: 'lead', assets: 'asset',
+    'standalone-tasks': 'standalone_task', shotlists: 'shotlist',
+    finances: 'finance', settings: 'setting',
+  };
+  return map[seg] || seg;
+}
+
+function auditEntityId(req, body) {
+  const p = req.params || {};
+  for (const k of ['id', 'payId', 'paymentId', 'taskId', 'sceneId', 'shotId', 'lineId', 'cardId', 'assignId', 'expId', 'revId', 'locationId', 'characterId', 'dayId']) {
+    const v = parseInt(p[k], 10);
+    if (Number.isFinite(v)) return v;
+  }
+  if (body && typeof body === 'object') {
+    for (const k of ['id', 'payment_id', 'project_id', 'client_id']) {
+      const v = parseInt(body[k], 10);
+      if (Number.isFinite(v)) return v;
+    }
+  }
+  return null;
+}
+
+let insertAudit = null;
+try {
+  insertAudit = db.prepare(
+    'INSERT INTO audit_log (actor, source, method, path, entity_type, entity_id, summary, meta) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  );
+} catch (_) { insertAudit = null; }
+
+app.use((req, res, next) => {
+  if (!AUDIT_METHODS.has(req.method)) return next();
+  const routePath = (req.originalUrl || '').split('?')[0];
+  if (!routePath.startsWith('/api/') || AUDIT_SKIP.some(re => re.test(routePath))) return next();
+
+  const originalJson = res.json.bind(res);
+  res.json = (body) => {
+    try {
+      if (res.statusCode < 400 && insertAudit) {
+        const actor = req.serviceToken ? 'hermes' : 'andi';
+        const source = String(req.get('x-cos-source') || (req.serviceToken ? 'api' : 'panel')).slice(0, 32);
+        const entity_type = auditEntityType(routePath);
+        const entity_id = auditEntityId(req, body);
+        let meta = null;
+        try {
+          const keys = body && typeof body === 'object' ? Object.keys(body).slice(0, 25) : [];
+          meta = JSON.stringify({ keys });
+        } catch (_) { meta = null; }
+        insertAudit.run(actor, source, req.method, routePath, entity_type, entity_id, `${req.method} ${routePath}`, meta);
+      }
+    } catch (err) {
+      console.error('audit failed:', err && err.message ? err.message : err);
+    }
+    return originalJson(body);
+  };
+  next();
+});
+
 app.use('/api/auth', require('./routes/auth'));
+app.use('/api/audit', requireAuth, require('./routes/audit'));
+app.use('/api/export', requireAuth, require('./routes/export'));
 app.use('/api/tasks', requireAuth, require('./routes/tasks'));
 app.use('/api/clients', requireAuth, require('./routes/clients'));
 app.use('/api/crew', requireAuth, require('./routes/crew'));
