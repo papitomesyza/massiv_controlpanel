@@ -11,13 +11,21 @@ const { db } = require('../db/database');
 // Everything with id > since, oldest first. `cursor` is the id to pass next
 // time. A client that stores the cursor never misses a row.
 router.get('/changes', (req, res) => {
-  const since = Math.max(parseInt(req.query.since, 10) || 0, 0);
+  let since = 0;
+  if (req.query.since !== undefined) {
+    const raw = String(req.query.since).trim();
+    if (!/^\d+$/.test(raw)) return res.status(400).json({ error: 'since must be a non-negative integer' });
+    since = parseInt(raw, 10);
+  }
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 500, 1), 2000);
   const rows = db.prepare(
     'SELECT * FROM audit_log WHERE id > ? ORDER BY id ASC LIMIT ?'
   ).all(since, limit);
   const cursor = rows.length ? rows[rows.length - 1].id : since;
-  res.json({ cursor, count: rows.length, has_more: rows.length === limit, rows });
+  // audit_failures: in-memory count of audit inserts that failed since boot
+  // (business write succeeded, row lost). Non-zero means the stream may have gaps.
+  const stats = (req.app.locals && req.app.locals.auditStats) || { failures: 0 };
+  res.json({ cursor, count: rows.length, has_more: rows.length === limit, audit_failures: stats.failures, rows });
 });
 
 // GET /api/audit?limit=<n>&entity_type=<t>&entity_id=<id>

@@ -1235,31 +1235,36 @@ function initDb() {
   }
 
   // Audit log: one row per mutating request. The spine that links panel edits
-    // (Andi working in the panel) and chat-driven edits (Chief of Staff through
-    // the service token) into a single ordered stream. Hermes reads it through
-    // GET /api/audit/changes?since=<cursor>.
-    try {
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS audit_log (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          at_time TEXT NOT NULL DEFAULT (datetime('now')),
-          actor TEXT NOT NULL DEFAULT 'system',
-          source TEXT NOT NULL DEFAULT 'api',
-          method TEXT,
-          path TEXT,
-          entity_type TEXT,
-          entity_id INTEGER,
-          summary TEXT,
-          meta TEXT,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        );
-        CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_log(entity_type, entity_id);
-      `);
-    } catch (_) {}
-
-    // Indexes
+  // (Andi working in the panel) and chat-driven edits (Chief of Staff through
+  // the service token) into a single ordered stream. Hermes reads it through
+  // GET /api/audit/changes?since=<cursor>.
+  try {
     db.exec(`
-      CREATE INDEX IF NOT EXISTS idx_shotlists_slug ON shotlists(slug);
+      CREATE TABLE IF NOT EXISTS audit_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        at_time TEXT NOT NULL DEFAULT (datetime('now')),
+        actor TEXT NOT NULL DEFAULT 'system',
+        source TEXT NOT NULL DEFAULT 'api',
+        method TEXT,
+        path TEXT,
+        entity_type TEXT,
+        entity_id INTEGER,
+        summary TEXT,
+        meta TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_log(entity_type, entity_id);
+    `);
+  } catch (_) {}
+  // Derived verb column (project.create, payment.create, ...). Idempotent.
+  try { db.exec('ALTER TABLE audit_log ADD COLUMN verb TEXT'); } catch (_) {}
+  // NOTE: at_time/created_at are stored in UTC (datetime('now')); consumers
+  // (panel_reconcile.py) convert to Prishtina local time.
+  // NOTE: no retention/prune on audit_log yet; rows are small (meta capped at 2KB).
+
+  // Indexes
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_shotlists_slug ON shotlists(slug);
     CREATE INDEX IF NOT EXISTS idx_shots_shotlist ON shots(shotlist_id);
     CREATE INDEX IF NOT EXISTS idx_shots_scene ON shots(scene_id);
     CREATE INDEX IF NOT EXISTS idx_shotlist_scenes_shotlist ON shotlist_scenes(shotlist_id);

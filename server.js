@@ -11,6 +11,8 @@ const PORT = process.env.PORT || 3000;
 // Behind Zeabur's reverse proxy — trust the first proxy hop so rate limiters
 // (login, public expense) see the real client IP instead of the proxy IP.
 app.set('trust proxy', 1);
+// Routes match exactly: /API/x must not reach /api/x handlers (blocklist + audit bypass).
+app.set('case sensitive routing', true);
 
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
@@ -69,10 +71,28 @@ app.use('/api/public', (req, res, next) => {
 // otherwise has full read/write. The password vault is zero-knowledge anyway,
 // and these are the identity/secret surfaces of the panel.
 const SERVICE_TOKEN_BLOCKED = [
-  /^\/api\/vault(\/|$)/,
-  /^\/api\/settings\/change-password(\/|$)/,
-  /^\/api\/settings\/backup\/download(\/|$)/,
+  /^\/api\/vault(\/|$)/i,
+  /^\/api\/settings\/change-password(\/|$)/i,
+  /^\/api\/settings\/backup\/download(\/|$)/i,
 ];
+
+// Canonical form of a request path for security matching: strip query, decode
+// (repeatedly, to defeat double encoding), lowercase, collapse // and resolve
+// . and .. segments. Undecodable paths are lowercased as-is.
+function normalizeApiPath(raw) {
+  let p = String(raw || '').split('?')[0].split('#')[0];
+  for (let i = 0; i < 3; i++) {
+    try { const d = decodeURIComponent(p); if (d === p) break; p = d; } catch (_) { break; }
+  }
+  p = p.replace(/\\/g, '/').toLowerCase().replace(/\/{2,}/g, '/');
+  const out = [];
+  for (const seg of p.split('/')) {
+    if (seg === '.') continue;
+    if (seg === '..') { if (out.length > 1) out.pop(); continue; }
+    out.push(seg);
+  }
+  return out.join('/');
+}
 
 // Constant-time comparison of the presented bearer against HERMES_API_TOKEN.
 // The env var is the whole switch: unset it (or change it) on Zeabur to revoke.
@@ -91,7 +111,7 @@ function requireAuth(req, res, next) {
   const token = auth.slice(7).trim();
 
   if (isServiceToken(token)) {
-    const url = (req.originalUrl || '').split('?')[0];
+    const url = normalizeApiPath(req.originalUrl);
     if (SERVICE_TOKEN_BLOCKED.some(re => re.test(url))) {
       return res.status(403).json({ error: 'Forbidden for service token' });
     }
@@ -125,6 +145,17 @@ app.get('/api/uploads/:filename', requireAuth, (req, res) => {
   res.sendFile(filePath);
 });
 
+// Global guard (runs before any router, any casing): a service token can never
+// reach a blocked path, even if routing would 404 it. Deterministic 403.
+app.use((req, res, next) => {
+  const auth = req.headers.authorization || '';
+  if (auth.startsWith('Bearer ') && isServiceToken(auth.slice(7).trim())
+      && SERVICE_TOKEN_BLOCKED.some(re => re.test(normalizeApiPath(req.originalUrl)))) {
+    return res.status(403).json({ error: 'Forbidden for service token' });
+  }
+  next();
+});
+
 // ── Audit spine ────────────────────────────────────────────────────────────
 // One row per mutating /api request. actor: hermes (service token) or andi
 // (session). source: X-CoS-Source header when present, else a default. This is
@@ -132,12 +163,65 @@ app.get('/api/uploads/:filename', requireAuth, (req, res) => {
 // one ordered stream, read back through GET /api/audit/changes.
 const AUDIT_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const AUDIT_SKIP = [
-  /^\/api\/auth(\/|$)/,
-  /^\/api\/public(\/|$)/,
-  /^\/api\/vault(\/|$)/,
-  /^\/api\/settings\/change-password(\/|$)/,
-  /^\/api\/settings\/backup(\/|$)/,
+  /^\/api\/auth(\/|$)/i,
+  /^\/api\/public(\/|$)/i,
+  /^\/api\/vault(\/|$)/i,
+  /^\/api\/settings\/change-password(\/|$)/i,
+  /^\/api\/settings\/backup(\/|$)/i,
 ];
+
+const AUDIT_SOURCES = new Set(['panel', 'api', 'telegram', 'desktop', 'voice']);
+// Request-body keys that may be stored in audit meta (whitelist only).
+const AUDIT_BODY_KEYS = ['amount', 'status', 'title', 'name', 'phase_name', 'phase', 'client_id', 'currency', 'rate_per_day', 'days'];
+const AUDIT_SECRET_RE = /password|secret|token|key|backup|base64/i;
+const AUDIT_META_CAP = 2048;
+// In-memory count of audit inserts that failed (the business write still
+// succeeded). Exposed on GET /api/audit/changes so a reader knows rows may be missing.
+const auditStats = { failures: 0 };
+app.locals.auditStats = auditStats;
+
+function auditBodySubset(body) {
+  const out = {};
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return out;
+  for (const k of AUDIT_BODY_KEYS) {
+    if (!(k in body) || AUDIT_SECRET_RE.test(k)) continue;
+    const v = body[k];
+    if (v === null || v === undefined || typeof v === 'object') continue;
+    if (typeof v === 'string' && /^\s*data:/i.test(v)) continue;
+    out[k] = typeof v === 'string' ? v.slice(0, 200) : v;
+  }
+  return out;
+}
+
+// Derived verb, e.g. project.create, payment.create, project.status, client.update.
+function auditVerb(method, routePath, body) {
+  const segs = normalizeApiPath(routePath).split('/').filter(Boolean).slice(1); // drop 'api'
+  const subMap = {
+    payments: 'payment', expenses: 'expense', tasks: 'task', crew: 'crew_assignment',
+    phases: 'phase', logs: 'log', lines: 'line', scenes: 'scene', shots: 'shot',
+    revisions: 'revision', characters: 'character', locations: 'location', days: 'day',
+  };
+  const rootMap = {
+    clients: 'client', crew: 'crew', projects: 'project', budgets: 'budget',
+    invoices: 'invoice', calendar: 'calendar_event', collections: 'collection',
+    'mind-accounts': 'mind_account', leads: 'lead', assets: 'asset',
+    'standalone-tasks': 'standalone_task', shotlists: 'shotlist', finances: 'finance',
+    settings: 'setting', tasks: 'task',
+  };
+  const isId = x => /^\d+$/.test(x);
+  const root = segs[0] || 'api';
+  let noun = rootMap[root] || root;
+  const named = segs.slice(1).filter(x => !isId(x));
+  if (named.length && subMap[named[0]]) noun = subMap[named[0]];
+  let action = { POST: 'create', PUT: 'update', PATCH: 'update', DELETE: 'delete' }[method] || method.toLowerCase();
+  const last = segs[segs.length - 1] || '';
+  if (/^(complete|status|accept|send|archive|restore|pay|paid|done|toggle)$/.test(last)) {
+    action = last;
+  } else if (method !== 'POST' && method !== 'DELETE' && !named.length && body && typeof body === 'object' && 'status' in body) {
+    action = 'status';
+  }
+  return `${noun}.${action}`;
+}
 
 function auditEntityType(routePath) {
   const m = routePath.match(/^\/api\/([a-z0-9-]+)/i);
@@ -168,34 +252,38 @@ function auditEntityId(req, body) {
   return null;
 }
 
-let insertAudit = null;
-try {
-  insertAudit = db.prepare(
-    'INSERT INTO audit_log (actor, source, method, path, entity_type, entity_id, summary, meta) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-  );
-} catch (_) { insertAudit = null; }
+// Fail loud: if the audit insert cannot be prepared, the server must not boot
+// with a silently disabled audit spine.
+const insertAudit = db.prepare(
+  'INSERT INTO audit_log (actor, source, method, path, entity_type, entity_id, summary, meta, verb) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+);
 
 app.use((req, res, next) => {
   if (!AUDIT_METHODS.has(req.method)) return next();
   const routePath = (req.originalUrl || '').split('?')[0];
-  if (!routePath.startsWith('/api/') || AUDIT_SKIP.some(re => re.test(routePath))) return next();
+  const normPath = normalizeApiPath(routePath);
+  if (!/^\/api\//i.test(normPath) || AUDIT_SKIP.some(re => re.test(normPath))) return next();
 
   const originalJson = res.json.bind(res);
   res.json = (body) => {
     try {
-      if (res.statusCode < 400 && insertAudit) {
+      if (res.statusCode < 400) {
         const actor = req.serviceToken ? 'hermes' : 'andi';
-        const source = String(req.get('x-cos-source') || (req.serviceToken ? 'api' : 'panel')).slice(0, 32);
+        const hdr = String(req.get('x-cos-source') || '').trim().toLowerCase();
+        const source = AUDIT_SOURCES.has(hdr) ? hdr : (req.serviceToken ? 'api' : 'panel');
         const entity_type = auditEntityType(routePath);
         const entity_id = auditEntityId(req, body);
         let meta = null;
         try {
           const keys = body && typeof body === 'object' ? Object.keys(body).slice(0, 25) : [];
-          meta = JSON.stringify({ keys });
+          meta = JSON.stringify({ keys, req: auditBodySubset(req.body) });
+          if (meta.length > AUDIT_META_CAP) meta = JSON.stringify({ keys: keys.slice(0, 10), truncated: true });
         } catch (_) { meta = null; }
-        insertAudit.run(actor, source, req.method, routePath, entity_type, entity_id, `${req.method} ${routePath}`, meta);
+        const verb = auditVerb(req.method, routePath, req.body);
+        insertAudit.run(actor, source, req.method, routePath, entity_type, entity_id, `${req.method} ${routePath}`, meta, verb);
       }
     } catch (err) {
+      auditStats.failures++;
       console.error('audit failed:', err && err.message ? err.message : err);
     }
     return originalJson(body);
