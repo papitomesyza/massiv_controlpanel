@@ -32,3 +32,22 @@ Next: Andi decides what to build/fix.
   `GET /api/export` (one-call board snapshot: settings minus secrets, clients, projects+phases+money, crew, finances).
 - Verified live: /api/export 200 JSON (17 clients, 20 projects, 28 crew); /api/audit/changes 200 JSON.
 - Commits: 8274586 (P0 cleanup: Anthropic AI + flowSync removed), b9f8bda (audit spine + export).
+
+## Project categories v2 (2026-10-08, LIVE)
+- Audit: 26 seeded categories, only ~10 ever used; 8 post-only services sat next to real engagements; the
+  taxonomy was hardcoded in 3 layers (DB seed, projectTasks.js, PRODUCTION_GROUPS) and shoot logic keyed off the
+  group name, so a pure-edit "Social Media Video" still asked for shoot date / location.
+- Fix (commit a4df828): `db/database.js` `PROJECT_TAXONOMY` is now the single source of truth. 29 categories in
+  5 groups by how work is sold: Film & Video, Photography, Design & Brand, Post & Finishing, Campaign &
+  Direction. New per-category `has_shoot_day` replaces PRODUCTION_GROUPS everywhere (project wizard, project
+  detail, calendarSync). One-time v1 -> v2 migration renames rows in place (foreign keys survive), moves the
+  free-string category on budgets + leads, and archives 2 dead post-only rows (Audio Mixing & Mastering,
+  Photo Editing & Culling) instead of deleting them.
+- Settings API: `PUT /settings/project-categories/:id` (rename / regroup / archive); unused defaults are now
+  deletable; `GET` hides archived unless `?include_archived=1`. Settings UI has rename + delete per category.
+- `frontend/src/data/projectTasks.js` retemplated; added Wedding, Integrated Campaign, Directing Only,
+  Monthly Content Retainer, Concept / Pitch.
+- Verified live: 29 active + 2 archived, 20 projects, 0 orphans. Re-filed #11 Cloud Eleven (Social Media Video
+  -> Product / Property Video) and #35 Rozafa & And (Event Photography -> Wedding).
+- OPEN: #22 "Family & Money - TV Film Direction" still in TV Commercial; could be Directing Only or
+  Brand Film / Corporate Video. Andi to confirm.
