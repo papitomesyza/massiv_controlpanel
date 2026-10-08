@@ -609,15 +609,8 @@ function PitchEditorPage() {
       .finally(() => setLoading(false));
   }, [id]);
 
-  // Checked once per editor load. When the server has no key the feature hides entirely.
   useEffect(() => {
-    api.get('/pitches/ai-status')
-      .then(s => setAiEnabled(!!s.enabled))
-      .catch(() => setAiEnabled(false));
-  }, []);
-
-  useEffect(() => {
-    api.get('/pitches/public-base')
+      api.get('/pitches/public-base')
       .then(b => { if (b && b.base) setPitchBase(b); })
       .catch(() => { /* the current origin stays */ });
   }, []);

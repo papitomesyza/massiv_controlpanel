@@ -3,7 +3,7 @@ const router = express.Router();
 const path = require('path');
 const { db } = require('../db/database');
 const { singleImageUpload, storeImage } = require('../lib/mediaStore');
-const { renderPresentation, SECTION_TYPES, scrubDashes } = require('../lib/renderPresentation');
+const { renderPresentation, SECTION_TYPES } = require('../lib/renderPresentation');
 const { publicPitchBase } = require('../lib/pitchDomain');
 
 function getMediaDir() {
@@ -48,62 +48,6 @@ router.post('/upload', singleImageUpload('image'), async (req, res) => {
   }
 });
 
-// ── AI copy polish (Opus) ─────────────────────────────────────────────────────
-// Declared before the /:id routes so "ai-status" is never read as an id.
-
-const POLISH_SYSTEM = [
-  'You are a copywriter and copy editor for premium photography and film production pitches.',
-  'Given one piece of pitch copy, write THREE alternative versions of it for the writer to choose from.',
-  'Every version fixes any grammar and spelling mistakes, reads clearly, and preserves the original meaning and approximate length.',
-  'Make the three genuinely different from one another in phrasing, rhythm or emphasis, not the same sentence with one word swapped. Keep the tone confident, minimal and premium.',
-  'Inputs arrive in English or Albanian, and a single text may mix both. Always reply in the language of the input: English input gets English output, Albanian input gets Albanian output. If a text mixes languages, keep each part in its original language. Never translate in either direction. Apply the same fixes with native fluency in both languages. Albanian output uses proper Albanian orthography, including ë and ç, even when the input was typed without diacritics.',
-  'Never use em dashes or en dashes anywhere in the output. Restructure with commas, periods, or shorter sentences instead. If the input contains them, remove them in the rewrite.',
-  'Return ONLY a JSON array of exactly three strings, for example ["first version","second version","third version"].',
-  'No preamble, no commentary, no markdown code fences, no numbering, no object keys.',
-].join(' ');
-
-// Belt and suspenders: whatever the model returns, this endpoint is physically
-// incapable of emitting a long dash. scrubDashes is shared with the renderer.
-
-// The model is asked for a bare JSON array. Parse defensively anyway: strip
-// code fences, fall back to the first bracketed block, then to a numbered or
-// line-separated list, so a chatty response still yields usable options.
-function parseVariants(raw) {
-  let s = String(raw || '').trim()
-    .replace(/^```(?:json)?[ \t]*\r?\n?/i, '')
-    .replace(/```\s*$/, '')
-    .trim();
-
-  let arr = null;
-  try {
-    const p = JSON.parse(s);
-    if (Array.isArray(p)) arr = p;
-  } catch (_) {}
-  if (!arr) {
-    const m = s.match(/\[[\s\S]*\]/);
-    if (m) {
-      try {
-        const p = JSON.parse(m[0]);
-        if (Array.isArray(p)) arr = p;
-      } catch (_) {}
-    }
-  }
-  if (!arr) {
-    arr = s.split(/\r?\n+/)
-      .map(l => l.replace(/^[ \t]*(?:\d+[.)]|[-*•])[ \t]*/, '').replace(/^["']|["',]+$/g, '').trim())
-      .filter(Boolean);
-  }
-
-  const out = [];
-  for (const v of arr) {
-    if (typeof v !== 'string') continue;
-    const t = scrubDashes(v);
-    if (t && !out.includes(t)) out.push(t);
-    if (out.length === 3) break;
-  }
-  return out;
-}
-
 // ── Public link base ──────────────────────────────────────────────────────────
 // Declared before the /:id routes so "public-base" is never read as an id.
 // The panel builds every client-facing pitch URL from this, so a configured
@@ -115,77 +59,6 @@ router.get('/public-base', (req, res) => {
   } catch (_) {
     const host = req.get('host') || '';
     res.json({ base: `${req.protocol}://${host}`, host, custom: false });
-  }
-});
-
-router.get('/ai-status', (req, res) => {
-  try {
-    res.json({ enabled: !!process.env.ANTHROPIC_API_KEY });
-  } catch (_) {
-    res.json({ enabled: false });
-  }
-});
-
-// The polish request is one field of copy. The app parses JSON bodies up to
-// 50MB for other routes, so this one refuses anything larger than a field
-// could be before the text is even read.
-const POLISH_MAX_BODY = 16 * 1024;
-
-router.post('/ai-polish', async (req, res) => {
-  try {
-    if (Number(req.get('content-length') || 0) > POLISH_MAX_BODY) {
-      return res.status(413).json({ error: 'Request too large (max 16KB)' });
-    }
-    const text = req.body && typeof req.body.text === 'string' ? req.body.text : '';
-    if (!text.trim()) return res.status(400).json({ error: 'text required' });
-    if (text.length > 2000) return res.status(400).json({ error: 'text too long (max 2000 characters)' });
-
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) return res.status(501).json({ error: 'not_configured' });
-
-    const controller = new AbortController();
-    // Three variants of a long field take longer than a single rewrite did
-    const timer = setTimeout(() => controller.abort(), 30000);
-    let upstream;
-    try {
-      upstream = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-          model: 'claude-opus-4-8',
-          // room for three rewrites of a 2000-character field plus JSON syntax
-          max_tokens: 3000,
-          system: POLISH_SYSTEM,
-          messages: [{ role: 'user', content: text }],
-        }),
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timer);
-    }
-
-    if (!upstream.ok) {
-      console.error('AI polish upstream error:', upstream.status);
-      return res.status(502).json({ error: 'polish_failed' });
-    }
-
-    const data = await upstream.json();
-    const blocks = Array.isArray(data && data.content) ? data.content : [];
-    const raw = blocks.filter(b => b && b.type === 'text').map(b => b.text || '').join('').trim();
-    if (!raw) return res.status(502).json({ error: 'polish_failed' });
-
-    const variants = parseVariants(raw);
-    if (variants.length === 0) return res.status(502).json({ error: 'polish_failed' });
-
-    res.json({ variants });
-  } catch (err) {
-    // Never log the user's text content
-    console.error('AI polish failed:', err && err.name ? err.name : 'error');
-    res.status(502).json({ error: 'polish_failed' });
   }
 });
 

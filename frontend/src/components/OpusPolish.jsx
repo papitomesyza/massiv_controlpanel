@@ -8,13 +8,9 @@ import { api } from '../api';
 // flight so an edit cannot be overwritten underneath it.
 
 export function useAiPolishAvailable() {
-  const [enabled, setEnabled] = useState(false);
-  useEffect(() => {
-    api.get('/pitches/ai-status')
-      .then(s => setEnabled(!!s.enabled))
-      .catch(() => setEnabled(false));
-  }, []);
-  return enabled;
+  // AI copy polish was removed from the panel: Chief of Staff handles copy work.
+    // The hook stays so existing call sites keep compiling; it is always off.
+    return false;
 }
 
 export default function OpusPolish({ enabled, value, onChange, loading, setLoading }) {

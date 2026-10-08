@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const { db } = require('../db/database');
-const { syncPayment, removePayment } = require('../lib/flowSync');
 const { documentFilename } = require('../lib/filename');
 const { pristinaToday, addDays } = require('../lib/pristinaDate');
 const { owedSummary } = require('../lib/financeFigures');
@@ -514,7 +513,6 @@ router.post('/:id/payments', (req, res) => {
     return result.lastInsertRowid;
   });
   const paymentId = record();
-  syncPayment(paymentId);
 
   res.json({ ok: true, payment_id: paymentId });
 });
@@ -539,7 +537,6 @@ router.delete('/:id/payments/:paymentId', (req, res) => {
     db.prepare('UPDATE invoices SET amount_paid = ?, status = ? WHERE id = ?').run(newPaid, status, id);
   });
   reverse();
-  removePayment(paymentId);
 
   res.json({ ok: true });
 });
@@ -552,7 +549,6 @@ router.post('/:id/unpaid', (req, res) => {
   const inv = db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id);
   if (!inv) return res.status(404).json({ error: 'Not found' });
 
-  const payments = db.prepare('SELECT id FROM client_payments WHERE invoice_id = ?').all(inv.id);
   const targetStatus = inv.invoice_number ? 'issued' : 'draft';
 
   const reset = db.transaction(() => {
@@ -560,7 +556,6 @@ router.post('/:id/unpaid', (req, res) => {
     db.prepare('UPDATE invoices SET amount_paid = 0, status = ? WHERE id = ?').run(targetStatus, inv.id);
   });
   reset();
-  payments.forEach(p => removePayment(p.id));
 
   res.json({ ok: true });
 });
