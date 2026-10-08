@@ -23,3 +23,12 @@ Next: Andi decides what to build/fix.
 - Blocked 403: /api/vault*, change-password, backup/download. No/bad token 401.
 - Access recipe for Hermes: `curl -H "Authorization: Bearer $(cat ~/.massiv_token)" https://mssv.zeabur.app/api/<route>`.
 - Revoke: change or unset HERMES_API_TOKEN on Zeabur (env var), redeploy.
+
+## CoS spine + export (2026-10-08, LIVE)
+- Chief of Staff now MANAGES the panel (Andi's call). Full build plan/status: C:\Users\mssvh\projects\massiv-cos-integration\.
+- New: `audit_log` table + recordAudit middleware (server.js). Every mutating /api request logs actor
+  (andi|hermes) and source (panel|api|telegram|desktop, via X-CoS-Source header).
+- New reads: `GET /api/audit/changes?since=<cursor>` (cursor stream), `GET /api/audit` (newest first),
+  `GET /api/export` (one-call board snapshot: settings minus secrets, clients, projects+phases+money, crew, finances).
+- Verified live: /api/export 200 JSON (17 clients, 20 projects, 28 crew); /api/audit/changes 200 JSON.
+- Commits: 8274586 (P0 cleanup: Anthropic AI + flowSync removed), b9f8bda (audit spine + export).
