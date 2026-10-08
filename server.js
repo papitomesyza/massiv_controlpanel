@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const multer = require('multer');
 const { initDb, db } = require('./db/database');
 
@@ -64,10 +65,40 @@ app.use('/api/public', (req, res, next) => {
   next();
 }, publicRouter);
 
+// Paths a service token (e.g. the Hermes agent) may NEVER reach, even though it
+// otherwise has full read/write. The password vault is zero-knowledge anyway,
+// and these are the identity/secret surfaces of the panel.
+const SERVICE_TOKEN_BLOCKED = [
+  /^\/api\/vault(\/|$)/,
+  /^\/api\/settings\/change-password(\/|$)/,
+  /^\/api\/settings\/backup\/download(\/|$)/,
+];
+
+// Constant-time comparison of the presented bearer against HERMES_API_TOKEN.
+// The env var is the whole switch: unset it (or change it) on Zeabur to revoke.
+function isServiceToken(token) {
+  const expected = process.env.HERMES_API_TOKEN;
+  if (!expected || typeof token !== 'string') return false;
+  const a = Buffer.from(token);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
 function requireAuth(req, res, next) {
   const auth = req.headers.authorization;
   if (!auth || !auth.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' });
-  const token = auth.slice(7);
+  const token = auth.slice(7).trim();
+
+  if (isServiceToken(token)) {
+    const url = (req.originalUrl || '').split('?')[0];
+    if (SERVICE_TOKEN_BLOCKED.some(re => re.test(url))) {
+      return res.status(403).json({ error: 'Forbidden for service token' });
+    }
+    req.serviceToken = true;
+    return next();
+  }
+
   const session = db.prepare("SELECT id FROM sessions WHERE token = ? AND expires_at > datetime('now')").get(token);
   if (!session) return res.status(401).json({ error: 'Unauthorized' });
   next();
