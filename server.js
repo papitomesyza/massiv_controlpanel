@@ -172,7 +172,7 @@ const AUDIT_SKIP = [
 
 const AUDIT_SOURCES = new Set(['panel', 'api', 'telegram', 'desktop', 'voice']);
 // Request-body keys that may be stored in audit meta (whitelist only).
-const AUDIT_BODY_KEYS = ['amount', 'status', 'title', 'name', 'phase_name', 'phase', 'client_id', 'currency', 'rate_per_day', 'days'];
+const AUDIT_BODY_KEYS = ['amount', 'status', 'title', 'name', 'phase_name', 'phase', 'client_id', 'currency', 'rate_per_day', 'days', 'payment_id', 'project_id'];
 const AUDIT_SECRET_RE = /password|secret|token|key|backup|base64/i;
 const AUDIT_META_CAP = 2048;
 // In-memory count of audit inserts that failed (the business write still
@@ -271,12 +271,14 @@ app.use((req, res, next) => {
         const actor = req.serviceToken ? 'hermes' : 'andi';
         const hdr = String(req.get('x-cos-source') || '').trim().toLowerCase();
         const source = AUDIT_SOURCES.has(hdr) ? hdr : (req.serviceToken ? 'api' : 'panel');
-        const entity_type = auditEntityType(routePath);
-        const entity_id = auditEntityId(req, body);
+        // Handlers may set res.locals.cosAudit to make the row exact (e.g. payment delete/update).
+        const cos = res.locals && res.locals.cosAudit;
+        const entity_type = (cos && cos.entity_type) || auditEntityType(routePath);
+        const entity_id = (cos && cos.entity_id != null) ? cos.entity_id : auditEntityId(req, body);
         let meta = null;
         try {
           const keys = body && typeof body === 'object' ? Object.keys(body).slice(0, 25) : [];
-          meta = JSON.stringify({ keys, req: auditBodySubset(req.body) });
+          meta = JSON.stringify({ keys, req: auditBodySubset(Object.assign({}, req.body, cos && cos.req)) });
           if (meta.length > AUDIT_META_CAP) meta = JSON.stringify({ keys: keys.slice(0, 10), truncated: true });
         } catch (_) { meta = null; }
         const verb = auditVerb(req.method, routePath, req.body);

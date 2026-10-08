@@ -528,6 +528,11 @@ router.delete('/:id/payments/:paymentId', (req, res) => {
 
   const payment = db.prepare('SELECT * FROM client_payments WHERE id = ? AND invoice_id = ?').get(paymentId, id);
   if (!payment) return res.status(404).json({ error: 'Payment not found for this invoice' });
+  res.locals.cosAudit = {
+    entity_type: 'payment',
+    entity_id: payment.id,
+    req: { amount: payment.amount, status: payment.status, payment_id: payment.id, project_id: payment.project_id },
+  };
 
   const reverse = db.transaction(() => {
     db.prepare('DELETE FROM client_payments WHERE id = ?').run(paymentId);

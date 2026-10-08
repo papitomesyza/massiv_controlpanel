@@ -511,16 +511,30 @@ router.post('/:id/payments', (req, res) => {
   res.json({ id: result.lastInsertRowid });
 });
 
+const PAYMENT_AUDIT_SQL = 'SELECT id, project_id, amount, date, method, status, invoice_id FROM client_payments WHERE id=? AND project_id=?';
+function setPaymentAudit(res, row) {
+  if (!row) return;
+  res.locals.cosAudit = {
+    entity_type: 'payment',
+    entity_id: row.id,
+    req: { amount: row.amount, status: row.status, payment_id: row.id, project_id: row.project_id },
+  };
+}
+
 router.put('/:id/payments/:payId', (req, res) => {
   const { amount, date, method, notes, status } = req.body;
   const err = validateMoney(amount, 'amount');
   if (err) return res.status(400).json({ error: err });
   db.prepare('UPDATE client_payments SET amount=?, date=?, method=?, notes=?, status=? WHERE id=? AND project_id=?')
     .run(amount, date, method, notes || null, status, req.params.payId, req.params.id);
+  // Row AFTER the update so the audit records the new amount.
+  setPaymentAudit(res, db.prepare(PAYMENT_AUDIT_SQL).get(req.params.payId, req.params.id));
   res.json({ ok: true });
 });
 
 router.delete('/:id/payments/:payId', (req, res) => {
+  // Row BEFORE the delete so the audit records what was removed.
+  setPaymentAudit(res, db.prepare(PAYMENT_AUDIT_SQL).get(req.params.payId, req.params.id));
   db.prepare('DELETE FROM client_payments WHERE id = ? AND project_id = ?').run(req.params.payId, req.params.id);
   res.json({ ok: true });
 });
