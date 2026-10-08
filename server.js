@@ -77,9 +77,9 @@ const SERVICE_TOKEN_BLOCKED = [
 // Constant-time comparison of the presented bearer against HERMES_API_TOKEN.
 // The env var is the whole switch: unset it (or change it) on Zeabur to revoke.
 function isServiceToken(token) {
-  const expected = process.env.HERMES_API_TOKEN;
+  const expected = (process.env.HERMES_API_TOKEN || '').trim();
   if (!expected || typeof token !== 'string') return false;
-  const a = Buffer.from(token);
+  const a = Buffer.from(token.trim());
   const b = Buffer.from(expected);
   if (a.length !== b.length) return false;
   return crypto.timingSafeEqual(a, b);
