@@ -26,8 +26,9 @@ function validateLineFields({ days, rate, amount, discount }) {
 
 const FLAT_FEE_CATS = new Set([
   'Video Editing', 'Color Grading', 'VFX / Motion Graphics',
-  'Podcast / Audio Production', 'Branding & Identity',
-  'Graphic Design', 'Web Design', 'Social Media Content Management',
+  '2D / 3D Animation', 'Audio Production & Mix', 'Subtitling & Localization',
+  'Photo Retouching', 'Branding & Identity',
+  'Graphic Design', 'Web / UI Design', 'Social Content Management',
 ]);
 
 function getBudgetFull(id) {

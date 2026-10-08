@@ -35,20 +35,52 @@ router.delete('/expense-categories/:id', (req, res) => {
 });
 
 router.get('/project-categories', (req, res) => {
-  res.json(db.prepare('SELECT * FROM project_categories ORDER BY group_name, name').all());
+  const includeArchived = req.query.include_archived === '1';
+  const sql = includeArchived
+    ? 'SELECT * FROM project_categories ORDER BY sort_order, name'
+    : 'SELECT * FROM project_categories WHERE COALESCE(archived, 0) = 0 ORDER BY sort_order, name';
+  res.json(db.prepare(sql).all());
 });
 
 router.post('/project-categories', (req, res) => {
   const { name, group_name } = req.body;
+  const has_shoot_day = req.body.has_shoot_day ? 1 : 0;
   if (!name || !group_name) return res.status(400).json({ error: 'Name and group required' });
-  const result = db.prepare('INSERT INTO project_categories (name, group_name, is_default) VALUES (?, ?, 0)').run(name, group_name);
+  // New categories land at the end of their group's block unless a sort is given.
+  const sort = Number.isFinite(Number(req.body.sort_order))
+    ? Number(req.body.sort_order)
+    : (db.prepare('SELECT COALESCE(MAX(sort_order), 0) + 10 AS n FROM project_categories').get().n);
+  const result = db.prepare('INSERT INTO project_categories (name, group_name, has_shoot_day, sort_order, is_default) VALUES (?, ?, ?, ?, 0)')
+    .run(name, group_name, has_shoot_day, sort);
   res.json({ id: result.lastInsertRowid });
+});
+
+router.put('/project-categories/:id', (req, res) => {
+  const cat = db.prepare('SELECT * FROM project_categories WHERE id = ?').get(req.params.id);
+  if (!cat) return res.status(404).json({ error: 'Not found' });
+  const name = (req.body.name ?? cat.name).trim();
+  const group_name = (req.body.group_name ?? cat.group_name).trim();
+  const has_shoot_day = req.body.has_shoot_day === undefined ? cat.has_shoot_day : (req.body.has_shoot_day ? 1 : 0);
+  const sort_order = Number.isFinite(Number(req.body.sort_order)) ? Number(req.body.sort_order) : (cat.sort_order || 0);
+  const archived = req.body.archived === undefined ? (cat.archived || 0) : (req.body.archived ? 1 : 0);
+  if (!name || !group_name) return res.status(400).json({ error: 'Name and group required' });
+  try {
+    db.prepare('UPDATE project_categories SET name=?, group_name=?, has_shoot_day=?, sort_order=?, archived=? WHERE id=?')
+      .run(name, group_name, has_shoot_day, sort_order, archived, req.params.id);
+  } catch (e) {
+    return res.status(400).json({ error: 'A category with that name already exists' });
+  }
+  // Budgets and leads carry the category as a free string, so a rename follows.
+  if (name !== cat.name) {
+    db.prepare('UPDATE budgets SET category=? WHERE category=?').run(name, cat.name);
+    db.prepare('UPDATE leads SET category_name_manual=? WHERE category_name_manual=?').run(name, cat.name);
+  }
+  res.json({ ok: true });
 });
 
 router.delete('/project-categories/:id', (req, res) => {
   const cat = db.prepare('SELECT * FROM project_categories WHERE id = ?').get(req.params.id);
   if (!cat) return res.status(404).json({ error: 'Not found' });
-  if (cat.is_default) return res.status(400).json({ error: 'Cannot delete default category' });
   const usage = db.prepare('SELECT COUNT(*) as n FROM projects WHERE category_id = ?').get(req.params.id).n;
   if (usage > 0) return res.status(400).json({ error: `Cannot delete: used by ${usage} project${usage > 1 ? 's' : ''}` });
   db.prepare('DELETE FROM project_categories WHERE id = ?').run(req.params.id);

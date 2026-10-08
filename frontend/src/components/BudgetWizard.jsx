@@ -9,18 +9,20 @@ const STEP_LABELS = ['Project Info', 'Crew', 'Assets & Rentals', 'Logistical Cos
 
 const FLAT_FEE_CATS = new Set([
   'Video Editing', 'Color Grading', 'VFX / Motion Graphics',
-  'Podcast / Audio Production', 'Branding & Identity',
-  'Graphic Design', 'Web Design', 'Social Media Content Management',
+  '2D / 3D Animation', 'Audio Production & Mix', 'Subtitling & Localization',
+  'Photo Retouching', 'Branding & Identity',
+  'Graphic Design', 'Web / UI Design', 'Social Content Management',
 ]);
 
 const NO_EQUIPMENT_CATS = new Set([
-  'Branding & Identity', 'Graphic Design', 'Web Design', 'Social Media Content Management',
+  'Branding & Identity', 'Graphic Design', 'Web / UI Design', 'Social Content Management',
 ]);
 
 const NO_LOGISTICS_CATS = new Set([
   'Video Editing', 'Color Grading', 'VFX / Motion Graphics',
-  'Podcast / Audio Production', 'Branding & Identity',
-  'Graphic Design', 'Web Design', 'Social Media Content Management',
+  '2D / 3D Animation', 'Audio Production & Mix', 'Subtitling & Localization',
+  'Photo Retouching', 'Branding & Identity',
+  'Graphic Design', 'Web / UI Design', 'Social Content Management',
 ]);
 
 function logisticsPresets(categoryName) {

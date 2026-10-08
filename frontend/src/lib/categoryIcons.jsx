@@ -4,7 +4,7 @@ import {
   Camera, User, ShoppingBag, Building, Shirt, Wand2, Images,
   Scissors, Contrast, Sparkles, Mic, Sliders, Captions,
   Palette, Hash, PenTool, LayoutTemplate, Shapes,
-  Film, Tag,
+  Film, Tag, Heart, RefreshCw,
   Lightbulb, Aperture, Plane, Monitor, Battery, Truck, Grip, Headphones,
   Cable, HardDrive, Armchair,
 } from 'lucide-react';
@@ -19,59 +19,62 @@ import {
 // index.css. Nothing is hardcoded here: these are token names, resolved by the
 // stylesheet in both light and dark themes.
 export const GROUP_TINT = {
-  'Video Production':   'var(--cat-1)',
+  'Film & Video':       'var(--cat-1)',
   'Photography':        'var(--cat-3)',
-  'Post Production':    'var(--cat-4)',
-  'Branding & Digital': 'var(--cat-7)',
-  'Animation & Motion': 'var(--cat-5)',
+  'Post & Finishing':   'var(--cat-4)',
+  'Design & Brand':     'var(--cat-7)',
+  'Campaign & Direction': 'var(--cat-5)',
 };
 
 // A distinct glyph per seeded category. Chosen so no two read alike: a TV
 // Commercial (Tv) and a Music Video (Music) are unmistakable, and a Web Design
 // job (LayoutTemplate) never looks like a Graphic Design job (PenTool).
 const CATEGORY_ICON = {
-  // Video Production
-  'Music Video': Music,
+  // Film & Video
   'TV Commercial': Tv,
-  'Corporate Video / Brand Film': Building2,
+  'Music Video': Music,
+  'Brand Film / Corporate Video': Building2,
   'Documentary / Short Film': Clapperboard,
-  'Social Media Video Content': Smartphone,
+  'Social Media Video': Smartphone,
   'Event Videography': Video,
-  'Real Estate / Property Video': Home,
-  'Product Demo Video': Package,
+  'Product / Property Video': Home,
+  'Aerial & Drone': Plane,
   // Photography
-  'Event Photography': Camera,
-  'Portrait / Editorial Photography': User,
   'Commercial / Product Photography': ShoppingBag,
-  'Real Estate Photography': Building,
-  'Fashion Photography': Shirt,
-  'Photo Retouching': Wand2,
-  'Photo Editing & Culling': Images,
-  // Post Production
+  'Portrait / Editorial': User,
+  'Fashion': Shirt,
+  'Event Photography': Camera,
+  'Real Estate / Architecture': Building,
+  'Wedding': Heart,
+  // Design & Brand
+  'Branding & Identity': Palette,
+  'Graphic Design': PenTool,
+  'Web / UI Design': LayoutTemplate,
+  'Social Content Management': Hash,
+  // Post & Finishing
   'Video Editing': Scissors,
   'Color Grading': Contrast,
   'VFX / Motion Graphics': Sparkles,
-  'Podcast / Audio Production': Mic,
-  'Audio Mixing & Mastering': Sliders,
-  'Subtitling & Localization': Captions,
-  // Branding & Digital
-  'Branding & Identity': Palette,
-  'Social Media Content Management': Hash,
-  'Graphic Design': PenTool,
-  'Web Design': LayoutTemplate,
-  // Animation & Motion
   '2D / 3D Animation': Shapes,
+  'Audio Production & Mix': Mic,
+  'Subtitling & Localization': Captions,
+  'Photo Retouching': Wand2,
+  // Campaign & Direction
+  'Integrated Campaign': Package,
+  'Directing Only': Film,
+  'Monthly Content Retainer': RefreshCw,
+  'Concept / Pitch': Lightbulb,
 };
 
 // One representative glyph per group, used when the user invents a category name
 // that is not in the seeded set. It still belongs to a known group, so it still
 // reads as that kind of work.
 const GROUP_FALLBACK_ICON = {
-  'Video Production':   Video,
-  'Photography':        Camera,
-  'Post Production':    Film,
-  'Branding & Digital': Palette,
-  'Animation & Motion': Sparkles,
+  'Film & Video':        Video,
+  'Photography':         Camera,
+  'Design & Brand':      Palette,
+  'Post & Finishing':    Film,
+  'Campaign & Direction': Lightbulb,
 };
 
 // The final fallback for a category whose group is also unknown.

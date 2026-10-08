@@ -24,7 +24,7 @@ const IDENTITY_OPTIONS = [
 const FOCUS_OPTIONS = [
   {
     value: 'video',
-    label: 'Video Production',
+    label: 'Film & Video',
     sub: 'Music videos, commercials, films, social video, events.',
   },
   {
@@ -34,12 +34,12 @@ const FOCUS_OPTIONS = [
   },
   {
     value: 'post',
-    label: 'Post-Production',
+    label: 'Post & Finishing',
     sub: 'Editing, color grading, VFX/motion, audio, photo retouching, subtitling.',
   },
   {
     value: 'design',
-    label: 'Design & Branding',
+    label: 'Design & Brand',
     sub: 'Branding, graphic design, web design, social content.',
   },
   {
@@ -56,10 +56,10 @@ const IDENTITY_LABELS = {
 };
 
 const FOCUS_LABELS = {
-  video: 'Video Production',
+  video: 'Film & Video',
   photography: 'Photography',
-  post: 'Post-Production',
-  design: 'Design & Branding',
+  post: 'Post & Finishing',
+  design: 'Design & Brand',
   animation: 'Animation',
 };
 

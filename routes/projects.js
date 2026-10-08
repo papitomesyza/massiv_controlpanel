@@ -36,7 +36,7 @@ function deleteFile(filename) {
 function getProjectFull(id) {
   const project = db.prepare(`
     SELECT p.*, c.name as client_name, c.company as client_company,
-           pc.name as category_name, pc.group_name as category_group
+           pc.name as category_name, pc.group_name as category_group, pc.has_shoot_day as category_has_shoot_day
     FROM projects p
     LEFT JOIN clients c ON c.id = p.client_id
     LEFT JOIN project_categories pc ON pc.id = p.category_id
@@ -126,7 +126,7 @@ function recordStatusChange(projectId, fromStatus, toStatus) {
 router.get('/', (req, res) => {
   const { status, category_id, sort } = req.query;
   let query = `
-    SELECT p.*, c.name as client_name, pc.name as category_name, pc.group_name,
+    SELECT p.*, c.name as client_name, pc.name as category_name, pc.group_name, pc.has_shoot_day,
       (SELECT ph.phase_name FROM project_phases ph WHERE ph.project_id=p.id AND ph.status='active' LIMIT 1) as current_phase,
       (SELECT COUNT(*) FROM project_phases ph WHERE ph.project_id=p.id AND ph.status='completed') as completed_phases,
       (SELECT COUNT(*) FROM project_phases ph WHERE ph.project_id=p.id) as total_phases,

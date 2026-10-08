@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Plus, Trash2, Palette, Image as ImageIcon, Receipt, Sliders } from 'lucide-react';
+import { Plus, Trash2, Pencil, Palette, Image as ImageIcon, Receipt, Sliders } from 'lucide-react';
 import { api, fmtDate } from '../api';
 import { useNavigate } from 'react-router-dom';
 import SetupWizard from '../components/SetupWizard';
@@ -144,9 +144,25 @@ export default function Settings() {
   }
 
   async function delProjCat(id) {
-    try { await api.del(`/settings/project-categories/${id}`); load(); }
-    catch (e) { alert(e.message); }
-  }
+      try { await api.del(`/settings/project-categories/${id}`); load(); }
+      catch (e) { alert(e.message); }
+    }
+
+    async function editProjCat(c) {
+      const name = window.prompt('Category name', c.name);
+      if (name === null) return;
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      const group = window.prompt('Group (service line)', c.group_name);
+      const group_name = (group === null ? c.group_name : group.trim()) || c.group_name;
+      if (trimmed === c.name && group_name === c.group_name) return;
+      try {
+        await api.put(`/settings/project-categories/${c.id}`, {
+          name: trimmed, group_name, has_shoot_day: c.has_shoot_day,
+        });
+        load();
+      } catch (e) { alert(e.message); }
+    }
 
   async function addCrewRole() {
     if (!newRole.trim()) return;
@@ -183,7 +199,7 @@ export default function Settings() {
     return acc;
   }, {});
 
-  const groupOptions = [...new Set(['Video Production','Photography','Post Production','Branding & Digital', ...projCats.map(c => c.group_name)])];
+  const groupOptions = [...new Set(['Film & Video','Photography','Design & Brand','Post & Finishing','Campaign & Direction', ...projCats.map(c => c.group_name)])];
 
   const backupStatus = (() => {
     if (!backupLast) return { ok: false, label: 'No off-site backup yet' };
@@ -369,11 +385,12 @@ export default function Settings() {
                   {cats.map(c => (
                     <div key={c.id} className="flex-center gap-1" style={{ background: 'var(--overlay-03)', border: '1px solid var(--border)', borderRadius: '6px', padding: '4px 10px', fontSize: '12px' }}>
                       <span>{c.name}</span>
-                      {!c.is_default && (
-                        <button onClick={() => delProjCat(c.id)} style={{ background: 'none', border: 'none', color: 'var(--color-mid-gray)', cursor: 'pointer', padding: '0 0 0 4px' }}>
-                          <Trash2 size={11} />
-                        </button>
-                      )}
+                      <button title="Rename / regroup" onClick={() => editProjCat(c)} style={{ background: 'none', border: 'none', color: 'var(--color-mid-gray)', cursor: 'pointer', padding: '0 0 0 4px' }}>
+                        <Pencil size={11} />
+                      </button>
+                      <button title="Delete" onClick={() => delProjCat(c.id)} style={{ background: 'none', border: 'none', color: 'var(--color-mid-gray)', cursor: 'pointer', padding: '0 0 0 2px' }}>
+                        <Trash2 size={11} />
+                      </button>
                     </div>
                   ))}
                 </div>

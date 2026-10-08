@@ -120,14 +120,13 @@ export function LocationPicker({ value, lat, lng, onChange }) {
 
 const PHASES = ['Development', 'Pre-Production', 'Production', 'Post-Production'];
 const STEP_LABELS = ['Project Info', 'Development', 'Pre-Production', 'Production', 'Post-Production', 'Review'];
-const PRODUCTION_GROUPS = ['Video Production', 'Photography'];
 
 const FOCUS_TO_GROUP = {
-  video: 'Video Production',
+  video: 'Film & Video',
   photography: 'Photography',
-  post: 'Post Production',
-  design: 'Branding & Digital',
-  animation: 'Animation & Motion',
+  post: 'Post & Finishing',
+  design: 'Design & Brand',
+  animation: 'Post & Finishing',
 };
 
 function getDefaultSkippedPhases(profile) {
@@ -274,7 +273,7 @@ export default function ProjectWizard({ onClose, onCreated, prefill }) {
     setErr('');
     try {
       const selectedCategory = categories.find(c => c.id === parseInt(basicInfo.category_id));
-      const isProductionCategory = !!(selectedCategory && PRODUCTION_GROUPS.includes(selectedCategory.group_name));
+      const isProductionCategory = !!(selectedCategory && selectedCategory.has_shoot_day);
       const { id, phases } = await api.post('/projects', {
         title: basicInfo.title.trim(),
         client_id: basicInfo.client_id || null,
@@ -445,7 +444,7 @@ function StepBasicInfo({ form, setForm, clients, grouped, onAddClient, profile }
 
   const allCats = Object.values(grouped).flat();
   const selectedCat = allCats.find(c => c.id === parseInt(form.category_id));
-  const isProduction = !!(selectedCat && PRODUCTION_GROUPS.includes(selectedCat.group_name));
+  const isProduction = !!(selectedCat && selectedCat.has_shoot_day);
 
   return (
     <div>
@@ -697,7 +696,7 @@ export function PhaseTaskStep({ phaseName, tasks, onToggle, onCrewChange, onAddC
 function StepReview({ basicInfo, phaseTasks, clients, categories, skippedPhases }) {
   const client = clients.find(c => c.id === parseInt(basicInfo.client_id));
   const cat = categories.find(c => c.id === parseInt(basicInfo.category_id));
-  const isProduction = !!(cat && PRODUCTION_GROUPS.includes(cat.group_name));
+  const isProduction = !!(cat && cat.has_shoot_day);
   const activePhases = PHASES.filter(p => !skippedPhases.has(p));
   const totalTasks = activePhases.reduce((s, phase) => s + (phaseTasks[phase] || []).filter(t => t.included).length, 0);
 

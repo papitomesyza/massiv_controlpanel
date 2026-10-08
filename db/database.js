@@ -11,6 +11,50 @@ if (!fs.existsSync(DATA_DIR)) {
 
 const db = new Database(DB_PATH);
 
+// ── Project categories: single source of truth ────────────────────────────────
+// The category list is the agency's service menu, grouped by how work is sold
+// (Film & Video, Photography, Design & Brand, Post & Finishing, Campaign &
+// Direction) rather than by post-house department. Layout per row:
+//   [name, group_name, has_shoot_day, sort_order, legacy_v1_names]
+// has_shoot_day drives whether the project wizard collects shoot date / days /
+// location: the medium the file is in must not decide that, the job must. The
+// legacy names are the v1 rows this entry absorbs; they are renamed in place so
+// every project's foreign key survives. Add a row here and it seeds itself.
+const PROJECT_TAXONOMY = [
+  ['TV Commercial', 'Film & Video', 1, 10, ['TV Commercial']],
+  ['Music Video', 'Film & Video', 1, 20, ['Music Video']],
+  ['Brand Film / Corporate Video', 'Film & Video', 1, 30, ['Corporate Video / Brand Film']],
+  ['Documentary / Short Film', 'Film & Video', 1, 40, ['Documentary / Short Film']],
+  ['Social Media Video', 'Film & Video', 1, 50, ['Social Media Video Content']],
+  ['Event Videography', 'Film & Video', 1, 60, ['Event Videography']],
+  ['Product / Property Video', 'Film & Video', 1, 70, ['Real Estate / Property Video']],
+  ['Aerial & Drone', 'Film & Video', 1, 80, ['Product Demo Video']],
+  ['Commercial / Product Photography', 'Photography', 1, 110, ['Commercial / Product Photography']],
+  ['Portrait / Editorial', 'Photography', 1, 120, ['Portrait / Editorial Photography']],
+  ['Fashion', 'Photography', 1, 130, ['Fashion Photography']],
+  ['Event Photography', 'Photography', 1, 140, ['Event Photography']],
+  ['Real Estate / Architecture', 'Photography', 1, 150, ['Real Estate Photography']],
+  ['Wedding', 'Photography', 1, 160, []],
+  ['Branding & Identity', 'Design & Brand', 0, 210, ['Branding & Identity']],
+  ['Graphic Design', 'Design & Brand', 0, 220, ['Graphic Design']],
+  ['Web / UI Design', 'Design & Brand', 0, 230, ['Web Design']],
+  ['Social Content Management', 'Design & Brand', 0, 240, ['Social Media Content Management']],
+  ['Video Editing', 'Post & Finishing', 0, 310, ['Video Editing']],
+  ['Color Grading', 'Post & Finishing', 0, 320, ['Color Grading']],
+  ['VFX / Motion Graphics', 'Post & Finishing', 0, 330, ['VFX / Motion Graphics']],
+  ['2D / 3D Animation', 'Post & Finishing', 0, 340, ['2D / 3D Animation']],
+  ['Audio Production & Mix', 'Post & Finishing', 0, 350, ['Podcast / Audio Production']],
+  ['Subtitling & Localization', 'Post & Finishing', 0, 360, ['Subtitling & Localization']],
+  ['Photo Retouching', 'Post & Finishing', 0, 370, ['Photo Retouching']],
+  ['Integrated Campaign', 'Campaign & Direction', 0, 410, []],
+  ['Directing Only', 'Campaign & Direction', 0, 420, []],
+  ['Monthly Content Retainer', 'Campaign & Direction', 0, 430, []],
+  ['Concept / Pitch', 'Campaign & Direction', 0, 440, []],
+];
+// v1 post-only services that are sub-tasks, not engagements: keep the row (so
+// nothing breaks) but hide it from every picker.
+const PROJECT_CATEGORIES_ARCHIVED_V1 = ['Audio Mixing & Mastering', 'Photo Editing & Culling'];
+
 function initDb() {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
@@ -225,6 +269,46 @@ function initDb() {
     );
   `);
 
+  // Columns the v2 taxonomy needs. Safe to run every boot (each ALTER throws
+  // once the column exists and is swallowed).
+  [
+    'ALTER TABLE project_categories ADD COLUMN has_shoot_day INTEGER DEFAULT 0',
+    'ALTER TABLE project_categories ADD COLUMN archived INTEGER DEFAULT 0',
+    'ALTER TABLE project_categories ADD COLUMN sort_order INTEGER DEFAULT 0',
+  ].forEach(sql => { try { db.exec(sql); } catch (_) {} });
+
+  // One-time transform of the v1 category list into PROJECT_TAXONOMY. Keyed by
+  // NAME, never by id: the live DB's ids are not sequential. Rows referenced by
+  // projects are renamed in place, so every foreign key survives untouched. Two
+  // dead post-only services are archived, never deleted. Budgets and leads
+  // store the category as a free string, so their values move with the rename.
+  try {
+    const done = db.prepare("SELECT value FROM settings WHERE key = 'project_categories_v2'").get();
+    if (!done) {
+      const rename = db.prepare('UPDATE OR IGNORE project_categories SET name=?, group_name=?, has_shoot_day=?, sort_order=? WHERE name=?');
+      // budgets and leads are created later in this same boot, so prepare them
+      // lazily: on a fresh DB there is nothing to migrate and no rows to touch.
+      let moveBudget = null;
+      let moveLead = null;
+      try { moveBudget = db.prepare('UPDATE budgets SET category=? WHERE category=?'); } catch (_) {}
+      try { moveLead = db.prepare('UPDATE leads SET category_name_manual=? WHERE category_name_manual=?'); } catch (_) {}
+      for (const [name, group, shoot, sort, legacy] of PROJECT_TAXONOMY) {
+        for (const oldName of legacy) {
+          const r = rename.run(name, group, shoot, sort, oldName);
+          if (r.changes && oldName !== name) {
+            if (moveBudget) { try { moveBudget.run(name, oldName); } catch (_) {} }
+            if (moveLead) { try { moveLead.run(name, oldName); } catch (_) {} }
+          }
+        }
+      }
+      for (const dead of PROJECT_CATEGORIES_ARCHIVED_V1) {
+        db.prepare('UPDATE project_categories SET archived=1 WHERE name=?').run(dead);
+      }
+      db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('project_categories_v2', '1')").run();
+      console.log('INFO: project categories migrated to the v2 taxonomy.');
+    }
+  } catch (e) { console.error('WARN: project categories v2 migration failed:', e.message); }
+
   const insertRole = db.prepare('INSERT OR IGNORE INTO crew_roles (name, is_default) VALUES (?, 1)');
   [
     'Director','DOP','Camera Operator','Camera Assistant','Gaffer','Photographer',
@@ -232,23 +316,8 @@ function initDb() {
     'Casting Director','Producer','Production Assistant','Driver','Retoucher','DIT Operator'
   ].forEach(r => insertRole.run(r));
 
-  const insertCat = db.prepare('INSERT OR IGNORE INTO project_categories (name, group_name, is_default) VALUES (?, ?, 1)');
-  [
-    ['Music Video','Video Production'],['TV Commercial','Video Production'],
-    ['Corporate Video / Brand Film','Video Production'],['Documentary / Short Film','Video Production'],
-    ['Social Media Video Content','Video Production'],['Event Videography','Video Production'],
-    ['Real Estate / Property Video','Video Production'],['Product Demo Video','Video Production'],
-    ['Event Photography','Photography'],['Portrait / Editorial Photography','Photography'],
-    ['Commercial / Product Photography','Photography'],['Real Estate Photography','Photography'],
-    ['Fashion Photography','Photography'],
-    ['Video Editing','Post Production'],['Color Grading','Post Production'],
-    ['VFX / Motion Graphics','Post Production'],['Podcast / Audio Production','Post Production'],
-    ['Audio Mixing & Mastering','Post Production'],['Subtitling & Localization','Post Production'],
-    ['Branding & Identity','Branding & Digital'],['Social Media Content Management','Branding & Digital'],
-    ['Graphic Design','Branding & Digital'],['Web Design','Branding & Digital'],
-    ['Photo Retouching','Photography'],['Photo Editing & Culling','Photography'],
-    ['2D / 3D Animation','Animation & Motion'],
-  ].forEach(([name, group]) => insertCat.run(name, group));
+  const insertCat = db.prepare('INSERT OR IGNORE INTO project_categories (name, group_name, has_shoot_day, sort_order, is_default) VALUES (?, ?, ?, ?, 1)');
+  PROJECT_TAXONOMY.forEach(([name, group, shoot, sort]) => insertCat.run(name, group, shoot, sort));
 
   const insertExpCat = db.prepare('INSERT OR IGNORE INTO expense_categories (name, is_default) VALUES (?, 1)');
   ['Fuel','Catering','Accommodation','Equipment Rental','Props','Permits','Transportation','Location Fees','Miscellaneous']

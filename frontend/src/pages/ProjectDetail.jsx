@@ -11,7 +11,8 @@ import DateField from '../components/DateField';
 import { CategoryTile } from '../lib/categoryIcons';
 import { pristinaToday, pristinaDateOf } from '../lib/pristinaDate';
 
-const PRODUCTION_GROUPS = ['Video Production', 'Photography'];
+// Whether a project has a shoot day comes from its category (category_has_shoot_day),
+// not from the category's group name: the medium must not decide it, the job must.
 
 // Status words never print on this page. Each state is a dot drawn from the
 // shared tokens in index.css, the same hues the Projects rows, the Estimates
@@ -499,9 +500,9 @@ export default function ProjectDetail() {
         <div>
           {/* The dates the user acts on. The agreed budget now opens the page in
               the stat strip, so it is not repeated here. */}
-          {((PRODUCTION_GROUPS.includes(project.category_group) && project.shoot_date) || project.deadline) && (
+          {((project.category_has_shoot_day && project.shoot_date) || project.deadline) && (
             <div className="card card-pad pd-schedule" style={{ marginBottom: '16px' }}>
-              {PRODUCTION_GROUPS.includes(project.category_group) && project.shoot_date && (
+              {project.category_has_shoot_day && project.shoot_date && (
                 <div className="pd-schedule-row" title="Shoot">
                   <Camera size={14} style={{ color: 'var(--cat-2)' }} />
                   <span>
@@ -1497,7 +1498,7 @@ function EditProjectModal({ project, projectId, onClose, onSaved }) {
   }, {});
 
   const selectedCat = categories.find(c => c.id === parseInt(form.category_id));
-  const isProduction = !!(selectedCat && PRODUCTION_GROUPS.includes(selectedCat.group_name));
+  const isProduction = !!(selectedCat && selectedCat.has_shoot_day);
 
   async function save() {
     setSaving(true);
