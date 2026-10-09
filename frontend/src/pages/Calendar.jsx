@@ -29,7 +29,8 @@ const EVENT_TYPE_VISUAL = {
   task:            { Icon: Check,  hue: 'var(--cat-6)',          label: 'Task' },
   standalone_task: { Icon: Check,  hue: 'var(--cat-6)',          label: 'Task' },
   meeting:         { Icon: Users,  hue: 'var(--cat-5)',          label: 'Meeting' },
-  other:           { Icon: Circle, hue: 'var(--color-mid-gray)', label: 'Other' },
+    google:          { Icon: CalendarDays, hue: 'var(--cat-3)',    label: 'Google' },
+    other:           { Icon: Circle, hue: 'var(--color-mid-gray)', label: 'Other' },
 };
 function eventVisual(type) {
   return EVENT_TYPE_VISUAL[type] || EVENT_TYPE_VISUAL.other;
@@ -61,7 +62,7 @@ function syncedDeleteCopy(ev) {
 }
 // The five toggles in the type filter. standalone_task folds into task, so one
 // task toggle governs both.
-const FILTER_TYPES = ['shoot', 'deadline', 'task', 'meeting', 'other'];
+const FILTER_TYPES = ['shoot', 'deadline', 'task', 'meeting', 'google', 'other'];
 function filterKey(type) {
   return type === 'standalone_task' ? 'task' : (EVENT_TYPE_VISUAL[type] ? type : 'other');
 }
@@ -723,14 +724,18 @@ function EventChipInner({ ev, edgeTint, dragging }) {
 
 function DraggableEventChip({ ev, edgeTint, onClick }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: ev.id });
+  // A Google-mirrored event is owned by Google, so it does not drag: no sensor
+  // listeners are attached and the cursor stays a plain pointer.
+  const pinned = ev.event_type === 'google';
   return (
     <div
       ref={setNodeRef}
-      {...listeners}
-      {...attributes}
+      {...(pinned ? {} : listeners)}
+      {...(pinned ? {} : attributes)}
       onClick={onClick}
+      title={pinned ? 'From Google Calendar (read-only)' : undefined}
       style={{
-        cursor: isDragging ? 'grabbing' : 'grab',
+        cursor: pinned ? 'pointer' : (isDragging ? 'grabbing' : 'grab'),
         transform: CSS.Translate.toString(transform),
         position: 'relative',
         zIndex: isDragging ? 999 : 'auto',
@@ -870,7 +875,8 @@ function EventDetailModal({ event, onClose, onEdit, onChanged }) {
   const [err, setErr] = useState('');
   const navigate = useNavigate();
   const isTask = event.event_type === 'task' || event.event_type === 'standalone_task';
-  const synced = isSynced(event);
+    const synced = isSynced(event);
+    const external = event.event_type === 'google';
   const { Icon, hue, label } = eventVisual(event.event_type);
   const deleteCopy = synced
     ? syncedDeleteCopy(event)
@@ -956,12 +962,19 @@ function EventDetailModal({ event, onClose, onEdit, onChanged }) {
             {event.notes}
           </div>
         )}
-        {err && <div className="error-msg">{err}</div>}
-      </div>
-      <div className="modal-footer">
-        <button className="btn btn-ghost btn-sm cal-delete-btn" onClick={() => setConfirmDelete(true)} disabled={busy} title="Delete" aria-label="Delete">
-          <Trash2 size={14} />
-        </button>
+        {external && (
+                  <div className="cal-sync-note">
+                    <Lock size={12} /> Mirrored from Google Calendar. Edit it there.
+                  </div>
+                )}
+                {err && <div className="error-msg">{err}</div>}
+              </div>
+              <div className="modal-footer">
+                {!external && (
+                  <button className="btn btn-ghost btn-sm cal-delete-btn" onClick={() => setConfirmDelete(true)} disabled={busy} title="Delete" aria-label="Delete">
+                    <Trash2 size={14} />
+                  </button>
+                )}
         <div style={{ flex: 1 }} />
         {event.event_type === 'standalone_task' && (
           <button className="btn btn-ghost" onClick={() => go('/tasks')} title="Open in Tasks"><ListTodo size={14} /> Tasks</button>
@@ -972,7 +985,9 @@ function EventDetailModal({ event, onClose, onEdit, onChanged }) {
         {isTask && synced && (
           <button className="btn btn-ghost" onClick={markDone} disabled={busy} title="Mark done"><CheckCircle2 size={14} /> Done</button>
         )}
-        <button className="btn btn-primary" onClick={onEdit} disabled={busy}><Edit2 size={13} /> Edit</button>
+        {!external && (
+          <button className="btn btn-primary" onClick={onEdit} disabled={busy}><Edit2 size={13} /> Edit</button>
+        )}
       </div>
       {confirmDelete && (
         <ConfirmDialog

@@ -4,6 +4,8 @@ const { db } = require('../db/database');
 const { pristinaToday, addDays } = require('../lib/pristinaDate');
 const { applySyncedEventChange, eventSource, EDITABLE } = require('../lib/calendarSync');
 
+const GOOGLE_READONLY = 'This event mirrors Google Calendar and is read-only here.';
+
 // GET /api/calendar?month=YYYY-MM  OR  ?start=YYYY-MM-DD&end=YYYY-MM-DD
 // Returns events that overlap with the requested range (date-range overlap)
 router.get('/', (req, res) => {
@@ -56,6 +58,70 @@ router.post('/', (req, res) => {
   res.json({ id: result.lastInsertRowid });
 });
 
+// POST /api/calendar/sync
+// Bridge-only (Hermes service token). Mirrors Google Calendar into the panel:
+// upserts every Google event in the window as a read-only event_type 'google'
+// row keyed by external_id, then prunes any mirrored row in the window that
+// Google no longer has. Panel-origin events are pushed TO Google by the bridge
+// itself; that link lives on the bridge, not here, so this route only owns the
+// mirrored rows. Google is the source of truth for those, so they are read-only.
+router.post('/sync', (req, res) => {
+  const { window: win, events = [] } = req.body || {};
+  const YMD = /^\d{4}-\d{2}-\d{2}$/;
+  if (!win || !YMD.test(win.start || '') || !YMD.test(win.end || '')) {
+    return res.status(400).json({ error: 'window.start and window.end (YYYY-MM-DD) required' });
+  }
+  const run = db.transaction(() => {
+    let inserted = 0, updated = 0, pruned = 0;
+    const seen = new Set();
+    for (const g of events) {
+      const ext = g.external_id ? String(g.external_id) : '';
+      if (!ext || !YMD.test(g.start_date || '')) continue;
+      seen.add(ext);
+      const row = db.prepare(
+        "SELECT id FROM calendar_events WHERE external_source = 'google' AND external_id = ?"
+      ).get(ext);
+      const vals = [
+        g.title || '(no title)',
+        g.start_date,
+        g.end_date || null,
+        g.start_time || null,
+        g.end_time || null,
+        g.location || null,
+        g.notes || null,
+      ];
+      if (row) {
+        db.prepare(`UPDATE calendar_events SET title=?, start_date=?, end_date=?, start_time=?,
+                    end_time=?, location=?, notes=?, project_id=NULL, event_type='google'
+                    WHERE id=?`).run(...vals, row.id);
+        updated++;
+      } else {
+        db.prepare(`INSERT INTO calendar_events
+                    (project_id, title, event_type, start_date, end_date, start_time, end_time, location, notes, color, external_id, external_source)
+                    VALUES (NULL, ?, 'google', ?, ?, ?, ?, ?, ?, NULL, ?, 'google')`)
+          .run(...vals, ext);
+        inserted++;
+      }
+    }
+    // Anything mirrored in the window that Google no longer returns is gone.
+    const mirrored = db.prepare(
+      "SELECT id, external_id FROM calendar_events WHERE external_source='google' AND start_date >= ? AND start_date <= ?"
+    ).all(win.start, win.end);
+    for (const r of mirrored) {
+      if (!seen.has(String(r.external_id))) {
+        db.prepare('DELETE FROM calendar_events WHERE id=?').run(r.id);
+        pruned++;
+      }
+    }
+    return { inserted, updated, pruned };
+  });
+  try {
+    res.json({ ok: true, ...run() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Send a thrown validation error back with its status, anything else as a 500.
 function fail(res, err) {
   res.status(err.status || 500).json({ error: err.message });
@@ -73,6 +139,7 @@ router.put('/:id/move', (req, res) => {
 
   const event = db.prepare('SELECT * FROM calendar_events WHERE id = ?').get(req.params.id);
   if (!event) return res.status(404).json({ error: 'Event not found' });
+  if (event.event_type === 'google') return res.status(400).json({ error: GOOGLE_READONLY });
 
   try {
     if (applySyncedEventChange(event.id, { start_date })) return res.json({ ok: true });
@@ -97,6 +164,7 @@ router.put('/:id/move', (req, res) => {
 router.put('/:id', (req, res) => {
   const event = db.prepare('SELECT * FROM calendar_events WHERE id = ?').get(req.params.id);
   if (!event) return res.status(404).json({ error: 'Event not found' });
+  if (event.event_type === 'google') return res.status(400).json({ error: GOOGLE_READONLY });
   // Colour is no longer stored: it is derived from event_type at render time.
   const { project_id, title, event_type, start_date, end_date, start_time, end_time, location, notes } = req.body;
   if (!title || !start_date) return res.status(400).json({ error: 'Title and start_date required' });
@@ -152,6 +220,7 @@ router.put('/:id', (req, res) => {
 router.delete('/:id', (req, res) => {
   const event = db.prepare('SELECT * FROM calendar_events WHERE id = ?').get(req.params.id);
   if (!event) return res.json({ ok: true });
+  if (event.event_type === 'google') return res.status(400).json({ error: GOOGLE_READONLY });
   try {
     const source = applySyncedEventChange(event.id, { start_date: null });
     if (source) return res.json({ ok: true, cleared: { kind: source.kind, id: source.id, name: source.name } });

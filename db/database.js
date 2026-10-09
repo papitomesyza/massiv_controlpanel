@@ -592,7 +592,16 @@ function initDb() {
     // stored, so a client paying a deposit against a larger invoice has a real
     // place to sit instead of forcing the books to read all or nothing.
     'ALTER TABLE invoices ADD COLUMN amount_paid REAL DEFAULT 0',
-  ].forEach(sql => { try { db.exec(sql); } catch (_) {} });
+        // Google Calendar mirror. external_id keys a row to its Google event so a
+        // re-sync updates it in place instead of duplicating; external_source marks
+        // the row as owned by the bridge (event_type 'google', read-only in the UI).
+        'ALTER TABLE calendar_events ADD COLUMN external_id TEXT',
+        'ALTER TABLE calendar_events ADD COLUMN external_source TEXT',
+      ].forEach(sql => { try { db.exec(sql); } catch (_) {} });
+
+      try {
+        db.exec('CREATE INDEX IF NOT EXISTS idx_calendar_events_external ON calendar_events(external_source, external_id)');
+      } catch (_) {}
 
   // collection_share_links table
   try {
