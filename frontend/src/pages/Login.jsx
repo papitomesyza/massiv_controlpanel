@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useAgency } from '../context/AgencyContext';
@@ -10,6 +10,27 @@ export default function Login() {
   const navigate = useNavigate();
   const { name: agencyName, tagline, logo } = useAgency();
 
+  // Google sign-in returns here with the session token in the URL fragment
+  // (never sent to the server), so it is read once, stored and cleared.
+  useEffect(() => {
+    const hash = window.location.hash || '';
+    if (!hash) return;
+    const params = new URLSearchParams(hash.replace(/^#/, ''));
+    const token = params.get('t');
+    const err = params.get('error');
+    if (token) {
+      localStorage.setItem('massiv_auth', token);
+      localStorage.setItem('massiv_role', 'finance');
+      window.history.replaceState(null, '', '/login');
+      navigate('/invoices', { replace: true });
+    } else if (err) {
+      setError(err === 'not_allowed'
+        ? 'That Google account is not allowed here.'
+        : 'Google sign-in failed. Try again.');
+      window.history.replaceState(null, '', '/login');
+    }
+  }, []);
+
   async function handleLogin() {
     if (!password) return;
     setLoading(true);
@@ -17,7 +38,8 @@ export default function Login() {
     try {
       const data = await api.post('/auth/login', { password });
       localStorage.setItem('massiv_auth', data.token);
-      navigate('/dashboard');
+      localStorage.setItem('massiv_role', data.role || 'owner');
+      navigate(data.role === 'finance' ? '/invoices' : '/dashboard');
     } catch (e) {
       setError(e.message || 'Invalid password');
     } finally {
@@ -99,6 +121,20 @@ export default function Login() {
           >
             {loading ? 'Logging in...' : 'Login'}
           </button>
+
+          {/* Finance uses Google only, so there is no second password to share. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '18px 0 14px' }}>
+            <div style={{ flex: 1, height: '1px', background: 'var(--overlay-03)' }} />
+            <span style={{ fontSize: '11px', color: 'var(--color-mid-gray)', letterSpacing: '0.05em' }}>OR</span>
+            <div style={{ flex: 1, height: '1px', background: 'var(--overlay-03)' }} />
+          </div>
+          <a
+            href="/api/auth/oauth/google/start"
+            className="btn"
+            style={{ width: '100%', justifyContent: 'center', textDecoration: 'none' }}
+          >
+            Sign in with Google
+          </a>
         </div>
 
         <p style={{ textAlign: 'center', color: 'var(--color-mid-gray)', fontSize: '11px', marginTop: '24px' }}>

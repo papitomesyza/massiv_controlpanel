@@ -535,6 +535,10 @@ function initDb() {
 
   // Schema migrations, safe to run on every boot
   [
+    // Login roles: 'owner' = Andi's password login, 'finance' = the scoped
+    // finance@madebymassiv.com Google login (routes/auth.js + server.js).
+    "ALTER TABLE sessions ADD COLUMN role TEXT NOT NULL DEFAULT 'owner'",
+    'ALTER TABLE sessions ADD COLUMN email TEXT',
     'ALTER TABLE crew ADD COLUMN is_company INTEGER DEFAULT 0',
     'ALTER TABLE crew ADD COLUMN service_type TEXT',
     'ALTER TABLE tasks ADD COLUMN is_locked INTEGER DEFAULT 0',

@@ -198,6 +198,53 @@ export default function Layout() {
     navigate(to);
   }
 
+  // Finance login: its own shell, three links and logout. The server blocks
+  // everything else anyway; this just keeps the surface honest.
+  if ((localStorage.getItem('massiv_role') || 'owner') === 'finance') {
+    const finLinks = [
+      { to: '/invoices', icon: Receipt, label: 'Invoices' },
+      { to: '/budgets', icon: FileText, label: 'Estimates' },
+      { to: '/project-list', icon: FolderKanban, label: 'Projects' },
+    ];
+    return (
+      <div className="app-shell">
+        <header className="mobile-header">
+          <span className="mobile-header-name">{name || 'MASSIV'}</span>
+        </header>
+        <aside className="sidebar">
+          <div className="sidebar-logo">
+            <div>
+              <div>{name}</div>
+              <div style={{ fontSize: '10px', color: 'var(--color-mid-gray)', fontWeight: 400, marginTop: '2px', letterSpacing: '0' }}>Finances</div>
+            </div>
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+            <nav className="sidebar-nav">
+              {finLinks.map(({ to, icon: Icon, label }) => (
+                <NavLink key={to} to={to} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
+                  <div className="nav-icon"><Icon size={18} /></div>
+                  {label}
+                </NavLink>
+              ))}
+            </nav>
+          </div>
+          <div className="sidebar-footer">
+            <button className="logout-btn" onClick={logout}>
+              <div className="nav-icon"><LogOut size={18} /></div>
+              Logout
+            </button>
+            <div className="built-by">built by year28</div>
+          </div>
+        </aside>
+        <div className="main-content">
+          <div className="page-inner">
+            <Outlet />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="app-shell">
       {/* Mobile top branding header, hidden on desktop */}

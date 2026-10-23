@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Layout from './components/Layout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -17,6 +17,7 @@ import Settings from './pages/Settings';
 import Calendar from './pages/Calendar';
 import Map from './pages/Map';
 import Invoices from './pages/Invoices';
+import ProjectList from './pages/ProjectList';
 import PublicExpense from './pages/PublicExpense';
 import PublicCollection from './pages/PublicCollection';
 import PublicMind from './pages/PublicMind';
@@ -56,6 +57,19 @@ function PrivateRoute({ children }) {
   return localStorage.getItem('massiv_auth') ? children : <Navigate to="/login" replace />;
 }
 
+// The finance login may only ever land on invoices, estimates and the read-only
+// project list; anything else bounces back to invoices. UX only: the real block
+// is server-side in server.js.
+const FINANCE_PATHS = ['/invoices', '/budgets', '/project-list'];
+function RoleGuard({ children }) {
+  const location = useLocation();
+  const role = localStorage.getItem('massiv_role') || 'owner';
+  if (role === 'finance' && !FINANCE_PATHS.some(p => location.pathname.startsWith(p))) {
+    return <Navigate to="/invoices" replace />;
+  }
+  return children;
+}
+
 export default function App() {
   useEffect(() => {
     applyFavicon();
@@ -80,7 +94,7 @@ export default function App() {
         <Route path="/expense/:token" element={<PublicExpense />} />
         <Route path="/shared/collection/:token" element={<PublicCollection />} />
         <Route path="/shared/mind/:token" element={<PublicMind />} />
-        <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
+        <Route path="/" element={<PrivateRoute><RoleGuard><Layout /></RoleGuard></PrivateRoute>}>
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="projects" element={<Projects />} />
@@ -97,6 +111,7 @@ export default function App() {
           <Route path="calendar" element={<Calendar />} />
           <Route path="map" element={<Map />} />
           <Route path="invoices" element={<Invoices />} />
+          <Route path="project-list" element={<ProjectList />} />
           <Route path="collections" element={<Collections />} />
           <Route path="collections/:id" element={<CollectionDetail />} />
           <Route path="accounts" element={<MindAccounts />} />

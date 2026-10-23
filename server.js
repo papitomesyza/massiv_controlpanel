@@ -105,6 +105,32 @@ function isServiceToken(token) {
   return crypto.timingSafeEqual(a, b);
 }
 
+// A 'finance' session (the finance@madebymassiv.com Google login) is a scoped
+// door: invoices and estimates, plus the reads those pages need. Enforced here
+// before any handler runs, so hiding buttons in the UI is not the protection.
+const FINANCE_READ = [
+  /^\/api\/invoices(\/|$)/,
+  /^\/api\/budgets(\/|$)/,
+  /^\/api\/projects(\/|$)/,
+  /^\/api\/clients(\/|$)/,
+  /^\/api\/settings\/project-categories(\/|$)/,
+  /^\/api\/settings\/agency(\/|$)/,
+];
+// Explicit write allowlist: create an invoice, edit one, issue it, or generate
+// one from an estimate. No deletes, no payment logging, no invoice setup edits.
+const FINANCE_WRITE = [
+  /^\/api\/invoices\/?$/,
+  /^\/api\/invoices\/\d+\/?$/,
+  /^\/api\/invoices\/\d+\/issue\/?$/,
+  /^\/api\/invoices\/from-estimate\/\d+\/?$/,
+];
+
+function financeAllowed(method, path) {
+  if (method === 'GET' || method === 'HEAD') return FINANCE_READ.some(re => re.test(path));
+  if (method === 'POST' || method === 'PUT' || method === 'PATCH') return FINANCE_WRITE.some(re => re.test(path));
+  return false;
+}
+
 function requireAuth(req, res, next) {
   const auth = req.headers.authorization;
   if (!auth || !auth.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' });
@@ -119,8 +145,13 @@ function requireAuth(req, res, next) {
     return next();
   }
 
-  const session = db.prepare("SELECT id FROM sessions WHERE token = ? AND expires_at > datetime('now')").get(token);
+  const session = db.prepare("SELECT id, role FROM sessions WHERE token = ? AND expires_at > datetime('now')").get(token);
   if (!session) return res.status(401).json({ error: 'Unauthorized' });
+  const role = session.role || 'owner';
+  if (role === 'finance' && !financeAllowed(req.method, normalizeApiPath(req.originalUrl))) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  req.role = role;
   next();
 }
 
@@ -268,7 +299,7 @@ app.use((req, res, next) => {
   res.json = (body) => {
     try {
       if (res.statusCode < 400) {
-        const actor = req.serviceToken ? 'hermes' : 'andi';
+        const actor = req.serviceToken ? 'hermes' : (req.role === 'finance' ? 'finance' : 'andi');
         const hdr = String(req.get('x-cos-source') || '').trim().toLowerCase();
         const source = AUDIT_SOURCES.has(hdr) ? hdr : (req.serviceToken ? 'api' : 'panel');
         // Handlers may set res.locals.cosAudit to make the row exact (e.g. payment delete/update).
