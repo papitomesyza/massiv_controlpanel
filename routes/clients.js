@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { db } = require('../db/database');
 const { owedSummary, owedByClient, round2 } = require('../lib/financeFigures');
+const { readEntity } = require('../lib/entity');
 
 const cleanName = v => (typeof v === 'string' ? v.trim() : '');
 
@@ -25,6 +26,15 @@ router.get('/', (req, res) => {
     WHERE 1=1
   `;
   const params = [];
+
+  // One set of books: a finance session sees only the clients it actually deals
+  // with under Massiv, never Gargia's client list.
+  const ent = readEntity(req);
+  if (ent) {
+    query += ` AND (EXISTS (SELECT 1 FROM projects p WHERE p.client_id = c.id AND p.entity = ?)
+      OR EXISTS (SELECT 1 FROM budgets b WHERE b.client_name = c.name AND b.entity = ?))`;
+    params.push(ent, ent);
+  }
 
   if (search) {
     query += ' AND (c.name LIKE ? OR c.company LIKE ?)';

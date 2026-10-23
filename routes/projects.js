@@ -6,6 +6,7 @@ const { db } = require('../db/database');
 const { syncTaskCalendarEvent, syncProjectCalendarEvents } = require('../lib/calendarSync');
 const { followProjectShootDate } = require('../lib/shotlistStore');
 const { owedByProject } = require('../lib/financeFigures');
+const { readEntity } = require('../lib/entity');
 
 const PHASES = ['Development', 'Pre-Production', 'Production', 'Post-Production'];
 
@@ -142,6 +143,10 @@ router.get('/', (req, res) => {
   const params = [];
   if (status) { query += ' AND p.status = ?'; params.push(status); }
   if (category_id) { query += ' AND p.category_id = ?'; params.push(category_id); }
+  // One set of books: a finance session is locked to Massiv here, so no Gargia
+  // project can reach its dashboard whatever it asks for.
+  const ent = readEntity(req);
+  if (ent) { query += ' AND p.entity = ?'; params.push(ent); }
   query += ' GROUP BY p.id';
 
   const orderMap = {

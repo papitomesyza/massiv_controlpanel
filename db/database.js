@@ -723,6 +723,39 @@ function initDb() {
     db.prepare("DELETE FROM sessions WHERE expires_at < datetime('now')").run();
   } catch (_) {}
 
+  // Two sets of books. Gargia is the archive, Massiv is go-forward (Andi,
+  // 23 Oct 2026). The column default is the LIVE entity, so a new record can
+  // never be forgotten; the ids present before the column exists are the ones
+  // tagged Gargia, which is exactly the historical set.
+  try {
+    for (const table of ['projects', 'budgets', 'invoices']) {
+      const exists = db.prepare(`PRAGMA table_info(${table})`).all().some(c => c.name === 'entity');
+      if (exists) continue;
+      const historical = db.prepare(`SELECT id FROM ${table}`).all().map(r => r.id);
+      db.exec(`ALTER TABLE ${table} ADD COLUMN entity TEXT DEFAULT 'massiv'`);
+      const tag = db.prepare(`UPDATE ${table} SET entity = 'gargia' WHERE id = ?`);
+      historical.forEach(id => tag.run(id));
+      console.log(`INFO: entity column added to ${table} (${historical.length} historical row(s) tagged gargia).`);
+    }
+  } catch (_) {}
+
+  // One-time: the first Massiv-era records. Everything else stays Gargia (the
+  // tag above), so this only moves what Andi named on 23 Oct 2026. Keyed by
+  // a setting so it runs exactly once and a later rename cannot re-tag anything.
+  try {
+    const splitDone = db.prepare("SELECT value FROM settings WHERE key = 'entity_split_v1'").get();
+    if (!splitDone) {
+      const p = db.prepare(
+        "UPDATE projects SET entity = 'massiv' WHERE title IN ('Rzon - AI Hybrid Photosession', 'Diamond Developments - Branding & Identity')"
+      ).run();
+      const b = db.prepare(
+        "UPDATE budgets SET entity = 'massiv' WHERE title IN ('Rzon - AI Hybrid Photosession', 'Kreativ Qeramika - Padel Community Social Video + Photo')"
+      ).run();
+      db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('entity_split_v1', '1')").run();
+      console.log(`INFO: entity split applied (${p.changes} project(s), ${b.changes} estimate(s) moved to massiv).`);
+    }
+  } catch (_) {}
+
   // Indexes, created only if missing
   try {
     db.exec(`CREATE TABLE IF NOT EXISTS mind_accounts (

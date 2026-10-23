@@ -111,7 +111,7 @@ function isServiceToken(token) {
 const FINANCE_READ = [
   /^\/api\/invoices(\/|$)/,
   /^\/api\/budgets(\/|$)/,
-  /^\/api\/projects(\/|$)/,
+  /^\/api\/projects\/?$/,
   /^\/api\/clients(\/|$)/,
   /^\/api\/settings\/project-categories(\/|$)/,
   /^\/api\/settings\/agency(\/|$)/,

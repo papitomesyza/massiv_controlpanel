@@ -3,6 +3,7 @@ const router = express.Router();
 const { db } = require('../db/database');
 const { documentFilename } = require('../lib/filename');
 const { shortenAddress } = require('../lib/address');
+const { readEntity } = require('../lib/entity');
 
 function validateLineFields({ days, rate, amount, discount }) {
   if (days !== undefined && days !== null) {
@@ -31,13 +32,13 @@ const FLAT_FEE_CATS = new Set([
   'Graphic Design', 'Web / UI Design', 'Social Content Management',
 ]);
 
-function getBudgetFull(id) {
+function getBudgetFull(id, entity = null) {
   const budget = db.prepare(`
     SELECT b.*, p.title as project_title
     FROM budgets b
     LEFT JOIN projects p ON p.id = b.project_id
-    WHERE b.id = ?
-  `).get(id);
+    WHERE b.id = ?${entity ? ' AND COALESCE(p.entity, b.entity) = ?' : ''}
+  `).get(...(entity ? [id, entity] : [id]));
   if (!budget) return null;
 
   const lines = db.prepare(
@@ -58,6 +59,7 @@ function getBudgetFull(id) {
 
 // GET /api/budgets
 router.get('/', (req, res) => {
+  const ent = readEntity(req);
   const budgets = db.prepare(`
     SELECT b.*, p.title as project_title,
       (SELECT COALESCE(SUM(bl.amount), 0) FROM budget_lines bl WHERE bl.budget_id = b.id AND bl.section = 'crew') as crew_total,
@@ -73,14 +75,15 @@ router.get('/', (req, res) => {
       END as total
     FROM budgets b
     LEFT JOIN projects p ON p.id = b.project_id
+    ${ent ? 'WHERE COALESCE(p.entity, b.entity) = ?' : ''}
     ORDER BY b.created_at DESC
-  `).all();
+  `).all(...(ent ? [ent] : []));
   res.json(budgets);
 });
 
 // GET /api/budgets/:id
 router.get('/:id', (req, res) => {
-  const budget = getBudgetFull(parseInt(req.params.id));
+  const budget = getBudgetFull(parseInt(req.params.id), readEntity(req));
   if (!budget) return res.status(404).json({ error: 'Budget not found' });
   res.json(budget);
 });
@@ -199,7 +202,7 @@ router.post('/:id/status', (req, res) => {
   db.prepare('UPDATE budgets SET status = ?, sent_at = ?, responded_at = ? WHERE id = ?')
     .run(status, sentAt, respondedAt, req.params.id);
 
-  res.json(getBudgetFull(parseInt(req.params.id)));
+  res.json(getBudgetFull(parseInt(req.params.id), readEntity(req)));
 });
 
 // POST /api/budgets/:id/duplicate: copy an estimate and every line. Most
@@ -243,7 +246,7 @@ router.post('/:id/duplicate', (req, res) => {
 // the estimate is linked to the new project.
 const PROJECT_PHASES = ['Development', 'Pre-Production', 'Production', 'Post-Production'];
 router.post('/:id/project', (req, res) => {
-  const budget = getBudgetFull(parseInt(req.params.id));
+  const budget = getBudgetFull(parseInt(req.params.id), readEntity(req));
   if (!budget) return res.status(404).json({ error: 'Estimate not found' });
 
   // Resolve the client: prefer the client already on a linked project, else
@@ -401,7 +404,7 @@ router.post('/:id/lines/batch-replace', (req, res) => {
 router.get('/:id/pdf', (req, res) => {
   const PDFDocument = require('pdfkit');
 
-  const budget = getBudgetFull(parseInt(req.params.id));
+  const budget = getBudgetFull(parseInt(req.params.id), readEntity(req));
   if (!budget) return res.status(404).json({ error: 'Budget not found' });
 
   // How long the estimate stands, counted from the estimate date. Named once so

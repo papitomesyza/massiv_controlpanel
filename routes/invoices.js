@@ -4,6 +4,7 @@ const { db } = require('../db/database');
 const { documentFilename } = require('../lib/filename');
 const { pristinaToday, addDays } = require('../lib/pristinaDate');
 const { owedSummary } = require('../lib/financeFigures');
+const { readEntity, LIVE_ENTITY } = require('../lib/entity');
 
 // Methods client_payments supports, mirroring the client payment form on the
 // project page. Bank transfer is the default.
@@ -74,39 +75,66 @@ function getInvoiceFull(id) {
   return { ...inv, lines };
 }
 
-function assignInvoiceNumber() {
-  let nextNum = parseInt(getSetting('invoice_next_num', '34'), 10);
-  if (isNaN(nextNum) || nextNum < 1) nextNum = 1;
+// Number series are per entity: Gargia keeps the legacy keys (its one historical
+// invoice already carries a number), Massiv starts its own series at 1.
+function assignInvoiceNumber(entity = 'gargia') {
+  const sfx = entity && entity !== 'gargia' ? '_' + entity : '';
+  const defNum = entity && entity !== 'gargia' ? 1 : 34;
+  let nextNum = parseInt(getSetting('invoice_next_num' + sfx, String(defNum)), 10);
+  if (isNaN(nextNum) || nextNum < 1) nextNum = defNum;
 
-  const yy = getSetting('invoice_year', String(new Date().getFullYear()).slice(-2));
+  const yy = getSetting('invoice_year' + sfx, String(new Date().getFullYear()).slice(-2));
 
   const invoiceNumber = `${nextNum}/${yy}`;
-  setSetting('invoice_next_num', String(nextNum + 1));
+  setSetting('invoice_next_num' + sfx, String(nextNum + 1));
 
   return invoiceNumber;
+}
+
+// A finance session is locked to one set of books: an invoice outside it is
+// invisible, exactly as if it did not exist.
+function invoiceInScope(req, inv) {
+  const ent = readEntity(req);
+  return !ent || (!!inv && inv.entity === ent);
+}
+
+// Massiv's business number and bank are still with ARBK (late Oct 2026). A
+// Massiv document must never fall back to Gargia's papers, so it is refused
+// until its own identity exists rather than printing the wrong company.
+function billingReady(entity) {
+  if (!entity || entity === 'gargia') return true;
+  return !!(getSetting('invoice_billing_name_' + entity) && getSetting('invoice_billing_nr_unik_' + entity));
 }
 
 // ─── Invoice Settings ─────────────────────────────────────────────────────────
 
 router.get('/settings', (req, res) => {
+  // Papers are per entity. A finance session reads Massiv's own identity, with no
+  // fallback on the bank/NUI/name fields on purpose: an unset Massiv bank reads
+  // back empty rather than borrowing Gargia's. Gargia keeps the legacy
+  // unsuffixed keys, so its historical invoice still prints as it always did.
+  const ent = readEntity(req);
+  const sfx = ent && ent !== 'gargia' ? '_' + ent : '';
   const keys = [
     'invoice_billing_name', 'invoice_billing_address', 'invoice_billing_tel',
     'invoice_billing_nr_unik', 'invoice_billing_bank', 'invoice_billing_swift',
     'invoice_billing_bank_account', 'invoice_billing_bank_name',
-    'invoice_language', 'invoice_logo', 'invoice_stamp',
+    'invoice_logo', 'invoice_stamp',
     'invoice_next_num', 'invoice_year',
-    'tax_rate', 'tax_label', 'tax_enabled',
-  ];
+  ].map(k => k + sfx).concat(['invoice_language', 'tax_rate', 'tax_label', 'tax_enabled']);
   const rows = db.prepare(
     `SELECT key, value FROM settings WHERE key IN (${keys.map(() => '?').join(',')})`
   ).all(...keys);
   const map = {};
-  rows.forEach(r => { map[r.key] = r.value; });
+  rows.forEach(r => {
+    map[sfx && r.key.endsWith(sfx) ? r.key.slice(0, -sfx.length) : r.key] = r.value;
+  });
 
   const currentYY = String(new Date().getFullYear()).slice(-2);
   const storedYear = map.invoice_year || currentYY;
-  const nextNum = parseInt(map.invoice_next_num || '34', 10);
-  const effectiveNext = isNaN(nextNum) ? 34 : nextNum;
+  const defaultNext = sfx ? 1 : 34;
+  const nextNum = parseInt(map.invoice_next_num || String(defaultNext), 10);
+  const effectiveNext = isNaN(nextNum) ? defaultNext : nextNum;
 
   // Backward compat: map old combined bank field to new split fields
   let billingBankAccount = map.invoice_billing_bank_account || '';
@@ -215,13 +243,15 @@ router.delete('/services/:id', (req, res) => {
 // ─── Invoices List ────────────────────────────────────────────────────────────
 
 router.get('/', (req, res) => {
+  const ent = readEntity(req);
   const rows = db.prepare(`
     SELECT i.*,
       c.name as client_name_ref, c.company as client_company_ref
     FROM invoices i
     LEFT JOIN clients c ON c.id = i.client_id
+    ${ent ? 'WHERE i.entity = ?' : ''}
     ORDER BY i.created_at DESC
-  `).all();
+  `).all(...(ent ? [ent] : []));
   res.json(rows);
 });
 
@@ -234,15 +264,20 @@ router.get('/', (req, res) => {
 
 router.get('/stats', (req, res) => {
   const today = pristinaToday();
+  const ent = readEntity(req);
   // Outstanding and overdue come from the shared owed helper, the same figures
-  // the Dashboard and the receivables are built from.
-  const owed = owedSummary({}, today);
+  // the Dashboard and the receivables are built from. A finance session passes
+  // its entity so those totals cover its own books only.
+  const owed = owedSummary(ent ? { entity: ent } : {}, today);
   const outstanding = owed.invoicedUnpaid;
   const overdue = owed.overdue;
 
   const collected = db.prepare(
-    "SELECT COALESCE(SUM(amount), 0) v FROM client_payments WHERE status = 'received' AND invoice_id IS NOT NULL AND strftime('%Y-%m', date) = ?"
-  ).get(today.slice(0, 7)).v;
+    `SELECT COALESCE(SUM(cp.amount), 0) v FROM client_payments cp
+      JOIN invoices i ON i.id = cp.invoice_id
+      WHERE cp.status = 'received' AND cp.invoice_id IS NOT NULL AND strftime('%Y-%m', cp.date) = ?
+      ${ent ? 'AND i.entity = ?' : ''}`
+  ).get(...(ent ? [today.slice(0, 7), ent] : [today.slice(0, 7)])).v;
 
   res.json({ outstanding: round2(outstanding), overdue: round2(overdue), collected: round2(collected) });
 });
@@ -275,6 +310,19 @@ router.post('/', (req, res) => {
   });
 
   const today = pristinaToday();
+  // Which books this invoice belongs to: the source estimate or project decides,
+  // so an invoice raised from a Gargia record can never be filed as Massiv.
+  let ent = null;
+  if (estimate_id) {
+    const src = db.prepare('SELECT entity FROM budgets WHERE id = ?').get(estimate_id);
+    if (src) ent = src.entity;
+  }
+  if (!ent && project_id) {
+    const src = db.prepare('SELECT entity FROM projects WHERE id = ?').get(project_id);
+    if (src) ent = src.entity;
+  }
+  ent = ent || LIVE_ENTITY;
+
   const result = db.prepare(`
     INSERT INTO invoices (
       project_id, estimate_id, client_id,
@@ -284,8 +332,8 @@ router.post('/', (req, res) => {
       invoice_discount, discount_type,
       subtotal, total_after_discount,
       tax_enabled, tax_rate_applied, tax_amount, amount_due,
-      status
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft')
+      entity, status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft')
   `).run(
     project_id || null, estimate_id || null, client_id || null,
     (client_name || '').trim(), (client_nr_unik || '').trim(), (client_address || '').trim(),
@@ -296,6 +344,7 @@ router.post('/', (req, res) => {
     totals.invoice_discount, discType,
     totals.subtotal, totals.total_after_discount,
     taxOn, taxRate, totals.tax_amount, totals.amount_due,
+    ent,
   );
 
   const invoiceId = result.lastInsertRowid;
@@ -308,7 +357,7 @@ router.post('/', (req, res) => {
 
 router.get('/:id', (req, res) => {
   const inv = getInvoiceFull(parseInt(req.params.id, 10));
-  if (!inv) return res.status(404).json({ error: 'Not found' });
+  if (!inv || !invoiceInScope(req, inv)) return res.status(404).json({ error: 'Not found' });
   res.json(inv);
 });
 
@@ -317,7 +366,7 @@ router.get('/:id', (req, res) => {
 router.put('/:id', (req, res) => {
   const id = parseInt(req.params.id, 10);
   const inv = db.prepare('SELECT * FROM invoices WHERE id = ?').get(id);
-  if (!inv) return res.status(404).json({ error: 'Not found' });
+  if (!inv || !invoiceInScope(req, inv)) return res.status(404).json({ error: 'Not found' });
 
   const {
     project_id, client_id,
@@ -419,14 +468,20 @@ router.delete('/:id', (req, res) => {
 
 router.post('/:id/issue', (req, res) => {
   const inv = db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id);
-  if (!inv) return res.status(404).json({ error: 'Not found' });
+  if (!inv || !invoiceInScope(req, inv)) return res.status(404).json({ error: 'Not found' });
 
   // Already issued — return existing number
   if (inv.status === 'issued' || inv.status === 'paid') {
     return res.json({ ok: true, invoice_number: inv.invoice_number });
   }
 
-  const invoiceNumber = assignInvoiceNumber();
+  // Never put a Massiv invoice on Gargia's papers: refuse until ARBK's details
+  // are in the panel.
+  if (!billingReady(inv.entity)) {
+    return res.status(400).json({ error: 'Massiv billing details are not set yet. Add the business number and bank account before issuing.' });
+  }
+
+  const invoiceNumber = assignInvoiceNumber(inv.entity);
   db.prepare("UPDATE invoices SET status='issued', invoice_number=? WHERE id=?")
     .run(invoiceNumber, inv.id);
 
@@ -454,6 +509,11 @@ router.post('/:id/issue', (req, res) => {
 // and offer to remove one. Linkage is by invoice_id only.
 router.get('/:id/payments', (req, res) => {
   const id = parseInt(req.params.id, 10);
+  const ent = readEntity(req);
+  if (ent) {
+    const owner = db.prepare('SELECT entity FROM invoices WHERE id = ?').get(id);
+    if (!owner || owner.entity !== ent) return res.status(404).json({ error: 'Invoice not found' });
+  }
   const rows = db.prepare(
     "SELECT id, amount, date, method, status FROM client_payments WHERE invoice_id = ? ORDER BY date ASC, id ASC"
   ).all(id);
@@ -628,8 +688,8 @@ router.post('/from-estimate/:budgetId', (req, res) => {
       invoice_discount, discount_type,
       subtotal, total_after_discount,
       tax_enabled, tax_rate_applied, tax_amount, amount_due,
-      status
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'amount', ?, ?, ?, ?, ?, ?, 'draft')
+      entity, status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'amount', ?, ?, ?, ?, ?, ?, ?, 'draft')
   `).run(
     budget.proj_id || null, budget.id, clientId,
     clientName, '', '',
@@ -639,6 +699,7 @@ router.post('/from-estimate/:budgetId', (req, res) => {
     getSetting('invoice_language', 'sq'),
     totals.subtotal, totals.total_after_discount,
     taxOn, taxRate, totals.tax_amount, totals.amount_due,
+    budget.entity || LIVE_ENTITY,
   );
 
   const invoiceId = result.lastInsertRowid;
@@ -738,28 +799,35 @@ router.get('/:id/pdf', (req, res) => {
   const PDFDocument = require('pdfkit');
 
   const inv = getInvoiceFull(parseInt(req.params.id, 10));
-  if (!inv) return res.status(404).json({ error: 'Not found' });
+  if (!inv || !invoiceInScope(req, inv)) return res.status(404).json({ error: 'Not found' });
+
+  if (!billingReady(inv.entity)) {
+    return res.status(400).json({ error: 'Massiv billing details are not set yet.' });
+  }
 
   const lang = inv.language || 'sq';
   const L = LABELS[lang] || LABELS.sq;
 
-  const billingName  = getSetting('invoice_billing_name', '');
-  const billingAddr  = getSetting('invoice_billing_address', '');
-  const billingTel   = getSetting('invoice_billing_tel', '');
-  const billingNr    = getSetting('invoice_billing_nr_unik', '');
-  const billingSwift = getSetting('invoice_billing_swift', '');
+  // Papers follow the invoice's own entity, so the historical Gargia invoice
+  // keeps printing Gargia and a Massiv one can never inherit it.
+  const bSfx = inv.entity && inv.entity !== 'gargia' ? '_' + inv.entity : '';
+  const billingName  = getSetting('invoice_billing_name' + bSfx, '');
+  const billingAddr  = getSetting('invoice_billing_address' + bSfx, '');
+  const billingTel   = getSetting('invoice_billing_tel' + bSfx, '');
+  const billingNr    = getSetting('invoice_billing_nr_unik' + bSfx, '');
+  const billingSwift = getSetting('invoice_billing_swift' + bSfx, '');
   // Bank split: new keys, with fallback to old combined key
-  let billingBankName    = getSetting('invoice_billing_bank_name') || '';
-  let billingBankAccount = getSetting('invoice_billing_bank_account') || '';
+  let billingBankName    = getSetting('invoice_billing_bank_name' + bSfx) || '';
+  let billingBankAccount = getSetting('invoice_billing_bank_account' + bSfx) || '';
   if (!billingBankName && !billingBankAccount) {
-    const oldBank = getSetting('invoice_billing_bank', '');
+    const oldBank = getSetting('invoice_billing_bank' + bSfx, '');
     if (oldBank) {
       billingBankAccount = oldBank;
       if (/teb/i.test(oldBank)) billingBankName = 'TEB';
     }
   }
-  const logoData     = getSetting('invoice_logo') || getSetting('agency_logo');
-  const stampData    = getSetting('invoice_stamp');
+  const logoData     = getSetting('invoice_logo' + bSfx) || (bSfx ? null : getSetting('agency_logo'));
+  const stampData    = getSetting('invoice_stamp' + bSfx);
   const taxLabel     = getSetting('tax_label', 'Tax');
 
   const fmtMoney = v => `€${Number(v || 0).toFixed(2)}`;
