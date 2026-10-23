@@ -10,6 +10,10 @@ const PrivacyContext = createContext({ hidden: true, loading: true, toggle: () =
 
 const KEY = 'privacy_mode';
 
+// The finance login never blurs numbers and has no toggle: the whole point of
+// that dashboard is to read them. Everyone else keeps the conceal behaviour.
+const isFinance = () => (localStorage.getItem('massiv_role') || 'owner') === 'finance';
+
 export function PrivacyProvider({ children }) {
   const [hidden, setHidden] = useState(true);   // concealed on first load
   const [loading, setLoading] = useState(true); // and while the setting loads
@@ -18,6 +22,7 @@ export function PrivacyProvider({ children }) {
   // dashboard layout. Stored '0' means the user chose to reveal; anything else
   // (including a missing key) stays hidden.
   useEffect(() => {
+    if (isFinance()) { setLoading(false); return; }
     const auth = localStorage.getItem('massiv_auth');
     if (!auth) { setLoading(false); return; }
     api.get(`/settings/${KEY}`)
@@ -56,11 +61,12 @@ export function PrivacyProvider({ children }) {
 
   // Losing the tab is the real threat: re-conceal the moment focus leaves.
   useEffect(() => {
+    if (isFinance()) return undefined;
     window.addEventListener('blur', conceal);
     return () => window.removeEventListener('blur', conceal);
   }, [conceal]);
 
-  const value = { hidden: hidden || loading, loading, toggle };
+  const value = { hidden: isFinance() ? false : (hidden || loading), loading, toggle };
   return <PrivacyContext.Provider value={value}>{children}</PrivacyContext.Provider>;
 }
 
