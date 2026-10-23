@@ -420,15 +420,11 @@ router.get('/:id/pdf', (req, res) => {
     return row && row.value != null ? row.value : fallback;
   };
 
-  // Company identity is pulled from the same settings the invoice uses, so the
-  // two documents read as one company. Payment fields (bank, account, SWIFT)
-  // are deliberately not read here: an estimate carries no payment furniture.
-  const companyName = getSetting('invoice_billing_name')
-    || getSetting('agency_name') || 'MASSIV TV';
-  const companyAddr = getSetting('invoice_billing_address', '');
-  const companyTel  = getSetting('invoice_billing_tel', '');
-  const companyNr   = getSetting('invoice_billing_nr_unik', '');
-  const logoData    = getSetting('invoice_logo') || getSetting('agency_logo');
+  // Estimate identity is always the MASSIV brand, never the fiscal papers: an
+  // estimate carries no business furniture (no address, telephone or business
+  // number) and must not print on GARGIA's papers.
+  const companyName = 'MASSIV';
+  const logoData    = getSetting('agency_logo');
 
   const crewLines  = budget.lines.filter(l => l.section === 'crew');
   const equipLines = budget.lines.filter(l => l.section === 'equipment');
@@ -642,14 +638,6 @@ router.get('/:id/pdf', (req, res) => {
   let detY = y;
   txt(companyName, detX, detY, 10, { width: detW, align: 'right' }, 'Helvetica-Bold', INK);
   detY += 14 * S;
-  if (companyAddr) { txt(companyAddr, detX, detY, 8, { width: detW, align: 'right' }, 'Helvetica', GREY); detY += 12 * S; }
-  const detRow = (lbl, val) => {
-    if (!val) return;
-    txt(`${lbl}: ${val}`, detX, detY, 8, { width: detW, align: 'right' }, 'Helvetica', GREY);
-    detY += 11 * S;
-  };
-  detRow('Tel', companyTel);
-  detRow('Business No.', companyNr);
 
   y = Math.max(y + m.headerH, detY) + m.ruleGap * 0.5;
   doc.moveTo(ML, y).lineTo(PW - MR, y).strokeColor('#DDDDDD').lineWidth(0.7).stroke();
