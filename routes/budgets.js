@@ -76,7 +76,9 @@ router.get('/', (req, res) => {
     FROM budgets b
     LEFT JOIN projects p ON p.id = b.project_id
     ${ent ? 'WHERE COALESCE(p.entity, b.entity) = ?' : ''}
-    ORDER BY b.created_at DESC
+    -- Oldest first, and the numbered Massiv series sits above the Gargia archive
+    -- so #001 reads at the top of the list.
+    ORDER BY b.ref_number IS NULL, b.ref_number ASC, b.created_at ASC
   `).all(...(ent ? [ent] : []));
   res.json(budgets);
 });
@@ -97,9 +99,11 @@ router.post('/', (req, res) => {
     if (!Number.isFinite(vr) || vr < 0 || vr > 100) return res.status(400).json({ error: 'vat_rate must be between 0 and 100' });
   }
 
+  // A new estimate is always a Massiv record (the entity column defaults to the
+  // live entity), so it takes the next number in the Massiv series.
   const result = db.prepare(`
-    INSERT INTO budgets (project_id, title, category, client_name, shoot_days, shoot_location, status, vat_enabled, vat_rate, notes, show_providers, sent_at, responded_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO budgets (project_id, title, category, client_name, shoot_days, shoot_location, status, vat_enabled, vat_rate, notes, show_providers, sent_at, responded_at, ref_number)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(ref_number), 0) + 1 FROM budgets))
   `).run(
     project_id || null,
     title,
@@ -218,8 +222,8 @@ router.post('/:id/duplicate', (req, res) => {
 
   const newId = db.transaction(() => {
     const r = db.prepare(`
-      INSERT INTO budgets (project_id, title, category, client_name, shoot_days, shoot_location, status, vat_enabled, vat_rate, notes, show_providers, sent_at, responded_at)
-      VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, NULL, NULL)
+      INSERT INTO budgets (project_id, title, category, client_name, shoot_days, shoot_location, status, vat_enabled, vat_rate, notes, show_providers, sent_at, responded_at, ref_number)
+      VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, NULL, NULL, (SELECT COALESCE(MAX(ref_number), 0) + 1 FROM budgets))
     `).run(
       src.project_id, `${src.title} (Copy)`, src.category, src.client_name,
       src.shoot_days, src.shoot_location, src.vat_enabled, src.vat_rate, src.notes, src.show_providers,
@@ -454,7 +458,12 @@ router.get('/:id/pdf', (req, res) => {
   const validUntil = new Date(baseDate.getTime());
   validUntil.setDate(validUntil.getDate() + VALIDITY_DAYS);
 
-  const refStr        = `#${String(budget.id).padStart(4, '0')}`;
+  // Ref on the document. A Massiv estimate prints its own series (#001, #002,
+  // #003...); a Gargia estimate keeps the legacy row-id ref it always printed
+  // (#0029 style), so old paperwork still matches.
+  const refStr = budget.ref_number
+    ? `#${String(budget.ref_number).padStart(3, '0')}`
+    : `#${String(budget.id).padStart(4, '0')}`;
   const totalDiscount = budget.total_discount || 0;
   const hasDiscount   = totalDiscount > 0;
   const vatOn         = !!budget.vat_enabled;

@@ -557,6 +557,10 @@ function initDb() {
     // answered one has both. sent_at also drives the age ring on the cards.
     'ALTER TABLE budgets ADD COLUMN sent_at DATETIME',
     'ALTER TABLE budgets ADD COLUMN responded_at DATETIME',
+    // Estimate reference number. Massiv numbers its own series from 1 for the
+    // PDF's Ref line; a Gargia estimate leaves this NULL so it keeps its legacy
+    // row-id ref (old printed PDFs still match).
+    'ALTER TABLE budgets ADD COLUMN ref_number INTEGER',
     'ALTER TABLE expenses ADD COLUMN submitted_by TEXT',
     'ALTER TABLE expenses ADD COLUMN invoice_image_path TEXT',
     "ALTER TABLE expenses ADD COLUMN source TEXT DEFAULT 'admin'",
@@ -753,6 +757,20 @@ function initDb() {
       ).run();
       db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('entity_split_v1', '1')").run();
       console.log(`INFO: entity split applied (${p.changes} project(s), ${b.changes} estimate(s) moved to massiv).`);
+    }
+  } catch (_) {}
+
+  // One-time: seed the estimate reference series. Massiv estimates get #001,
+  // #002, #003... in creation (id) order; Gargia keeps ref_number NULL and its
+  // legacy id-based ref. Keyed so it runs exactly once.
+  try {
+    const seeded = db.prepare("SELECT value FROM settings WHERE key = 'budget_ref_series_v1'").get();
+    if (!seeded) {
+      const rows = db.prepare("SELECT id FROM budgets WHERE entity = 'massiv' ORDER BY id ASC").all();
+      const setRef = db.prepare('UPDATE budgets SET ref_number = ? WHERE id = ?');
+      rows.forEach((r, i) => setRef.run(i + 1, r.id));
+      db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('budget_ref_series_v1', '1')").run();
+      console.log(`INFO: estimate ref series seeded (#001..#${String(rows.length).padStart(3, '0')} for ${rows.length} Massiv estimate(s)).`);
     }
   } catch (_) {}
 
