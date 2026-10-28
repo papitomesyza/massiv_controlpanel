@@ -98,6 +98,10 @@
 .card-body { display: flex; align-items: flex-start; gap: 6px; padding: 10px 6px 10px 12px; }
 .card-title { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; line-height: 1.4; margin: 0; word-break: break-word; color: var(--color-ink); }
 .card-title.is-domain { font-weight: 500; color: var(--color-mid-gray); }
+/* Who added a card through a First AD window. Panel cards carry no author. */
+.card-author { display: inline-block; align-self: flex-start; font-size: 10px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-mid-gray);
+  border: 1px solid var(--color-border, rgba(255,255,255,0.12)); border-radius: 999px; padding: 2px 8px; }
 .card-tags { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 12px 12px; }
 .note-card .card-tags { padding: 0; }
 .card-tag {

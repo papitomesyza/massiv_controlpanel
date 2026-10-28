@@ -58,14 +58,11 @@ app.get('/api/settings/agency-public', (req, res) => {
   res.json({ agency_name: map.agency_name || null, agency_logo_base64: map.agency_logo || null });
 });
 
-// Public expense routes (no auth) — multer on POST only
+// Public expense and moodboard routes (no auth). Both are mounted further down,
+// after the audit spine: a router mounted above that middleware answers before
+// it runs, so a card written from a First AD window would never be audited.
 const publicRouter = require('./routes/public');
-app.use('/api/public', (req, res, next) => {
-  if (req.method === 'POST' && req.path.startsWith('/expense/')) {
-    return upload.single('invoice_image')(req, res, next);
-  }
-  next();
-}, publicRouter);
+const { singleImageUpload } = require('./lib/mediaStore');
 
 // Paths a service token (e.g. the Hermes agent) may NEVER reach, even though it
 // otherwise has full read/write. The password vault is zero-knowledge anyway,
@@ -201,7 +198,13 @@ const AUDIT_SKIP = [
   /^\/api\/settings\/backup(\/|$)/i,
 ];
 
-const AUDIT_SOURCES = new Set(['panel', 'api', 'telegram', 'desktop', 'voice']);
+// ...except the moodboard window. A First AD writes straight from a public page
+// with no session, and those writes are exactly the ones the spine exists to
+// catch: who put what into the collection. The handler sets req.publicActor so
+// the row carries the crew member's name rather than a blank 'andi'.
+const AUDIT_INCLUDE = [/^\/api\/public\/collab(\/|$)/i];
+
+const AUDIT_SOURCES = new Set(['panel', 'api', 'telegram', 'desktop', 'voice', 'crew']);
 // Request-body keys that may be stored in audit meta (whitelist only).
 const AUDIT_BODY_KEYS = ['amount', 'status', 'title', 'name', 'phase_name', 'phase', 'client_id', 'currency', 'rate_per_day', 'days', 'payment_id', 'project_id'];
 const AUDIT_SECRET_RE = /password|secret|token|key|backup|base64/i;
@@ -231,6 +234,7 @@ function auditVerb(method, routePath, body) {
     payments: 'payment', expenses: 'expense', tasks: 'task', crew: 'crew_assignment',
     phases: 'phase', logs: 'log', lines: 'line', scenes: 'scene', shots: 'shot',
     revisions: 'revision', characters: 'character', locations: 'location', days: 'day',
+    collab: 'collection_card',
   };
   const rootMap = {
     clients: 'client', crew: 'crew', projects: 'project', budgets: 'budget',
@@ -243,7 +247,10 @@ function auditVerb(method, routePath, body) {
   const root = segs[0] || 'api';
   let noun = rootMap[root] || root;
   const named = segs.slice(1).filter(x => !isId(x));
-  if (named.length && subMap[named[0]]) noun = subMap[named[0]];
+  // The moodboard's unlock is access to the window, not a card: it is named
+  // after what it gives (a session), so the stream reads honestly.
+  if (named.includes('unlock')) noun = 'collection_access';
+  else if (named.length && subMap[named[0]]) noun = subMap[named[0]];
   let action = { POST: 'create', PUT: 'update', PATCH: 'update', DELETE: 'delete' }[method] || method.toLowerCase();
   const last = segs[segs.length - 1] || '';
   if (/^(complete|status|accept|send|archive|restore|pay|paid|done|toggle)$/.test(last)) {
@@ -293,15 +300,23 @@ app.use((req, res, next) => {
   if (!AUDIT_METHODS.has(req.method)) return next();
   const routePath = (req.originalUrl || '').split('?')[0];
   const normPath = normalizeApiPath(routePath);
-  if (!/^\/api\//i.test(normPath) || AUDIT_SKIP.some(re => re.test(normPath))) return next();
+  // The public namespace is skipped wholesale except for the moodboard window,
+  // which opts in through AUDIT_INCLUDE.
+  const skipped = AUDIT_SKIP.some(re => re.test(normPath))
+    && !AUDIT_INCLUDE.some(re => re.test(normPath));
+  if (!/^\/api\//i.test(normPath) || skipped) return next();
 
   const originalJson = res.json.bind(res);
   res.json = (body) => {
     try {
       if (res.statusCode < 400) {
-        const actor = req.serviceToken ? 'hermes' : (req.role === 'finance' ? 'finance' : 'andi');
+        const actor = req.publicActor
+          ? `ad:${req.publicActor}`
+          : (req.serviceToken ? 'hermes' : (req.role === 'finance' ? 'finance' : 'andi'));
         const hdr = String(req.get('x-cos-source') || '').trim().toLowerCase();
-        const source = AUDIT_SOURCES.has(hdr) ? hdr : (req.serviceToken ? 'api' : 'panel');
+        const source = req.publicActor
+          ? 'crew'
+          : (AUDIT_SOURCES.has(hdr) ? hdr : (req.serviceToken ? 'api' : 'panel'));
         // Handlers may set res.locals.cosAudit to make the row exact (e.g. payment delete/update).
         const cos = res.locals && res.locals.cosAudit;
         const entity_type = (cos && cos.entity_type) || auditEntityType(routePath);
@@ -323,6 +338,21 @@ app.use((req, res, next) => {
   };
   next();
 });
+
+// Public routes (no auth) — multer on POST only. Deliberately below the audit
+// spine so a moodboard write from the First AD window lands in audit_log.
+app.use('/api/public', (req, res, next) => {
+  if (req.method === 'POST' && req.path.startsWith('/expense/')) {
+    return upload.single('invoice_image')(req, res, next);
+  }
+  // The moodboard window's image upload. Only a multipart post goes through
+  // multer; a link or a note arrives as JSON and is parsed by express.json.
+  if (req.method === 'POST' && /^\/collab\/[^/]+\/cards\/?$/.test(req.path)
+    && String(req.headers['content-type'] || '').startsWith('multipart/form-data')) {
+    return singleImageUpload('image')(req, res, next);
+  }
+  next();
+}, publicRouter);
 
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/audit', requireAuth, require('./routes/audit'));
@@ -373,9 +403,13 @@ const { serveMediaFile } = require('./lib/mediaStore');
 const { coverPng } = require('./lib/renderCover');
 const PRESENTATION_MEDIA_DIR = path.join(DATA_DIR, 'presentation-media');
 const SHOTLIST_MEDIA_DIR = path.join(DATA_DIR, 'shotlist-media');
+// Moodboard uploads from the First AD window. Separate store from the shot
+// list's so a file added through one link can never be reached by the other.
+const COLLECTION_MEDIA_DIR = path.join(DATA_DIR, 'collection-media');
 
 app.get('/p-media/:filename', (req, res) => serveMediaFile(req, res, PRESENTATION_MEDIA_DIR));
 app.get('/shotlist-media/:filename', (req, res) => serveMediaFile(req, res, SHOTLIST_MEDIA_DIR));
+app.get('/collection-media/:filename', (req, res) => serveMediaFile(req, res, COLLECTION_MEDIA_DIR));
 
 // Link preview covers. Unfurlers will not run JavaScript and will not take an
 // SVG, so each public page has a real PNG at a stable URL showing the project
@@ -505,6 +539,75 @@ app.get('/shotlist/:slug', (req, res, next) => {
     console.error('Public shot list render failed:', err && err.message ? err.message : err);
     if (onPitchHost) return sendPitch404(req, res);
     return next();
+  }
+});
+
+// Public moodboard — the First AD window. Viewing needs only the link; adding,
+// editing or deleting a card needs the collection's passcode (routes/public.js).
+// Same miss behaviour as every other public page: an unknown slug, a disabled
+// link, an archived collection or a completed project reveals nothing.
+app.get('/mood/:slug', (req, res, next) => {
+  const onPitchHost = isPitchHost(req);
+  const miss = () => (onPitchHost ? sendPitch404(req, res) : next());
+
+  try {
+    const link = db.prepare(
+      "SELECT * FROM collection_share_links WHERE slug = ? AND mode = 'collab' AND enabled = 1"
+    ).get(String(req.params.slug || ''));
+    if (!link || !link.passcode_hash) return miss();
+
+    const collection = db.prepare('SELECT * FROM collections WHERE id = ? AND archived = 0').get(link.collection_id);
+    if (!collection) return miss();
+
+    const project = collection.project_id
+      ? db.prepare('SELECT id, title, status FROM projects WHERE id = ?').get(collection.project_id)
+      : null;
+    // The window closes with the production, exactly like the expense link.
+    if (project && project.status === 'completed') return miss();
+
+    const { renderMood } = require('./lib/renderMood');
+    const cards = db.prepare(
+      `SELECT id, type, url, title, note_text, thumbnail_url, source, created_by
+       FROM collection_cards WHERE collection_id = ?
+       ORDER BY sort_order ASC, created_at DESC`
+    ).all(collection.id);
+
+    const agencyRows = db.prepare("SELECT key, value FROM settings WHERE key IN ('agency_name', 'agency_logo')").all();
+    const agencyMap = {};
+    agencyRows.forEach(r => { agencyMap[r.key] = r.value; });
+
+    const html = renderMood(
+      {
+        name: collection.name,
+        description: collection.description,
+        project_title: project ? project.title : null,
+        slug: link.slug,
+      },
+      cards,
+      { agency: { name: agencyMap.agency_name || null, logo: agencyMap.agency_logo || null }, origin: requestOrigin(req) }
+    );
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.send(html);
+  } catch (err) {
+    console.error('Public moodboard render failed:', err && err.message ? err.message : err);
+    if (onPitchHost) return sendPitch404(req, res);
+    return next();
+  }
+});
+
+app.get('/mood/:slug/cover.png', (req, res) => {
+  try {
+    const link = db.prepare(
+      "SELECT collection_id FROM collection_share_links WHERE slug = ? AND mode = 'collab' AND enabled = 1"
+    ).get(String(req.params.slug || ''));
+    if (!link) return res.status(404).end();
+    const collection = db.prepare('SELECT name FROM collections WHERE id = ? AND archived = 0').get(link.collection_id);
+    if (!collection) return res.status(404).end();
+    sendCover(req, res, { title: collection.name, kind: 'Moodboard' });
+  } catch (err) {
+    console.error('Moodboard cover failed:', err && err.message ? err.message : err);
+    res.status(404).end();
   }
 });
 
