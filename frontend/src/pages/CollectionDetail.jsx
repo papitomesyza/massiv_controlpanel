@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ChevronLeft, ChevronDown, ChevronUp, Library, FolderKanban, Archive, ArchiveRestore, Trash2,
   Link2, Link2Off, FileText, Edit2, Play, Globe, X, SearchX, Share2, Copy, Check, GripVertical,
-  Instagram, Music2, Star, Unlink, Clock, History, ArrowDownAZ,
+  Instagram, Music2, Star, Unlink, Clock, History, ArrowDownAZ, Key,
 } from 'lucide-react';
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors,
@@ -164,6 +164,9 @@ function LinkCard({ card, grip, onEdit, onDelete, onStar, activeTag, onTagClick 
       <div className="card-body">
         <SourceIcon source={card.source} title={domain} style={{ marginTop: 3 }} />
         <p className={`card-title ${card.title ? '' : 'is-domain'}`}>{card.title || domain}</p>
+        {card.created_by && (
+          <span className="card-author" title="Added through a First AD window">{card.created_by}</span>
+        )}
         <span style={{ display: 'inline-flex' }} onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
           <StarButton starred={!!card.starred} onClick={() => onStar(card.id)} />
           <IconMenu items={cardMenu(onEdit, onDelete)} size={14} />
@@ -190,6 +193,9 @@ function NoteCard({ card, grip, onEdit, onDelete, onStar, isExpanded, onToggleEx
         <StarButton starred={!!card.starred} onClick={() => onStar(card.id)} />
         <IconMenu items={cardMenu(onEdit, onDelete)} size={14} />
       </div>
+      {card.created_by && (
+        <span className="card-author" title="Added through a First AD window">{card.created_by}</span>
+      )}
       <p className="note-text" style={{ WebkitLineClamp: isExpanded ? 'unset' : 5, paddingRight: 6 }}>{card.note_text}</p>
       {isLong && (
         <button
@@ -212,6 +218,9 @@ function NoteCard({ card, grip, onEdit, onDelete, onStar, isExpanded, onToggleEx
 }
 
 function CardItem({ card, ...props }) {
+  // An image uploaded through a First AD window opens the file itself and its
+  // thumbnail is the picture, so it renders as the link card does.
+  if (card.type === 'image') return <LinkCard card={card} {...props} />;
   return card.type === 'link' ? <LinkCard card={card} {...props} /> : <NoteCard card={card} {...props} />;
 }
 
@@ -515,6 +524,202 @@ function ShareModal({ collectionId, onClose }) {
   );
 }
 
+// ── The First AD window ───────────────────────────────────────────────────────
+// The public link crew write into. One link and one passcode per collection:
+// the passcode is set here, never shown again, and rotating it kills every
+// token already handed out. Nothing on this screen touches money.
+
+function FirstAdModal({ collectionId, onClose }) {
+  const [loading, setLoading] = useState(true);
+  const [link, setLink] = useState(null);
+  const [passcode, setPasscode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [confirming, setConfirming] = useState(null); // 'revoke' | 'kill' | null
+  const [notice, setNotice] = useState(null);
+
+  useEffect(() => {
+    api.get(`/collections/${collectionId}/collab-link`)
+      .then(data => setLink(data.has_link ? data : null))
+      .catch(err => setNotice({ title: 'Link not loaded', message: err.message }))
+      .finally(() => setLoading(false));
+  }, [collectionId]);
+
+  useEffect(() => {
+    if (!copied) return undefined;
+    const t = setTimeout(() => setCopied(false), 2000);
+    return () => clearTimeout(t);
+  }, [copied]);
+
+  // Create the window, or replace the passcode on the one that exists. The
+  // slug is reused, so the link already sent out keeps working.
+  async function save() {
+    const code = passcode.trim();
+    if (code.length < 6) {
+      setNotice({ title: 'Passcode too short', message: 'At least 6 characters.' });
+      return;
+    }
+    setBusy(true);
+    try {
+      const data = await api.post(`/collections/${collectionId}/collab-link`, { passcode: code });
+      const wasOpen = !!link;
+      setLink(data);
+      setPasscode('');
+      setNotice({
+        title: wasOpen ? 'Passcode rotated' : 'Window open',
+        message: wasOpen
+          ? 'Anyone already unlocked with the old passcode is locked out until they enter the new one.'
+          : 'Send the link and the passcode to your First AD. They can write into this collection straight away.',
+      });
+    } catch (err) {
+      setNotice({ title: 'Not saved', message: err.message || 'The link could not be saved.' });
+    }
+    setBusy(false);
+  }
+
+  async function toggleEnabled() {
+    setConfirming(null);
+    setBusy(true);
+    try {
+      const data = await api.put(`/collections/${collectionId}/collab-link`, { enabled: !link.enabled });
+      setLink(v => ({ ...v, enabled: data.enabled }));
+    } catch (err) {
+      setNotice({ title: 'Link not updated', message: err.message || 'The link could not be updated.' });
+    }
+    setBusy(false);
+  }
+
+  async function kill() {
+    setConfirming(null);
+    setBusy(true);
+    try {
+      await api.del(`/collections/${collectionId}/collab-link`);
+      setLink(null);
+      setPasscode('');
+    } catch (err) {
+      setNotice({ title: 'Not closed', message: err.message || 'The window could not be closed.' });
+    }
+    setBusy(false);
+  }
+
+  async function copy() {
+    if (await copyText(link.url)) setCopied(true);
+    else setNotice({ title: 'Not copied', message: 'The browser did not allow copying.' });
+  }
+
+  let footer = null;
+  if (!loading) {
+    footer = (
+      <>
+        {link && (
+          <button
+            type="button"
+            className={`db-iconbtn ${link.enabled ? 'danger' : ''}`}
+            onClick={() => setConfirming('revoke')}
+            disabled={busy}
+            title={link.enabled ? 'Revoke the link' : 'Turn the link back on'}
+            aria-label={link.enabled ? 'Revoke the link' : 'Turn the link back on'}
+          >
+            {link.enabled ? <Link2Off size={16} /> : <Link2 size={16} />}
+          </button>
+        )}
+        <span className="spacer" />
+        <button type="button" className="btn btn-ghost" onClick={onClose}>Close</button>
+      </>
+    );
+  }
+
+  return (
+    <Overlay title="First AD window" onClose={onClose} guard={false} width={520} footer={footer}>
+      {loading ? (
+        <div className="loading" style={{ padding: '16px' }}>Loading...</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <p style={{ margin: 0, fontSize: '13px', opacity: 0.75 }}>
+            Crew open this link, enter their name and the passcode, then add references, notes
+            and images to this collection. Their name is stamped on every card they add, and they
+            can only edit or delete their own. The window closes by itself when the project is completed.
+          </p>
+
+          {link && (
+            <>
+              <div className="share-field">
+                <span className={link.enabled ? 'db-dot ink' : 'db-dot muted'} title={link.enabled ? 'On' : 'Off'} />
+                <input className={`input ${link.enabled ? '' : 'is-off'}`} value={link.url} readOnly onFocus={e => e.target.select()} />
+                <button type="button" className="db-iconbtn lg" onClick={copy} disabled={!link.enabled} title="Copy" aria-label="Copy link">
+                  {copied ? <Check size={16} /> : <Copy size={16} />}
+                </button>
+              </div>
+              <div style={{ fontSize: '12px', opacity: 0.6 }}>
+                {link.last_used_at
+                  ? `Last opened ${link.last_used_at}`
+                  : 'Not opened yet.'}
+              </div>
+            </>
+          )}
+
+          <div className="share-field">
+            <input
+              className="input"
+              type="text"
+              value={passcode}
+              onChange={e => setPasscode(e.target.value)}
+              placeholder={link ? 'New passcode (min 6 characters)' : 'Passcode (min 6 characters)'}
+            />
+            <button type="button" className="btn btn-primary" onClick={save} disabled={busy}>
+              <Key size={15} /> {link ? 'Rotate' : 'Open'}
+            </button>
+          </div>
+          {link && <div style={{ fontSize: '12px', opacity: 0.6 }}>Rotating locks out everyone already unlocked with the old passcode.</div>}
+          {link && (
+            <button
+              type="button"
+              className="btn btn-ghost danger"
+              style={{ alignSelf: 'flex-start' }}
+              onClick={() => setConfirming('kill')}
+              disabled={busy}
+            >
+              <Trash2 size={15} /> Close this window for good
+            </button>
+          )}
+        </div>
+      )}
+      {confirming === 'revoke' && (
+        <ConfirmDialog
+          title={link && link.enabled ? 'Revoke this window?' : 'Turn this window back on?'}
+          message={link && link.enabled
+            ? 'Nobody with the link can read or write this collection until it is turned back on. Cards already added stay.'
+            : 'Anyone holding the link can read and write this collection again.'}
+          confirmLabel={link && link.enabled ? 'Revoke' : 'Turn on'}
+          tone={link && link.enabled ? 'danger' : 'default'}
+          onConfirm={toggleEnabled}
+          onCancel={() => setConfirming(null)}
+        />
+      )}
+      {confirming === 'kill' && (
+        <ConfirmDialog
+          title="Close this window for good?"
+          message="The link and the passcode are dropped, so the link in a First AD's hands stops working immediately. Cards already added stay. Opening a window again mints a brand new link."
+          confirmLabel="Close it"
+          tone="danger"
+          onConfirm={kill}
+          onCancel={() => setConfirming(null)}
+        />
+      )}
+      {notice && (
+        <ConfirmDialog
+          title={notice.title}
+          message={notice.message}
+          confirmLabel="OK"
+          cancelLabel={null}
+          onConfirm={() => setNotice(null)}
+          onCancel={() => setNotice(null)}
+        />
+      )}
+    </Overlay>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function CollectionDetail() {
@@ -531,6 +736,7 @@ export default function CollectionDetail() {
   const [editingCollection, setEditingCollection] = useState(false);
   const [expandedIds, setExpandedIds] = useState(new Set());
   const [showShare, setShowShare] = useState(false);
+  const [showFirstAd, setShowFirstAd] = useState(false);
   const [confirmDeleteCard, setConfirmDeleteCard] = useState(null);
   const [confirmDeleteCollection, setConfirmDeleteCollection] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -722,6 +928,7 @@ export default function CollectionDetail() {
         </div>
         <div className="db-actions">
           <button type="button" className="db-iconbtn" onClick={() => setShowShare(true)} title="Share" aria-label="Share"><Share2 size={16} /></button>
+          <button type="button" className="db-iconbtn" onClick={() => setShowFirstAd(true)} title="First AD window" aria-label="First AD window"><Key size={16} /></button>
           <button type="button" className="db-iconbtn" onClick={() => setEditingCollection(true)} title="Edit" aria-label="Edit"><Edit2 size={16} /></button>
           <button type="button" className="db-iconbtn" onClick={handleArchive} title={collection.archived ? 'Unarchive' : 'Archive'} aria-label={collection.archived ? 'Unarchive' : 'Archive'}>
             {collection.archived ? <ArchiveRestore size={16} /> : <Archive size={16} />}
@@ -790,6 +997,7 @@ export default function CollectionDetail() {
         <EditCollectionModal collection={collection} onSave={handleEditCollection} onClose={() => setEditingCollection(false)} />
       )}
       {showShare && <ShareModal collectionId={id} onClose={() => setShowShare(false)} />}
+      {showFirstAd && <FirstAdModal collectionId={id} onClose={() => setShowFirstAd(false)} />}
       {confirmDeleteCard && (
         <ConfirmDialog
           title="Delete this card?"
