@@ -8,11 +8,6 @@ const https = require('https');
 const zlib = require('zlib');
 const { db } = require('../db/database');
 
-// The First AD window reuses the shot list's passcode hashing and the public
-// domain resolver, so a moodboard link behaves exactly like a crew link.
-const { hashPasscode, PASSCODE_MIN } = require('../lib/shotlistAuth');
-const { publicPitchBase } = require('../lib/pitchDomain');
-
 // Schema-safe: add starred column to both tables if not already present
 try { db.exec('ALTER TABLE collections ADD COLUMN starred INTEGER DEFAULT 0'); } catch (_) {}
 try { db.exec('ALTER TABLE collection_cards ADD COLUMN starred INTEGER DEFAULT 0'); } catch (_) {}
@@ -709,108 +704,8 @@ router.put('/:id/share', (req, res) => {
   }
 });
 
-// ── First AD window (the collab link) ─────────────────────────────────────────
-// One link per project collection, opened with a passcode, that lets crew write
-// straight into the moodboard. It is the same collection_share_links row the
-// read-only client link uses, in 'collab' mode, so a client reading the board
-// and a First AD writing it point at one place.
-
-function moodSlug(name) {
-  const base = String(name || 'board').toLowerCase()
-    .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
-  return base || 'board';
-}
-
-// The slug is the public path, so it is minted with a random tail and checked
-// against every row, including ones that read as NULL.
-function uniqueMoodSlug(name) {
-  for (let i = 0; i < 20; i++) {
-    const slug = `${moodSlug(name)}-${crypto.randomBytes(3).toString('hex')}`;
-    const taken = db.prepare('SELECT 1 FROM collection_share_links WHERE slug = ?').get(slug);
-    if (!taken) return slug;
-  }
-  return `${moodSlug(name)}-${Date.now().toString(36)}`;
-}
-
-// GET /api/collections/:id/collab-link
-router.get('/:id/collab-link', (req, res) => {
-  try {
-    const link = db.prepare('SELECT * FROM collection_share_links WHERE collection_id = ?').get(req.params.id);
-    if (!link || !link.slug || !link.passcode_hash) return res.json({ has_link: false });
-    res.json({
-      has_link: true,
-      enabled: link.enabled ? 1 : 0,
-      mode: link.mode || 'view',
-      slug: link.slug,
-      url: `${publicPitchBase(req).base}/mood/${link.slug}`,
-      last_used_at: link.last_used_at || null,
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// POST /api/collections/:id/collab-link  body: { passcode }
-// Creates the window or rotates its passcode. Creating a second one on the same
-// collection is meaningless: one board, one window.
-router.post('/:id/collab-link', (req, res) => {
-  try {
-    const coll = db.prepare('SELECT id, name FROM collections WHERE id = ?').get(req.params.id);
-    if (!coll) return res.status(404).json({ error: 'Collection not found' });
-
-    const passcode = String((req.body && req.body.passcode) || '');
-    if (passcode.length < PASSCODE_MIN) {
-      return res.status(400).json({ error: `Passcode must be at least ${PASSCODE_MIN} characters` });
-    }
-
-    const existing = db.prepare('SELECT * FROM collection_share_links WHERE collection_id = ?').get(coll.id);
-    const slug = (existing && existing.slug) ? existing.slug : uniqueMoodSlug(coll.name);
-    const hash = hashPasscode(passcode);
-
-    if (existing) {
-      db.prepare("UPDATE collection_share_links SET mode = 'collab', slug = ?, passcode_hash = ?, enabled = 1 WHERE id = ?")
-        .run(slug, hash, existing.id);
-    } else {
-      db.prepare("INSERT INTO collection_share_links (collection_id, token, mode, slug, passcode_hash, enabled) VALUES (?, ?, 'collab', ?, ?, 1)")
-        .run(coll.id, crypto.randomBytes(32).toString('hex'), slug, hash);
-    }
-
-    // The link never leaves the panel, so it is safe to return here.
-    res.json({ has_link: true, enabled: 1, slug, url: `${publicPitchBase(req).base}/mood/${slug}` });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// PUT /api/collections/:id/collab-link  body: { enabled }
-router.put('/:id/collab-link', (req, res) => {
-  try {
-    const link = db.prepare('SELECT * FROM collection_share_links WHERE collection_id = ?').get(req.params.id);
-    if (!link || !link.slug) return res.status(404).json({ error: 'No First AD link found' });
-    db.prepare('UPDATE collection_share_links SET enabled = ? WHERE id = ?').run(req.body && req.body.enabled ? 1 : 0, link.id);
-    res.json({ ok: true, enabled: req.body && req.body.enabled ? 1 : 0 });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// DELETE /api/collections/:id/collab-link, kill the window for good: the slug
-// and the passcode are dropped, so a link already in someone's hands is dead
-// and re-opening the window mints a fresh one.
-router.delete('/:id/collab-link', (req, res) => {
-  try {
-    const link = db.prepare('SELECT * FROM collection_share_links WHERE collection_id = ?').get(req.params.id);
-    if (!link) return res.status(404).json({ error: 'No First AD link found' });
-    db.prepare("UPDATE collection_share_links SET mode = 'view', slug = NULL, passcode_hash = NULL, enabled = 1 WHERE id = ?")
-      .run(link.id);
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // ── Card CRUD ─────────────────────────────────────────────────────────────────
+
 // POST /api/collections/:id/cards
 router.post('/:id/cards', async (req, res) => {
   try {

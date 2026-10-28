@@ -620,34 +620,11 @@ function initDb() {
         token TEXT NOT NULL UNIQUE,
         enabled INTEGER DEFAULT 1,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        mode TEXT DEFAULT 'view',
-        slug TEXT,
-        passcode_hash TEXT,
-        last_used_at TEXT,
         FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE
       );
       CREATE INDEX IF NOT EXISTS idx_share_links_token ON collection_share_links(token);
       CREATE INDEX IF NOT EXISTS idx_share_links_collection ON collection_share_links(collection_id);
     `);
-  } catch (_) {}
-
-  // First AD window. The share-link row grows a write mode: 'collab' rows carry a
-  // slug (the public /mood/<slug> path) and a passcode hashed exactly like the
-  // panel password, so a link can be handed to crew without a panel account. A
-  // card records who added it, so a card written from the link can only be
-  // edited or deleted by whoever wrote it.
-  [
-    "ALTER TABLE collection_share_links ADD COLUMN mode TEXT DEFAULT 'view'",
-    'ALTER TABLE collection_share_links ADD COLUMN slug TEXT',
-    'ALTER TABLE collection_share_links ADD COLUMN passcode_hash TEXT',
-    'ALTER TABLE collection_share_links ADD COLUMN last_used_at TEXT',
-    'ALTER TABLE collection_cards ADD COLUMN created_by TEXT',
-  ].forEach(sql => { try { db.exec(sql); } catch (_) {} });
-
-  // A slug is a public path segment, so two collections can never share one.
-  // SQLite keeps many NULLs distinct in a unique index, so read-only rows are fine.
-  try {
-    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_share_links_slug ON collection_share_links(slug)');
   } catch (_) {}
 
   // Backfill kind for collections (runs every boot; WHERE kind IS NULL makes it a no-op after first run)

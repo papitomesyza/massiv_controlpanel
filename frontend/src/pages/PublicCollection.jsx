@@ -354,7 +354,7 @@ export default function PublicCollection() {
         ) : (
           <div style={{ columnWidth: '300px', columnGap: '16px' }}>
             {cards.map(card => (
-              (card.type === 'link' || card.type === 'image')
+              card.type === 'link'
                 ? <PublicLinkCard key={card.id} card={card} />
                 : <PublicNoteCard key={card.id} card={card} />
             ))}
