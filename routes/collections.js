@@ -6,7 +6,9 @@ const net = require('net');
 const http = require('http');
 const https = require('https');
 const zlib = require('zlib');
+const path = require('path');
 const { db } = require('../db/database');
+const { storeImage } = require('../lib/mediaStore');
 
 // The First AD window reuses the shot list's passcode hashing and the public
 // domain resolver, so a moodboard link behaves exactly like a crew link.
@@ -31,8 +33,13 @@ try {
   )`);
 } catch (_) {}
 
-// Instagram proxy domains. Reorder or swap if one stops working.
-const INSTAGRAM_PROXIES = ['ddinstagram.com', 'kkinstagram.com', 'instagramez.com'];
+// Instagram's CDN picture links are signed and expire within days, so a
+// preview picture is copied into the panel's own media store and served from
+// /collection-media instead of being linked to.
+const COLLECTION_MEDIA_DIR = path.join(
+  process.env.DATA_DIR || path.join(__dirname, '..', 'data'),
+  'collection-media'
+);
 
 // ── Link preview helpers ──────────────────────────────────────────────────────
 
@@ -64,6 +71,13 @@ const BROWSER_HEADERS = {
   'Accept-Encoding': 'gzip, deflate, br',
   'DNT': '1',
   'Upgrade-Insecure-Requests': '1',
+};
+
+// Instagram ignores the browser UA above and answers with an empty app shell;
+// this one gets the real page, og: tags included.
+const INSTAGRAM_HEADERS = {
+  ...BROWSER_HEADERS,
+  'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
 };
 
 function ipv4Blocked(ip) {
@@ -143,12 +157,12 @@ function pinnedLookup(hostname, options, callback) {
   });
 }
 
-function requestOnce(u, deadline) {
+function requestOnce(u, deadline, headers = BROWSER_HEADERS) {
   return new Promise((resolve, reject) => {
     const remaining = deadline - Date.now();
     if (remaining <= 0) return reject(new Error('timeout'));
     const mod = u.protocol === 'https:' ? https : http;
-    const req = mod.request(u, { method: 'GET', headers: BROWSER_HEADERS, lookup: pinnedLookup, timeout: remaining }, resolve);
+    const req = mod.request(u, { method: 'GET', headers, lookup: pinnedLookup, timeout: remaining }, resolve);
     const timer = setTimeout(() => req.destroy(new Error('timeout')), remaining);
     req.on('response', () => clearTimeout(timer));
     req.on('timeout', () => req.destroy(new Error('timeout')));
@@ -157,8 +171,8 @@ function requestOnce(u, deadline) {
   });
 }
 
-// Read at most PREVIEW_MAX_BYTES of the decoded body, then stop reading.
-function readCapped(res, deadline) {
+// Read at most maxBytes of the decoded body, then stop reading.
+function readCapped(res, deadline, maxBytes = PREVIEW_MAX_BYTES) {
   return new Promise(resolve => {
     const enc = String(res.headers['content-encoding'] || '').toLowerCase();
     let stream = res;
@@ -175,16 +189,16 @@ function readCapped(res, deadline) {
       clearTimeout(timer);
       res.destroy();
       if (stream !== res) stream.destroy();
-      resolve(Buffer.concat(chunks).toString('utf8'));
+      resolve(Buffer.concat(chunks));
     };
     const timer = setTimeout(finish, Math.max(0, deadline - Date.now()));
     stream.on('data', chunk => {
-      const room = PREVIEW_MAX_BYTES - size;
+      const room = maxBytes - size;
       if (room <= 0) return finish();
       const part = chunk.length > room ? chunk.subarray(0, room) : chunk;
       chunks.push(part);
       size += part.length;
-      if (size >= PREVIEW_MAX_BYTES) finish();
+      if (size >= maxBytes) finish();
     });
     stream.on('end', finish);
     stream.on('error', finish);
@@ -192,14 +206,15 @@ function readCapped(res, deadline) {
   });
 }
 
-// Returns the page HTML, or null when the link is refused, fails or is not HTML.
-async function fetchHtml(rawUrl) {
+// Returns the body of a public http(s) resource, or null when the link is
+// refused, fails or is not of an accepted content type.
+async function fetchResource(rawUrl, { headers = BROWSER_HEADERS, typeMatch = /html|xml/, maxBytes = PREVIEW_MAX_BYTES } = {}) {
   const deadline = Date.now() + PREVIEW_TIMEOUT_MS;
   let current = rawUrl;
   try {
     for (let hop = 0; hop <= PREVIEW_MAX_REDIRECTS; hop++) {
       const u = await assertSafeUrl(current);
-      const res = await requestOnce(u, deadline);
+      const res = await requestOnce(u, deadline, headers);
       const status = res.statusCode || 0;
       if (status >= 300 && status < 400 && res.headers.location) {
         res.resume();
@@ -210,13 +225,36 @@ async function fetchHtml(rawUrl) {
       }
       if (status < 200 || status >= 300) { res.resume(); res.destroy(); return null; }
       const type = String(res.headers['content-type'] || '').toLowerCase();
-      if (type && !/html|xml/.test(type)) { res.resume(); res.destroy(); return null; }
-      return await readCapped(res, deadline);
+      if (type && !typeMatch.test(type)) { res.resume(); res.destroy(); return null; }
+      return await readCapped(res, deadline, maxBytes);
     }
   } catch (_) {
     return null;
   }
   return null;
+}
+
+// Returns the page HTML, or null when the link is refused, fails or is not HTML.
+async function fetchHtml(rawUrl, headers) {
+  const body = await fetchResource(rawUrl, { headers });
+  return body ? body.toString('utf8') : null;
+}
+
+// A preview picture, copied into the panel's own media store so it outlives the
+// source's signed, expiring URL. Returns the local path the card should store.
+const PREVIEW_MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+
+async function storePreviewImage(imageUrl) {
+  const bytes = await fetchResource(imageUrl, { typeMatch: /^image\//, maxBytes: PREVIEW_MAX_IMAGE_BYTES });
+  if (!bytes || !bytes.length) return null;
+  try {
+    // storeImage also writes a 2000px web copy, which a link card never shows;
+    // the card takes the 640px thumb it makes in the same pass.
+    const out = await storeImage(bytes, COLLECTION_MEDIA_DIR);
+    return `/collection-media/${out.thumb}`;
+  } catch (_) {
+    return null;
+  }
 }
 
 async function isSafeUrl(rawUrl) {
@@ -372,20 +410,18 @@ async function fetchLinkPreview(rawUrl) {
       return { title: null, thumbnail_url: null, source: 'tiktok' };
     }
 
-    // Instagram: try proxy services for a real thumbnail, else the placeholder
+    // Instagram: the page carries the OG picture for a crawler UA, and the
+    // picture behind it expires, so it is copied into the media store.
     if (/instagram\./i.test(url)) {
       const { username, postType } = parseInstagramMeta(url);
       const fallbackTitle = buildInstagramTitle(username, postType);
-      for (const proxyDomain of INSTAGRAM_PROXIES) {
-        try {
-          const proxyUrl = url.replace(/^(https?:\/\/)(www\.|m\.)?instagram\.[a-z.]+/, `$1${proxyDomain}`);
-          const html = await fetchHtml(proxyUrl);
-          if (!html) continue;
-          const { title: proxyTitle, thumbnail_url } = await parseOgTags(html, proxyUrl);
-          if (thumbnail_url) {
-            return { title: proxyTitle || fallbackTitle, thumbnail_url, source: 'instagram' };
-          }
-        } catch (_) {}
+      const html = await fetchHtml(url, INSTAGRAM_HEADERS);
+      if (html) {
+        const { title, thumbnail_url } = await parseOgTags(html, url);
+        if (thumbnail_url) {
+          const local = await storePreviewImage(thumbnail_url);
+          if (local) return { title: title || fallbackTitle, thumbnail_url: local, source: 'instagram' };
+        }
       }
       return { title: fallbackTitle, thumbnail_url: null, source: 'instagram' };
     }

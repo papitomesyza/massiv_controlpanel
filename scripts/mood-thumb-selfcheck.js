@@ -67,5 +67,16 @@ async function j(path, init) {
   });
   assert(panel.status === 200 && panel.body.thumbnail_url, 'FAIL: panel link card lost its thumbnail');
 
+  // An Instagram link: Instagram only hands og: tags to a crawler UA, and its
+  // CDN picture URL expires, so the card must carry a copy in our own store.
+  const ig = await j(`/api/collections/${id}/cards`, {
+    method: 'POST', headers: AUTH,
+    body: JSON.stringify({ type: 'link', url: 'https://www.instagram.com/p/DV_hP_fDb85/' }),
+  });
+  assert(ig.status === 200, 'instagram add failed: ' + JSON.stringify(ig));
+  assert(ig.body.source === 'instagram', 'FAIL: not detected as instagram: ' + JSON.stringify(ig.body));
+  assert(/^\/collection-media\//.test(ig.body.thumbnail_url || ''),
+    'FAIL: instagram link card has no stored thumbnail: ' + JSON.stringify(ig.body));
+
   console.log('mood-thumb self-check: ALL PASSED');
 })().catch(e => { console.error('mood-thumb self-check FAILED:', e.message); process.exit(1); });
