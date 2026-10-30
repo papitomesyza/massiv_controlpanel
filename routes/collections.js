@@ -13,6 +13,10 @@ const { db } = require('../db/database');
 const { hashPasscode, PASSCODE_MIN } = require('../lib/shotlistAuth');
 const { publicPitchBase } = require('../lib/pitchDomain');
 
+// The First AD window (routes/public.js) stores link cards through the exact
+// same preview the panel grid uses, so both ends show a picture (fetchLinkPreview
+// is shared with it below).
+
 // Schema-safe: add starred column to both tables if not already present
 try { db.exec('ALTER TABLE collections ADD COLUMN starred INTEGER DEFAULT 0'); } catch (_) {}
 try { db.exec('ALTER TABLE collection_cards ADD COLUMN starred INTEGER DEFAULT 0'); } catch (_) {}
@@ -958,3 +962,6 @@ router.delete('/:id/cards/:cardId', (req, res) => {
 });
 
 module.exports = router;
+// Shared with routes/public.js so a link dropped in the First AD window gets
+// the same title/thumbnail/source the panel's own grid would store for it.
+module.exports.fetchLinkPreview = fetchLinkPreview;

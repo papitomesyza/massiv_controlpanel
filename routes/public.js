@@ -7,6 +7,9 @@ const { verifyCrewToken, issueCrewToken, checkPasscode, PASSCODE_MIN } = require
 const { getPublishedBySlug, logActivity, touch } = require('../lib/shotlistStore');
 const path = require('path');
 const { storeImage } = require('../lib/mediaStore');
+// Reuse the panel's link preview (defined in routes/collections.js) so a link
+// card carries a picture no matter which end saved it.
+const { fetchLinkPreview } = require('./collections');
 
 // Moodboard uploads live beside the shot list's, in their own directory.
 const COLLECTION_MEDIA_DIR = path.join(
@@ -398,9 +401,9 @@ router.post('/shotlist/:slug/set-design', (req, res) => {
 // Two rules the panel side does not need:
 //   • a card can only be edited or deleted by whoever added it, so a link in
 //     one person's hands can never rewrite another's work;
-//   • a link card is stored as sent. The public window never fetches a URL a
-//     stranger typed, which would be an open request-forgery surface; the
-//     panel's own link preview can enrich it later if it matters.
+//   • a link card is enriched through the panel's own preview, so the board
+//     shows a picture. fetchLinkPreview refuses private hosts and odd
+//     redirects before it fetches, which is what keeps that safe.
 
 // One row per collection, so the read-only client link and the First AD window
 // share it: 'view' rows stay as they were, 'collab' rows carry the slug and
@@ -514,6 +517,23 @@ function spendEdit(req, res) {
   return token;
 }
 
+// The title/thumbnail/source a link card carries. Same preview the panel grid
+// stores, so the crew window and the panel show the same picture; an unsafe or
+// unreachable URL falls back to a bare link, exactly as the panel does.
+async function previewLink(url) {
+  const fallback = { title: null, thumbnail_url: null, source: 'crew' };
+  try {
+    const p = await fetchLinkPreview(url);
+    return {
+      title: p.title || null,
+      thumbnail_url: p.thumbnail_url || null,
+      source: p.source || 'crew',
+    };
+  } catch (_) {
+    return fallback;
+  }
+}
+
 // POST /api/public/collab/:slug/cards
 // body: JSON { token, type: 'link'|'note', url, title, note_text, tags }
 //   or: multipart { token, type: 'image', title } + one image field
@@ -528,7 +548,7 @@ router.post('/collab/:slug/cards', async (req, res) => {
     if (!auth.valid) return unlockDenied(res);
 
     const type = String((req.body && req.body.type) || (req.file ? 'image' : ''));
-    const title = cleanNote(req.body && req.body.title, 200);
+    let title = cleanNote(req.body && req.body.title, 200);
     const note = cleanNote(req.body && req.body.note_text, 4000);
     const tags = cleanNote(req.body && req.body.tags, 200);
 
@@ -546,7 +566,10 @@ router.post('/collab/:slug/cards', async (req, res) => {
     } else if (type === 'link') {
       const raw = String((req.body && req.body.url) || '').trim();
       if (!/^https?:\/\//i.test(raw)) return res.status(400).json({ error: 'url_required' });
-      row = { type: 'link', url: raw.slice(0, 2000), thumbnail_url: null, source: 'crew' };
+      const link = raw.slice(0, 2000);
+      const preview = await previewLink(link);
+      title = title || preview.title;
+      row = { type: 'link', url: link, thumbnail_url: preview.thumbnail_url, source: preview.source };
     } else {
       return res.status(400).json({ error: 'bad_type' });
     }
@@ -568,7 +591,7 @@ router.post('/collab/:slug/cards', async (req, res) => {
 });
 
 // PUT /api/public/collab/:slug/cards/:cardId, own cards only
-router.put('/collab/:slug/cards/:cardId', (req, res) => {
+router.put('/collab/:slug/cards/:cardId', async (req, res) => {
   try {
     const r = resolveCollab(req.params.slug);
     if (!r.valid) return unlockDenied(res);
@@ -595,8 +618,20 @@ router.put('/collab/:slug/cards/:cardId', (req, res) => {
     const tags = 'tags' in body ? cleanNote(body.tags, 200) : card.tags;
     const url = 'url' in body ? (cleanNote(body.url, 2000) || card.url) : card.url;
 
-    db.prepare('UPDATE collection_cards SET title = ?, note_text = ?, tags = ?, url = ? WHERE id = ?')
-      .run(title, note, tags, url, card.id);
+    // Re-preview only when a link points somewhere new, so the card never keeps
+    // a stale picture. Notes and uploads keep theirs untouched.
+    let thumbnail_url = card.thumbnail_url;
+    let source = card.source;
+    let cardTitle = title;
+    if (card.type === 'link' && url !== card.url) {
+      const preview = await previewLink(url);
+      thumbnail_url = preview.thumbnail_url;
+      source = preview.source;
+      cardTitle = title || preview.title;
+    }
+
+    db.prepare('UPDATE collection_cards SET title = ?, note_text = ?, tags = ?, url = ?, thumbnail_url = ?, source = ? WHERE id = ?')
+      .run(cardTitle, note, tags, url, thumbnail_url, source, card.id);
 
     req.publicActor = auth.name;
     res.locals.cosAudit = { entity_type: 'collection_card', entity_id: card.id };
