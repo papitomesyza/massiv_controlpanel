@@ -8,7 +8,8 @@ const https = require('https');
 const zlib = require('zlib');
 const path = require('path');
 const { db } = require('../db/database');
-const { storeImage } = require('../lib/mediaStore');
+const { storeImage, multiImageUpload } = require('../lib/mediaStore');
+const { attachMedia } = require('../lib/cardMedia');
 
 // The First AD window reuses the shot list's passcode hashing and the public
 // domain resolver, so a moodboard link behaves exactly like a crew link.
@@ -605,7 +606,7 @@ router.get('/:id', (req, res) => {
       'SELECT * FROM collection_cards WHERE collection_id = ? ORDER BY starred DESC, sort_order ASC, created_at DESC'
     ).all(req.params.id);
 
-    res.json({ ...coll, cards });
+    res.json({ ...coll, cards: attachMedia(cards) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -851,20 +852,41 @@ router.delete('/:id/collab-link', (req, res) => {
 });
 
 // ── Card CRUD ─────────────────────────────────────────────────────────────────
-// POST /api/collections/:id/cards
-router.post('/:id/cards', async (req, res) => {
+// POST /api/collections/:id/cards. JSON for a link or a note, multipart for a
+// batch of images: one 'album' card (a location scout) holding them all.
+router.post('/:id/cards', multiImageUpload('image', 20), async (req, res) => {
   try {
     const coll = db.prepare('SELECT id FROM collections WHERE id = ?').get(req.params.id);
     if (!coll) return res.status(404).json({ error: 'Collection not found' });
 
+    const files = req.files || [];
     const { type, url, title, note_text, tags } = req.body;
-    if (!type || !['link', 'note'].includes(type)) {
+    if (!files.length && (!type || !['link', 'note'].includes(type))) {
       return res.status(400).json({ error: 'type must be "link" or "note"' });
     }
 
     // Compute next sort_order for this collection's cards
     const maxRes = db.prepare('SELECT MAX(sort_order) as m FROM collection_cards WHERE collection_id = ?').get(req.params.id);
     const sortOrder = (maxRes.m === null || maxRes.m === undefined) ? 0 : maxRes.m + 1;
+
+    if (files.length) {
+      const result = db.prepare(
+        'INSERT INTO collection_cards (collection_id, type, title, source, tags, sort_order) VALUES (?, ?, ?, ?, ?, ?)'
+      ).run(req.params.id, 'album', title ? title.trim() : null, 'upload', tags || null, sortOrder);
+      const cardId = result.lastInsertRowid;
+      const insertMedia = db.prepare(
+        'INSERT INTO collection_card_media (card_id, url, thumbnail_url, sort_order) VALUES (?, ?, ?, ?)'
+      );
+      let cover = null;
+      for (let i = 0; i < files.length; i++) {
+        const out = await storeImage(files[i].buffer, COLLECTION_MEDIA_DIR);
+        insertMedia.run(cardId, `/collection-media/${out.filename}`, `/collection-media/${out.thumb}`, i);
+        if (!cover) cover = `/collection-media/${out.thumb}`;
+      }
+      db.prepare('UPDATE collection_cards SET thumbnail_url = ? WHERE id = ?').run(cover, cardId);
+      const card = db.prepare('SELECT * FROM collection_cards WHERE id = ?').get(cardId);
+      return res.json(attachMedia([card])[0]);
+    }
 
     if (type === 'note') {
       if (!note_text || !note_text.trim()) {
@@ -944,7 +966,14 @@ router.put('/:id/cards/:cardId', async (req, res) => {
 
     const { title, note_text, url, tags } = req.body;
 
-    if (card.type === 'note') {
+    if (card.type === 'album') {
+      // An album's images are its own; only the card around them is edited.
+      db.prepare('UPDATE collection_cards SET title = ?, tags = ? WHERE id = ?').run(
+        title !== undefined ? (title ? title.trim() : null) : card.title,
+        tags !== undefined ? (tags || null) : card.tags,
+        card.id
+      );
+    } else if (card.type === 'note') {
       const newText = note_text !== undefined ? note_text : card.note_text;
       if (!newText || !newText.trim()) return res.status(400).json({ error: 'note_text cannot be empty' });
       db.prepare(
@@ -977,7 +1006,7 @@ router.put('/:id/cards/:cardId', async (req, res) => {
     }
 
     const updated = db.prepare('SELECT * FROM collection_cards WHERE id = ?').get(card.id);
-    res.json(updated);
+    res.json(attachMedia([updated])[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -7,6 +7,7 @@ const { verifyCrewToken, issueCrewToken, checkPasscode, PASSCODE_MIN } = require
 const { getPublishedBySlug, logActivity, touch } = require('../lib/shotlistStore');
 const path = require('path');
 const { storeImage } = require('../lib/mediaStore');
+const { attachMedia } = require('../lib/cardMedia');
 // Reuse the panel's link preview (defined in routes/collections.js) so a link
 // card carries a picture no matter which end saved it.
 const { fetchLinkPreview } = require('./collections');
@@ -129,7 +130,7 @@ router.get('/collection/:token', (req, res) => {
        ORDER BY sort_order ASC, created_at DESC`
     ).all(coll.id);
 
-    res.json({ valid: true, collection: coll, cards });
+    res.json({ valid: true, collection: coll, cards: attachMedia(cards) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -172,7 +173,7 @@ router.get('/mind/:token', (req, res) => {
            FROM collection_cards WHERE collection_id = ?
            ORDER BY sort_order ASC, created_at DESC`
         ).all(coll.id);
-        return { ...coll, cards };
+        return { ...coll, cards: attachMedia(cards) };
       });
 
       sections[cat] = { label: LABELS[cat], collections: collectionsWithCards };
@@ -435,11 +436,11 @@ function authTarget(link) {
 }
 
 function moodCards(collectionId) {
-  return db.prepare(
+  return attachMedia(db.prepare(
     `SELECT id, type, url, title, note_text, thumbnail_url, source, tags, created_by
      FROM collection_cards WHERE collection_id = ?
      ORDER BY sort_order ASC, created_at DESC`
-  ).all(collectionId);
+  ).all(collectionId));
 }
 
 // GET /api/public/collab/:slug, the board as it stands
@@ -536,7 +537,8 @@ async function previewLink(url) {
 
 // POST /api/public/collab/:slug/cards
 // body: JSON { token, type: 'link'|'note', url, title, note_text, tags }
-//   or: multipart { token, type: 'image', title } + one image field
+//   or: multipart { token, type: 'image'|'album', title } + the image field,
+//       repeated for an album (a batch of location stills on one card)
 router.post('/collab/:slug/cards', async (req, res) => {
   try {
     const r = resolveCollab(req.params.slug);
@@ -547,7 +549,8 @@ router.post('/collab/:slug/cards', async (req, res) => {
     const auth = verifyCrewToken(token, authTarget(r.link));
     if (!auth.valid) return unlockDenied(res);
 
-    const type = String((req.body && req.body.type) || (req.file ? 'image' : ''));
+    const files = req.files || [];
+    const type = String((req.body && req.body.type) || (files.length ? (files.length > 1 ? 'album' : 'image') : ''));
     let title = cleanNote(req.body && req.body.title, 200);
     const note = cleanNote(req.body && req.body.note_text, 4000);
     const tags = cleanNote(req.body && req.body.tags, 200);
@@ -555,10 +558,36 @@ router.post('/collab/:slug/cards', async (req, res) => {
     const maxRes = db.prepare('SELECT MAX(sort_order) as m FROM collection_cards WHERE collection_id = ?').get(r.collection.id);
     const sortOrder = (maxRes.m === null || maxRes.m === undefined) ? 0 : maxRes.m + 1;
 
+    // An album is one card holding many images, so the card row has to exist
+    // before the images can point at it.
+    if (type === 'album') {
+      if (!files.length) return res.status(400).json({ error: 'images_required' });
+      const result = db.prepare(
+        `INSERT INTO collection_cards (collection_id, type, url, title, note_text, thumbnail_url, source, tags, sort_order, created_by)
+         VALUES (?, 'album', NULL, ?, NULL, NULL, 'upload', ?, ?, ?)`
+      ).run(r.collection.id, title, tags, sortOrder, auth.name || 'Crew');
+      const cardId = result.lastInsertRowid;
+      const insertMedia = db.prepare(
+        'INSERT INTO collection_card_media (card_id, url, thumbnail_url, sort_order) VALUES (?, ?, ?, ?)'
+      );
+      let cover = null;
+      for (let i = 0; i < files.length; i++) {
+        const out = await storeImage(files[i].buffer, COLLECTION_MEDIA_DIR);
+        insertMedia.run(cardId, `/collection-media/${out.filename}`, `/collection-media/${out.thumb}`, i);
+        if (!cover) cover = `/collection-media/${out.thumb}`;
+      }
+      db.prepare('UPDATE collection_cards SET thumbnail_url = ? WHERE id = ?').run(cover, cardId);
+      const card = db.prepare('SELECT * FROM collection_cards WHERE id = ?').get(cardId);
+      req.publicActor = auth.name;
+      res.locals.cosAudit = { entity_type: 'collection_card', entity_id: cardId };
+      return res.json({ ok: true, card: attachMedia([card])[0] });
+    }
+
     let row;
     if (type === 'image') {
-      if (!req.file) return res.status(400).json({ error: 'image_required' });
-      const out = await storeImage(req.file.buffer, COLLECTION_MEDIA_DIR);
+      const file = files[0] || req.file;
+      if (!file) return res.status(400).json({ error: 'image_required' });
+      const out = await storeImage(file.buffer, COLLECTION_MEDIA_DIR);
       row = { type: 'image', url: `/collection-media/${out.filename}`, thumbnail_url: `/collection-media/${out.thumb}`, source: 'upload' };
     } else if (type === 'note') {
       if (!note) return res.status(400).json({ error: 'note_text_required' });
@@ -635,7 +664,7 @@ router.put('/collab/:slug/cards/:cardId', async (req, res) => {
 
     req.publicActor = auth.name;
     res.locals.cosAudit = { entity_type: 'collection_card', entity_id: card.id };
-    res.json({ ok: true, card: db.prepare('SELECT * FROM collection_cards WHERE id = ?').get(card.id) });
+    res.json({ ok: true, card: attachMedia([db.prepare('SELECT * FROM collection_cards WHERE id = ?').get(card.id)])[0] });
   } catch (err) {
     console.error('Moodboard edit failed:', err && err.name ? err.name : 'error');
     res.status(500).json({ error: 'update_failed' });

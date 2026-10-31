@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import SourceIcon from '../components/SourceIcon';
+import AlbumViewer from '../components/AlbumViewer';
 import {
   Globe, FileText, Play, XCircle, Lock, Instagram, Music2,
   Library, FolderKanban, Clapperboard, User, ChevronLeft,
@@ -155,6 +156,49 @@ function PublicLinkCard({ card }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// One card, many images (a location scout from the First AD window).
+function PublicAlbumCard({ card }) {
+  const [viewing, setViewing] = useState(false);
+  const tags = parseTags(card.tags);
+  const media = card.media || [];
+  const cover = card.thumbnail_url || (media[0] && (media[0].url || media[0].thumbnail_url));
+
+  return (
+    <div
+      style={{ background: 'var(--surface-card)', border: '1px solid var(--color-hairline)', borderRadius: 24, overflow: 'hidden', cursor: 'zoom-in', display: 'flex', flexDirection: 'column', transition: 'transform 0.15s, box-shadow 0.15s', breakInside: 'avoid', marginBottom: 16 }}
+      onClick={() => { if (media.length) setViewing(true); }}
+      onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 32px var(--overlay-07)'; }}
+      onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = ''; }}
+      title={media.length > 1 ? `${media.length} images` : 'Image'}
+    >
+      <div style={{ position: 'relative', width: '100%', paddingBottom: '56.25%', background: 'var(--color-surface-alt)', flexShrink: 0 }}>
+        {cover && <img src={cover} alt={card.title || ''} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} loading="lazy" />}
+        {media.length > 1 && (
+          <span style={{ position: 'absolute', right: 8, bottom: 8, padding: '3px 9px', borderRadius: 18, fontSize: 11, fontWeight: 600, background: 'var(--scrim-strong)', color: 'white' }}>
+            {media.length} images
+          </span>
+        )}
+      </div>
+      <div style={{ padding: '11px 14px 13px', display: 'flex', flexDirection: 'column', gap: '5px', flex: 1 }}>
+        <p style={{ fontSize: '13px', fontWeight: 600, lineHeight: 1.4, margin: 0, color: 'var(--color-ink)', wordBreak: 'break-word' }}>
+          {card.title || `${media.length} image${media.length === 1 ? '' : 's'}`}
+        </p>
+        <span style={{ fontSize: '12px', color: 'var(--color-mid-gray)' }}>
+          {card.created_by ? `Image set · ${card.created_by}` : 'Image set'}
+        </span>
+        {tags.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '3px' }}>
+            {tags.map(tag => (
+              <span key={tag} style={{ padding: '2px 9px', borderRadius: 18, fontSize: '11px', fontWeight: 600, background: 'var(--overlay-04)', color: 'var(--color-ink)' }}>{tag}</span>
+            ))}
+          </div>
+        )}
+      </div>
+      {viewing && <AlbumViewer media={media} onClose={() => setViewing(false)} />}
     </div>
   );
 }
@@ -340,9 +384,11 @@ export default function PublicMind() {
           ) : (
             <div style={{ columnWidth: '300px', columnGap: '16px' }}>
               {cards.map(card => (
-                card.type === 'link'
-                  ? <PublicLinkCard key={card.id} card={card} />
-                  : <PublicNoteCard key={card.id} card={card} />
+                card.type === 'album'
+                  ? <PublicAlbumCard key={card.id} card={card} />
+                  : card.type === 'link'
+                    ? <PublicLinkCard key={card.id} card={card} />
+                    : <PublicNoteCard key={card.id} card={card} />
               ))}
             </div>
           )}

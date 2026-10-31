@@ -437,6 +437,20 @@ function initDb() {
 
     CREATE INDEX IF NOT EXISTS idx_collections_project ON collections(project_id);
     CREATE INDEX IF NOT EXISTS idx_collection_cards_collection ON collection_cards(collection_id);
+
+    -- One card, many images: an 'album' card (a location scout) keeps its
+    -- assets here. ON DELETE CASCADE cleans them up with the card.
+    CREATE TABLE IF NOT EXISTS collection_card_media (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      card_id INTEGER NOT NULL,
+      url TEXT NOT NULL,
+      thumbnail_url TEXT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (card_id) REFERENCES collection_cards(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_collection_card_media_card ON collection_card_media(card_id);
   `);
 
   db.exec(`

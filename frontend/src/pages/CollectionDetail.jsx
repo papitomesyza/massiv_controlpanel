@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ChevronLeft, ChevronDown, ChevronUp, Library, FolderKanban, Archive, ArchiveRestore, Trash2,
   Link2, Link2Off, FileText, Edit2, Play, Globe, X, SearchX, Share2, Copy, Check, GripVertical,
-  Instagram, Music2, Star, Unlink, Clock, History, ArrowDownAZ, Key,
+  Instagram, Music2, Star, Unlink, Clock, History, ArrowDownAZ, Key, Images,
 } from 'lucide-react';
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors,
@@ -14,6 +14,7 @@ import { api } from '../api';
 import Overlay from '../components/Overlay';
 import ConfirmDialog from '../components/ConfirmDialog';
 import IconMenu from '../components/IconMenu';
+import AlbumViewer from '../components/AlbumViewer';
 import SourceIcon from '../components/SourceIcon';
 import { IconToggles } from '../components/DbBits';
 import { EditCollectionModal } from './Collections';
@@ -217,9 +218,56 @@ function NoteCard({ card, grip, onEdit, onDelete, onStar, isExpanded, onToggleEx
   );
 }
 
+// One card, many images: a location scout. The cover carries the count, a click
+// opens the viewer, and edit/delete act on the card as a whole.
+function AlbumCard({ card, grip, onEdit, onDelete, onStar, activeTag, onTagClick }) {
+  const tags = parseTags(card.tags);
+  const media = card.media || [];
+  const cover = card.thumbnail_url || (media[0] && (media[0].url || media[0].thumbnail_url));
+  const [viewing, setViewing] = useState(false);
+  const open = () => { if (media.length) setViewing(true); };
+
+  return (
+    <div
+      className={`link-card ${card.starred ? 'card-starred' : ''}`}
+      role="button"
+      tabIndex={0}
+      title={media.length > 1 ? `${media.length} images` : 'Image'}
+      onClick={open}
+      onKeyDown={e => { if (e.key === 'Enter') open(); }}
+    >
+      {grip}
+      <div className="card-thumb">
+        {cover
+          ? <img src={cover} alt={card.title || ''} loading="lazy" />
+          : <div className="card-thumb-fallback"><Images size={34} strokeWidth={1.5} /></div>}
+        {media.length > 1 && <span className="card-album-count">{media.length} images</span>}
+      </div>
+      <div className="card-body">
+        <span className="source-icon" title="Image set"><Images size={13} /></span>
+        <p className={`card-title ${card.title ? '' : 'is-domain'}`}>{card.title || `${media.length} image${media.length === 1 ? '' : 's'}`}</p>
+        {card.created_by && (
+          <span className="card-author" title="Added through a First AD window">{card.created_by}</span>
+        )}
+        <span style={{ display: 'inline-flex' }} onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
+          <StarButton starred={!!card.starred} onClick={() => onStar(card.id)} />
+          <IconMenu items={cardMenu(onEdit, onDelete)} size={14} />
+        </span>
+      </div>
+      {tags.length > 0 && (
+        <div className="card-tags" onClick={e => e.stopPropagation()}>
+          {tags.map(tag => <TagChip key={tag} tag={tag} active={activeTag === tag} onClick={onTagClick} />)}
+        </div>
+      )}
+      {viewing && <AlbumViewer media={media} onClose={() => setViewing(false)} />}
+    </div>
+  );
+}
+
 function CardItem({ card, ...props }) {
   // An image uploaded through a First AD window opens the file itself and its
   // thumbnail is the picture, so it renders as the link card does.
+  if (card.type === 'album') return <AlbumCard card={card} {...props} />;
   if (card.type === 'image') return <LinkCard card={card} {...props} />;
   return card.type === 'link' ? <LinkCard card={card} {...props} /> : <NoteCard card={card} {...props} />;
 }
@@ -343,16 +391,19 @@ function EditCardModal({ card, onSave, onClose }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const isNote = card.type === 'note';
+  const isAlbum = card.type === 'album';
 
   async function handleSubmit(e) {
     e.preventDefault();
     if (isNote && !noteText.trim()) { setError('Note is required'); return; }
-    if (!isNote && !url.trim()) { setError('URL is required'); return; }
+    if (!isNote && !isAlbum && !url.trim()) { setError('URL is required'); return; }
     setBusy(true);
     try {
       await onSave(card.id, isNote
         ? { title: title.trim() || undefined, note_text: noteText, tags: tags.trim() || null }
-        : { title: title.trim() || undefined, url: url.trim(), tags: tags.trim() || null });
+        : isAlbum
+          ? { title: title.trim() || undefined, tags: tags.trim() || null }
+          : { title: title.trim() || undefined, url: url.trim(), tags: tags.trim() || null });
       onClose();
     } catch (err) {
       setError(err.message || 'Failed to save');
@@ -362,7 +413,7 @@ function EditCardModal({ card, onSave, onClose }) {
 
   return (
     <CardFormOverlay
-      title={isNote ? 'Edit Note' : 'Edit Link'}
+      title={isNote ? 'Edit Note' : isAlbum ? 'Edit Images' : 'Edit Link'}
       formId="card-edit"
       busy={busy}
       submitLabel="Save"
@@ -370,7 +421,7 @@ function EditCardModal({ card, onSave, onClose }) {
       onClose={onClose}
       onSubmit={handleSubmit}
     >
-      {!isNote && (
+      {!isNote && !isAlbum && (
         <div className="form-row">
           <label className="form-label">URL *</label>
           <input className="input" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://" autoFocus />
@@ -378,7 +429,7 @@ function EditCardModal({ card, onSave, onClose }) {
       )}
       <div className="form-row">
         <label className="form-label">Title</label>
-        <input className="input" value={title} onChange={e => setTitle(e.target.value)} autoFocus={isNote} />
+        <input className="input" value={title} onChange={e => setTitle(e.target.value)} autoFocus={isNote || isAlbum} />
       </div>
       {isNote && (
         <div className="form-row">
@@ -746,6 +797,7 @@ export default function CollectionDetail() {
   const [cardSortMode, setCardSortMode] = useState('latest');
   const [cardSearch, setCardSearch] = useState('');
   const [activeTag, setActiveTag] = useState(null);
+  const imageInputRef = useRef(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -814,6 +866,20 @@ export default function CollectionDetail() {
   function handleAdded(card) {
     setCards(prev => [card, ...prev]);
     setAddKind(null);
+  }
+
+  // A location scout: every image picked here lands on one card.
+  async function handleUploadImages(e) {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (!files.length) return;
+    const form = new FormData();
+    files.forEach(f => form.append('image', f));
+    try {
+      handleAdded(await api.postForm(`/collections/${id}/cards`, form));
+    } catch (err) {
+      showNotice('Not uploaded', err.message || 'The images could not be uploaded.');
+    }
   }
 
   async function handleEditCard(cardId, data) {
@@ -954,6 +1020,8 @@ export default function CollectionDetail() {
           </button>
         )}
         <span className="spacer" />
+        <button type="button" className="db-iconbtn lg" onClick={() => imageInputRef.current.click()} title="Upload images" aria-label="Upload images"><Images size={17} /></button>
+        <input ref={imageInputRef} type="file" accept="image/*" multiple hidden onChange={handleUploadImages} />
         <button type="button" className="db-iconbtn lg" onClick={() => setAddKind('link')} title="Add link" aria-label="Add link"><Link2 size={17} /></button>
         <button type="button" className="db-iconbtn lg" onClick={() => setAddKind('note')} title="Add note" aria-label="Add note"><FileText size={17} /></button>
       </div>

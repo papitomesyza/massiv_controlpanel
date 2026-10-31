@@ -62,7 +62,7 @@ app.get('/api/settings/agency-public', (req, res) => {
 // after the audit spine: a router mounted above that middleware answers before
 // it runs, so a card written from a First AD window would never be audited.
 const publicRouter = require('./routes/public');
-const { singleImageUpload } = require('./lib/mediaStore');
+const { singleImageUpload, multiImageUpload } = require('./lib/mediaStore');
 
 // Paths a service token (e.g. the Hermes agent) may NEVER reach, even though it
 // otherwise has full read/write. The password vault is zero-knowledge anyway,
@@ -347,9 +347,10 @@ app.use('/api/public', (req, res, next) => {
   }
   // The moodboard window's image upload. Only a multipart post goes through
   // multer; a link or a note arrives as JSON and is parsed by express.json.
+  // The same field repeated makes an album card (a location scout).
   if (req.method === 'POST' && /^\/collab\/[^/]+\/cards\/?$/.test(req.path)
     && String(req.headers['content-type'] || '').startsWith('multipart/form-data')) {
-    return singleImageUpload('image')(req, res, next);
+    return multiImageUpload('image', 20)(req, res, next);
   }
   next();
 }, publicRouter);
