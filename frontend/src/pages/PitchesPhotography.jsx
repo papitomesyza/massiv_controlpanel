@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Presentation, Edit2, Trash2, Copy, Link2, Sparkles, ArrowLeft, CheckSquare, Square,
+  Presentation, Edit2, Trash2, Copy, Link2, Sparkles, ArrowLeft, CheckSquare, Square, Plus,
 } from 'lucide-react';
 import { api } from '../api';
 import { SECTION_LABELS, sectionSummary } from '../lib/pitchSections';
@@ -10,6 +10,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import IconMenu from '../components/IconMenu';
 import '../styles/mind.css';
 import '../styles/production.css';
+import '../styles/deck.css';
 
 async function copyText(text) {
   try {
@@ -31,7 +32,38 @@ function thumbFor(filename) {
   return `/p-media/${filename.replace(/-web\.jpg$/, '-thumb.jpg')}`;
 }
 
-function TemplateCard({ template, onUse }) {
+// A treatment template card is the deck, not a swatch: the look as the ground,
+// the template's own first line set the way the deck sets it, and the running
+// order of its slides as chips. Same thing Frameset's gallery tells you.
+function DeckTemplateCard({ template, theme, onUse }) {
+  const t = theme || { bg: '#0A0A0B', ink: '#F4F4F6', accent: template.accent_color || '#C7FF2E', line: 'rgba(255,255,255,0.14)' };
+  const deck = template.deck || {};
+  const labels = (deck.labels || []).slice(0, 3);
+  return (
+    <button type="button" className="deck-tpl" onClick={() => onUse(template)} title={`${template.section_count} slides`}>
+      <span className="deck-tpl-slide" style={{ background: t.bg, color: t.ink }}>
+        <span className="deck-tpl-strip">
+          {labels.map(l => (
+            <span key={l} className="deck-tpl-chip" style={{ color: t.accent, borderColor: t.line }}>{l}</span>
+          ))}
+        </span>
+        <span className="deck-tpl-type" style={{ textTransform: t.display === 'upper' ? 'uppercase' : 'none' }}>
+          {template.title}
+        </span>
+        {deck.title && <span className="deck-tpl-line" style={{ opacity: 0.6 }}>{deck.title}</span>}
+      </span>
+      <span className="deck-tpl-foot">
+        <span className="deck-tpl-name">{template.title}</span>
+        <span className="deck-tpl-labels">
+          {template.section_count} slides{template.category ? ` · ${template.category}` : ''}
+        </span>
+      </span>
+    </button>
+  );
+}
+
+function TemplateCard({ template, theme, deck, onUse }) {
+  if (deck) return <DeckTemplateCard template={template} theme={theme} onUse={onUse} />;
   return (
     <button type="button" className="db-card" onClick={() => onUse(template)} title={`${template.section_count} sections`}>
       <span className="prod-swatch" style={{ background: template.accent_color || 'var(--color-mid-gray)' }}>
@@ -44,6 +76,69 @@ function TemplateCard({ template, onUse }) {
         </div>
       </div>
     </button>
+  );
+}
+
+// Start from scratch: a blank treatment with a chosen look. The looks come from
+// the server (lib/deck.js), so a template card and this picker can never drift
+// from what the deck actually renders.
+function NewTreatmentModal({ themes, onClose, onCreated }) {
+  const [title, setTitle] = useState('');
+  const [theme, setTheme] = useState(themes[0] ? themes[0].key : 'noir');
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState('');
+
+  async function create(e) {
+    e.preventDefault();
+    if (!title.trim()) { setError('Give the treatment a name'); return; }
+    setCreating(true); setError('');
+    try {
+      const res = await api.post('/pitches', { title: title.trim(), kind: 'treatment', theme });
+      onCreated(res.id);
+    } catch (err) {
+      setError(err.message || 'Could not create the treatment');
+      setCreating(false);
+    }
+  }
+
+  return (
+    <Overlay
+      title="New treatment"
+      onClose={onClose}
+      width={520}
+      footer={<>
+        <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+        <button type="submit" form="new-treatment" className="btn btn-primary" disabled={creating}>
+          {creating ? 'Creating...' : 'Create'}
+        </button>
+      </>}
+    >
+      <form id="new-treatment" onSubmit={create}>
+        <div className="form-row">
+          <label className="form-label">Treatment name</label>
+          <input className="input" value={title} onChange={e => setTitle(e.target.value)} autoFocus />
+        </div>
+        <div className="form-row">
+          <label className="form-label">Look</label>
+          <div className="deck-theme-row">
+            {themes.map(t => (
+              <button
+                key={t.key}
+                type="button"
+                className={`deck-theme${theme === t.key ? ' on' : ''}`}
+                onClick={() => setTheme(t.key)}
+                title={t.label}
+                style={{ background: t.bg, color: t.ink, borderColor: theme === t.key ? t.accent : 'transparent' }}
+              >
+                <span className="deck-theme-dot" style={{ background: t.accent }} />
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {error && <p className="prod-error">{error}</p>}
+      </form>
+    </Overlay>
   );
 }
 
@@ -157,9 +252,17 @@ function UseTemplateModal({ template, onClose, onCreated }) {
   );
 }
 
-function PitchCover({ pitch }) {
+function PitchCover({ pitch, theme }) {
   const [failed, setFailed] = useState(false);
   const src = thumbFor(pitch.cover);
+  // A treatment has no cover still: the tile wears the look it was written in.
+  if (theme) {
+    return (
+      <div className="coll-cover deck-cover" style={{ background: theme.bg, borderBottom: `2px solid ${theme.accent}` }}>
+        <span className="deck-cover-type" style={{ color: theme.ink }}>{pitch.title}</span>
+      </div>
+    );
+  }
   return (
     <div className="coll-cover" style={pitch.accent_color ? { borderBottom: `2px solid ${pitch.accent_color}` } : undefined}>
       {src && !failed
@@ -169,7 +272,7 @@ function PitchCover({ pitch }) {
   );
 }
 
-function PitchCard({ pitch, pitchBase, onOpen, onDuplicate, onDelete, onCopy }) {
+function PitchCard({ pitch, theme, pitchBase, onOpen, onDuplicate, onDelete, onCopy }) {
   const isPublished = pitch.status === 'published';
   // Built from the server's public base, never window.location: the link you
   // copy is the client facing one even when the panel lives on another host.
@@ -183,7 +286,7 @@ function PitchCard({ pitch, pitchBase, onOpen, onDuplicate, onDelete, onCopy }) 
       onClick={onOpen}
       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); } }}
     >
-      <PitchCover pitch={pitch} />
+      <PitchCover pitch={pitch} theme={theme} />
       <div className="coll-body">
         <div className="db-main">
           <div className="coll-name">{pitch.title}</div>
@@ -211,6 +314,8 @@ export default function PitchesPhotography({ kind = 'photography', title = 'Phot
   const [loading, setLoading] = useState(true);
   const [loadErr, setLoadErr] = useState('');
   const [templateInUse, setTemplateInUse] = useState(null);
+  const [themes, setThemes] = useState([]);
+  const [showNew, setShowNew] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [notice, setNotice] = useState(null);
@@ -224,7 +329,15 @@ export default function PitchesPhotography({ kind = 'photography', title = 'Phot
     api.get('/pitches/public-base')
       .then(b => { if (b && b.base) setPitchBase(b); })
       .catch(() => { /* the current origin stays */ });
+    api.get('/pitches/themes')
+      .then(d => setThemes(d.themes || []))
+      .catch(() => { /* cards fall back to their accent colour */ });
   }, []);
+
+  const themeByKey = useMemo(
+    () => Object.fromEntries(themes.map(t => [t.key, t])),
+    [themes]
+  );
 
   async function loadData() {
     try {
@@ -287,8 +400,22 @@ export default function PitchesPhotography({ kind = 'photography', title = 'Phot
               <Sparkles size={16} />
               <span className="db-count"><span className="db-dot" />{templates.length}</span>
             </div>
-            <div className="db-grid">
-              {templates.map(t => <TemplateCard key={t.id} template={t} onUse={setTemplateInUse} />)}
+            <div className={kind === 'treatment' ? 'deck-tpl-grid' : 'db-grid'}>
+              {kind === 'treatment' && (
+                <button type="button" className="deck-tpl new" onClick={() => setShowNew(true)}>
+                  <Plus size={18} />
+                  <span>Start from scratch</span>
+                </button>
+              )}
+              {templates.map(t => (
+                <TemplateCard
+                  key={t.id}
+                  template={t}
+                  deck={kind === 'treatment'}
+                  theme={themeByKey[t.theme]}
+                  onUse={setTemplateInUse}
+                />
+              ))}
             </div>
           </section>
 
@@ -305,6 +432,7 @@ export default function PitchesPhotography({ kind = 'photography', title = 'Phot
                   <PitchCard
                     key={p.id}
                     pitch={p}
+                    theme={kind === 'treatment' ? themeByKey[p.theme] : null}
                     pitchBase={pitchBase}
                     onOpen={() => navigate(`/pitches/${p.id}`)}
                     onDuplicate={handleDuplicate}
@@ -322,6 +450,14 @@ export default function PitchesPhotography({ kind = 'photography', title = 'Phot
         <UseTemplateModal
           template={templateInUse}
           onClose={() => setTemplateInUse(null)}
+          onCreated={id => navigate(`/pitches/${id}`)}
+        />
+      )}
+
+      {showNew && (
+        <NewTreatmentModal
+          themes={themes}
+          onClose={() => setShowNew(false)}
           onCreated={id => navigate(`/pitches/${id}`)}
         />
       )}

@@ -717,7 +717,7 @@ function resolveTreatment(slug) {
   if (!link || !link.passcode_hash) return { valid: false, reason: 'invalid' };
 
   const pres = db.prepare(
-    "SELECT id, title, accent_color FROM presentations WHERE id = ? AND is_template = 0 AND kind = 'treatment'"
+    "SELECT id, title, accent_color, theme FROM presentations WHERE id = ? AND is_template = 0 AND kind = 'treatment'"
   ).get(link.presentation_id);
   if (!pres) return { valid: false, reason: 'invalid' };
   return { valid: true, link, pres };
@@ -742,7 +742,13 @@ router.get('/treatment/:slug', (req, res) => {
   try {
     const r = resolveTreatment(req.params.slug);
     if (!r.valid) return res.json({ valid: false, reason: r.reason });
-    res.json({ valid: true, title: r.pres.title, accent_color: r.pres.accent_color, sections: treatmentSections(r.pres.id) });
+    res.json({
+      valid: true,
+      title: r.pres.title,
+      accent_color: r.pres.accent_color,
+      theme: r.pres.theme || null,
+      sections: treatmentSections(r.pres.id),
+    });
   } catch (err) {
     console.error('Treatment load failed:', err && err.name ? err.name : 'error');
     res.status(500).json({ error: 'load_failed' });

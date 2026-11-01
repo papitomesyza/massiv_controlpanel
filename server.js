@@ -505,13 +505,18 @@ app.get('/p/:slug', (req, res, next) => {
     const agencyRows = db.prepare("SELECT key, value FROM settings WHERE key IN ('agency_name', 'agency_logo')").all();
     const agencyMap = {};
     agencyRows.forEach(r => { agencyMap[r.key] = r.value; });
+    const agency = { name: agencyMap.agency_name || null, logo: agencyMap.agency_logo || null };
 
-    const html = renderPresentation(presentation, sections, {
-      // Built from the incoming host, so a pitch opened on the pitch domain
-      // advertises that domain and never the panel's.
-      origin: requestOrigin(req),
-      agency: { name: agencyMap.agency_name || null, logo: agencyMap.agency_logo || null },
-    });
+    // A treatment publishes as its deck (16:9 slides, grid plus present); a
+    // photography pitch keeps the tile page it has always had.
+    const html = presentation.kind === 'treatment'
+      ? require('./lib/deck').renderDeckPage(presentation, sections, { origin: requestOrigin(req), agency })
+      : renderPresentation(presentation, sections, {
+        // Built from the incoming host, so a pitch opened on the pitch domain
+        // advertises that domain and never the panel's.
+        origin: requestOrigin(req),
+        agency,
+      });
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     // No caching — post-publish edits must appear immediately (media stays long-cached)
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
@@ -716,7 +721,7 @@ app.get('/t/:slug', (req, res, next) => {
     agencyRows.forEach(r => { agencyMap[r.key] = r.value; });
 
     const html = renderTreatmentWindow(
-      { title: presentation.title, accent_color: presentation.accent_color, slug: link.slug },
+      { title: presentation.title, accent_color: presentation.accent_color, theme: presentation.theme, slug: link.slug },
       { agency: { name: agencyMap.agency_name || null, logo: agencyMap.agency_logo || null }, origin: requestOrigin(req) }
     );
     res.setHeader('Content-Type', 'text/html; charset=utf-8');

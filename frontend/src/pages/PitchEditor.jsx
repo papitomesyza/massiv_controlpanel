@@ -19,6 +19,7 @@ import { DialogProvider, useDialogs } from '../components/Dialogs';
 import { api } from '../api';
 import '../styles/mind.css';
 import '../styles/production.css';
+import '../styles/deck.css';
 
 const CATEGORIES = [
   'Fashion/Editorial',
@@ -746,6 +747,9 @@ function PitchEditorPage() {
   const [loading, setLoading] = useState(true);
   const [saveState, setSaveState] = useState('saved'); // saved | saving | error
   const [previewKey, setPreviewKey] = useState(0);
+  // Looks available to a treatment (lib/deck.js, served by /pitches/themes), so
+  // the swatches here and the deck the client sees can never drift apart.
+  const [themes, setThemes] = useState([]);
   const [phoneView, setPhoneView] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
   const [showAddPicker, setShowAddPicker] = useState(false);
@@ -868,6 +872,12 @@ function PitchEditorPage() {
     dirtySections.current.set(sectionId, content);
     queueSave();
   }
+
+  useEffect(() => {
+    api.get('/pitches/themes')
+      .then(d => setThemes(d.themes || []))
+      .catch(() => { /* the picker simply stays hidden */ });
+  }, []);
 
   function handlePresChange(patch) {
     setPres(prev => ({ ...prev, ...patch }));
@@ -1165,6 +1175,26 @@ function PitchEditorPage() {
               ))}
             </div>
           </div>
+          {pres.kind === 'treatment' && themes.length > 0 && (
+            <div className="form-row">
+              <label className="form-label">Look</label>
+              <div className="deck-theme-row">
+                {themes.map(t => (
+                  <button
+                    key={t.key}
+                    type="button"
+                    className={`deck-theme${pres.theme === t.key ? ' on' : ''}`}
+                    onClick={() => handlePresChange({ theme: t.key })}
+                    title={t.label}
+                    style={{ background: t.bg, color: t.ink, borderColor: pres.theme === t.key ? t.accent : 'transparent' }}
+                  >
+                    <span className="deck-theme-dot" style={{ background: t.accent }} />
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="form-row">
             <label className="form-label">Public link</label>
             <SlugEditor pres={pres} onSaved={slug => setPres(prev => ({ ...prev, slug }))} />

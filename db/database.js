@@ -894,7 +894,10 @@ function initDb() {
   // Alters. A pitch carries a kind: 'photography' (the original builder) or
   // 'treatment' (Director Treatments). Existing rows default to photography, so
   // nothing already built changes face. SQLite backfills ADD COLUMN defaults.
-  ['ALTER TABLE presentations ADD COLUMN kind TEXT DEFAULT \'photography\'']
+  ['ALTER TABLE presentations ADD COLUMN kind TEXT DEFAULT \'photography\'',
+   // theme names a look in lib/deck.js (noir, fest, hebs, reel, bone, slate).
+   // NULL on anything older than the deck rebuild, which then renders as noir.
+   'ALTER TABLE presentations ADD COLUMN theme TEXT NULL']
     .forEach(sql => { try { db.exec(sql); } catch (_) {} });
 
   // A Director Treatment gets its own First AD window: one row per treatment,
@@ -947,23 +950,33 @@ function initDb() {
   }
 
   // Director Treatment templates seed under their own key, so a database seeded
-  // before treatments existed still gets the treatment template on next boot.
+  // before treatments existed still gets the treatment templates on next boot.
+  // v2 is the six-look gallery. The migration that inserts it also drops the v1
+  // template (the single generic 'Director Treatment' card), which nobody
+  // designs from any more. Treatments COPIED from it are real work and stay
+  // untouched; without a theme they render as noir.
   try {
-    const seeded = db.prepare("SELECT value FROM settings WHERE key = 'pitches_treatment_templates_seeded'").get();
+    const seeded = db.prepare("SELECT value FROM settings WHERE key = 'pitches_treatment_templates_v2'").get();
     if (!seeded) {
       const templates = require('./treatment-templates');
       const insertPres = db.prepare(
-        "INSERT INTO presentations (title, category, accent_color, kind, is_template, status) VALUES (?, ?, ?, ?, 1, 'draft')"
+        "INSERT INTO presentations (title, category, accent_color, kind, theme, is_template, status) VALUES (?, ?, ?, ?, ?, 1, 'draft')"
       );
       const insertSection = db.prepare(
         'INSERT INTO presentation_sections (presentation_id, type, sort_order, content) VALUES (?, ?, ?, ?)'
       );
       const seedAll = db.transaction(() => {
+        db.prepare(
+          "DELETE FROM presentations WHERE is_template = 1 AND kind = 'treatment' AND theme IS NULL AND title = 'Director Treatment'"
+        ).run();
         templates.forEach(tpl => {
-          const r = insertPres.run(tpl.title, tpl.category, tpl.accent_color, tpl.kind || 'treatment');
+          const r = insertPres.run(
+            tpl.title, tpl.category, tpl.accent_color,
+            tpl.kind || 'treatment', tpl.theme || null
+          );
           tpl.sections.forEach((s, i) => insertSection.run(r.lastInsertRowid, s.type, i, JSON.stringify(s.content)));
         });
-        db.prepare("INSERT INTO settings (key, value) VALUES ('pitches_treatment_templates_seeded', '1')").run();
+        db.prepare("INSERT INTO settings (key, value) VALUES ('pitches_treatment_templates_v2', '1')").run();
       });
       seedAll();
     }

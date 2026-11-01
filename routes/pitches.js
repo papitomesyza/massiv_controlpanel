@@ -8,6 +8,12 @@ const { singleImageUpload, storeImage, isSafeMediaName } = require('../lib/media
 const { renderPresentation, SECTION_TYPES } = require('../lib/renderPresentation');
 const { publicPitchBase } = require('../lib/pitchDomain');
 const { renderPresentationPdf } = require('../lib/renderPresentationPdf');
+const { renderDeckPage, LABELS: DECK_LABELS, THEMES } = require('../lib/deck');
+const { renderDeckPdf } = require('../lib/renderDeckPdf');
+
+// A treatment carries the key of one look in lib/deck.js. Anything else is
+// refused rather than stored, so a bad client value can never reach the CSS.
+const THEME_KEYS = THEMES.map(t => t.key);
 const { hashPasscode, PASSCODE_MIN } = require('../lib/shotlistAuth');
 
 function getMediaDir() {
@@ -149,7 +155,7 @@ router.get('/', (req, res) => {
   `).all(...(kind ? [kind] : []));
   // The first image in a pitch's running order is its cover on the list.
   const coverStmt = db.prepare(
-    'SELECT content FROM presentation_sections WHERE presentation_id = ? ORDER BY sort_order ASC, id ASC'
+    'SELECT type, content FROM presentation_sections WHERE presentation_id = ? ORDER BY sort_order ASC, id ASC'
   );
   const coverOf = id => {
     for (const row of coverStmt.all(id)) {
@@ -160,8 +166,31 @@ router.get('/', (req, res) => {
     }
     return null;
   };
+  // A treatment template card shows what it actually contains: the running
+  // order of its slides and the biggest line on the first one.
+  const deckLabelsOf = id => {
+    const out = [];
+    for (const row of coverStmt.all(id)) {
+      const label = DECK_LABELS[row.type];
+      if (label && out.indexOf(label) < 0) out.push(label);
+      if (out.length >= 8) break;
+    }
+    return out;
+  };
+  const deckTitleOf = id => {
+    for (const row of coverStmt.all(id)) {
+      let c = {};
+      try { c = JSON.parse(row.content || '{}'); } catch (_) { continue; }
+      const line = c.title || c.heading || c.text;
+      if (line && typeof line === 'string') return line.slice(0, 90);
+    }
+    return null;
+  };
   res.json({
-    templates: rows.filter(r => r.is_template),
+    templates: rows.filter(r => r.is_template).map(r => ({
+      ...r,
+      deck: { labels: deckLabelsOf(r.id), title: deckTitleOf(r.id) },
+    })),
     pitches: rows.filter(r => !r.is_template).map(r => ({ ...r, cover: coverOf(r.id) })),
   });
 });
@@ -169,15 +198,28 @@ router.get('/', (req, res) => {
 router.post('/', (req, res) => {
   const { title, category, accent_color } = req.body;
   const kind = KINDS.includes(req.body.kind) ? req.body.kind : 'photography';
+  const theme = THEME_KEYS.includes(req.body.theme) ? req.body.theme : null;
   // Same check the update route makes: a colour reaches CSS, so it is a hex
   // string or it is the default, never whatever the client sent.
   const accent = (typeof accent_color === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(accent_color))
     ? accent_color : '#723CEB';
   if (!title || !title.trim()) return res.status(400).json({ error: 'Title required' });
   const result = db.prepare(
-    "INSERT INTO presentations (title, category, accent_color, kind, status) VALUES (?, ?, ?, ?, 'draft')"
-  ).run(title.trim(), category || null, accent, kind);
+    "INSERT INTO presentations (title, category, accent_color, kind, theme, status) VALUES (?, ?, ?, ?, ?, 'draft')"
+  ).run(title.trim(), category || null, accent, kind, theme);
   res.json({ id: result.lastInsertRowid });
+});
+
+// The looks a treatment can wear, for the gallery cards and the editor
+// swatches. Registered before '/:id' so 'themes' is never read as an id.
+// Single source: lib/deck.js, the same list the renderers use.
+router.get('/themes', (req, res) => {
+  res.json({
+    themes: THEMES.map(t => ({
+      key: t.key, label: t.label, bg: t.bg, ink: t.ink, accent: t.accent,
+      muted: t.muted, card: t.card, line: t.line, display: t.display, dark: !!t.dark,
+    })),
+  });
 });
 
 router.get('/:id', (req, res) => {
@@ -190,12 +232,15 @@ router.put('/:id', (req, res) => {
   const pres = db.prepare('SELECT * FROM presentations WHERE id = ?').get(req.params.id);
   if (!pres) return res.status(404).json({ error: 'Presentation not found' });
 
-  const { title, category, accent_color, slug } = req.body;
+  const { title, category, accent_color, slug, theme } = req.body;
   if (title !== undefined && (!title || !title.trim())) {
     return res.status(400).json({ error: 'Title cannot be empty' });
   }
   if (accent_color !== undefined && !/^#[0-9a-fA-F]{3,8}$/.test(accent_color)) {
     return res.status(400).json({ error: 'Invalid accent color' });
+  }
+  if (theme !== undefined && theme !== null && !THEME_KEYS.includes(theme)) {
+    return res.status(400).json({ error: 'Unknown theme' });
   }
 
   let newSlug = pres.slug;
@@ -212,11 +257,12 @@ router.put('/:id', (req, res) => {
   }
 
   db.prepare(`
-    UPDATE presentations SET title = ?, category = ?, accent_color = ?, slug = ?, updated_at = datetime('now') WHERE id = ?
+    UPDATE presentations SET title = ?, category = ?, accent_color = ?, theme = ?, slug = ?, updated_at = datetime('now') WHERE id = ?
   `).run(
     title !== undefined ? title.trim() : pres.title,
     category !== undefined ? (category || null) : pres.category,
     accent_color !== undefined ? accent_color : pres.accent_color,
+    theme !== undefined ? theme : pres.theme,
     newSlug,
     pres.id
   );
@@ -249,9 +295,11 @@ router.post('/:id/duplicate', (req, res) => {
   }
 
   const duplicate = db.transaction(() => {
+    // The look travels with the copy: a treatment made from a template opens
+    // in the theme the client was shown.
     const r = db.prepare(
-      "INSERT INTO presentations (title, category, accent_color, kind, status, slug, is_template) VALUES (?, ?, ?, ?, 'draft', NULL, 0)"
-    ).run(newTitle, original.category, original.accent_color, original.kind || 'photography');
+      "INSERT INTO presentations (title, category, accent_color, kind, theme, status, slug, is_template) VALUES (?, ?, ?, ?, ?, 'draft', NULL, 0)"
+    ).run(newTitle, original.category, original.accent_color, original.kind || 'photography', original.theme || null);
     const newId = r.lastInsertRowid;
     const insert = db.prepare(
       'INSERT INTO presentation_sections (presentation_id, type, sort_order, content) VALUES (?, ?, ?, ?)'
@@ -365,7 +413,11 @@ router.get('/:id/preview', (req, res) => {
   if (!pres) return res.status(404).json({ error: 'Presentation not found' });
   const origin = `${req.protocol}://${req.get('host')}`;
   // isPreview: empty image slots show dashed placeholders here and nowhere else
-  const html = renderPresentation(pres, getSections(pres.id), { origin, agency: getAgency(), isPreview: true });
+  // Treatments preview as their deck: the same slides the client link shows,
+  // with dashed frames in the empty image slots so Andi sees what is missing.
+  const html = pres.kind === 'treatment'
+    ? renderDeckPage(pres, getSections(pres.id), { origin, agency: getAgency(), isPreview: true })
+    : renderPresentation(pres, getSections(pres.id), { origin, agency: getAgency(), isPreview: true });
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.send(html);
@@ -382,7 +434,8 @@ router.get('/:id/pdf', (req, res) => {
   const name = String(pres.slug || pres.title || 'treatment').replace(/[^a-z0-9-]+/gi, '-').replace(/^-+|-+$/g, '');
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${name || 'treatment'}.pdf"`);
-  renderPresentationPdf(res, pres, getSections(pres.id), { origin, agency: getAgency() });
+  if (pres.kind === 'treatment') renderDeckPdf(res, pres, getSections(pres.id), { origin, agency: getAgency() });
+  else renderPresentationPdf(res, pres, getSections(pres.id), { origin, agency: getAgency() });
 });
 
 // One window per treatment, opened with a passcode, that lets the First AD

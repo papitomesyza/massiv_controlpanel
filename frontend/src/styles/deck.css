@@ -1,0 +1,129 @@
+/* Director Treatment gallery, cards and the look picker.
+   Small and separate on purpose: this is the only place the panel paints a
+   deck theme outside the deck renderer itself, so it stays easy to rip out. */
+
+.deck-tpl-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+  gap: 14px;
+}
+
+.deck-tpl {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  border: 1px solid var(--color-border, #e5e5e7);
+  border-radius: 14px;
+  background: var(--color-card, #fff);
+  overflow: hidden;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color .15s, transform .15s;
+}
+.deck-tpl:hover { border-color: var(--accent, #723ceb); transform: translateY(-2px); }
+
+.deck-tpl-slide {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  aspect-ratio: 16 / 9;
+  padding: 13px 14px;
+}
+
+.deck-tpl-strip {
+  position: absolute;
+  top: 11px;
+  left: 14px;
+  right: 14px;
+  display: flex;
+  gap: 5px;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+.deck-tpl-chip {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  border: 1px solid;
+  border-radius: 999px;
+  padding: 3px 7px;
+  white-space: nowrap;
+  opacity: .92;
+}
+
+.deck-tpl-type {
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -.02em;
+  line-height: 1;
+}
+.deck-tpl-line {
+  font-size: 11px;
+  line-height: 1.3;
+  margin-top: 5px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.deck-tpl-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px 12px;
+}
+.deck-tpl-name { font-size: 13px; font-weight: 600; }
+.deck-tpl-labels {
+  font-size: 10px;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--color-mid-gray, #8a8a8e);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deck-tpl.new {
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 152px;
+  border-style: dashed;
+  color: var(--color-mid-gray, #8a8a8e);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Existing treatments on the list: the tile wears its own look. */
+.coll-cover.deck-cover {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px;
+}
+.deck-cover-type {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -.01em;
+  text-transform: uppercase;
+  line-height: 1.1;
+  text-align: center;
+}
+
+/* Look picker in Pitch settings. */
+.deck-theme-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.deck-theme {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 2px solid transparent;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.deck-theme-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
