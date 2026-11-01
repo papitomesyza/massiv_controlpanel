@@ -145,7 +145,7 @@ router.get('/', (req, res) => {
   const kind = KINDS.includes(req.query.kind) ? req.query.kind : null;
   const rows = db.prepare(`
     SELECT p.*, (SELECT COUNT(*) FROM presentation_sections s WHERE s.presentation_id = p.id) AS section_count
-    FROM presentations p ${kind ? 'WHERE p.kind = ?' : ''} ORDER BY p.updated_at DESC
+    FROM presentations p ${kind ? "WHERE COALESCE(p.kind, 'photography') = ?" : ''} ORDER BY p.updated_at DESC
   `).all(...(kind ? [kind] : []));
   // The first image in a pitch's running order is its cover on the list.
   const coverStmt = db.prepare(
@@ -169,10 +169,14 @@ router.get('/', (req, res) => {
 router.post('/', (req, res) => {
   const { title, category, accent_color } = req.body;
   const kind = KINDS.includes(req.body.kind) ? req.body.kind : 'photography';
+  // Same check the update route makes: a colour reaches CSS, so it is a hex
+  // string or it is the default, never whatever the client sent.
+  const accent = (typeof accent_color === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(accent_color))
+    ? accent_color : '#723CEB';
   if (!title || !title.trim()) return res.status(400).json({ error: 'Title required' });
   const result = db.prepare(
     "INSERT INTO presentations (title, category, accent_color, kind, status) VALUES (?, ?, ?, ?, 'draft')"
-  ).run(title.trim(), category || null, accent_color || '#723CEB', kind);
+  ).run(title.trim(), category || null, accent, kind);
   res.json({ id: result.lastInsertRowid });
 });
 
@@ -336,12 +340,18 @@ router.post('/:id/publish', (req, res) => {
   db.prepare(`
     UPDATE presentations SET status = 'published', slug = ?, published_at = datetime('now'), updated_at = datetime('now') WHERE id = ?
   `).run(slug, pres.id);
+  // Symmetric with unpublish: publishing hands the window back to the First AD,
+  // on the passcode already issued, without a trip to the panel to re-enable it.
+  db.prepare('UPDATE presentation_share_links SET enabled = 1 WHERE presentation_id = ?').run(pres.id);
   res.json({ ok: true, slug });
 });
 
 router.post('/:id/unpublish', (req, res) => {
   const r = db.prepare("UPDATE presentations SET status = 'draft', updated_at = datetime('now') WHERE id = ?").run(req.params.id);
   if (r.changes === 0) return res.status(404).json({ error: 'Presentation not found' });
+  // Withdrawing the document also closes its window: an unpublished treatment
+  // must not stay writable through a link somebody already has.
+  db.prepare('UPDATE presentation_share_links SET enabled = 0 WHERE presentation_id = ?').run(req.params.id);
   res.json({ ok: true });
 });
 
@@ -426,6 +436,9 @@ router.post('/:id/collab-link', (req, res) => {
       db.prepare('UPDATE presentation_share_links SET passcode_hash = ?, enabled = 1 WHERE id = ?')
         .run(hashPasscode(passcode), existing.id);
     } else {
+      // One link per presentation: a straggler from a concurrent create would
+      // otherwise make the GET pick whichever row SQLite hands back first.
+      db.prepare('DELETE FROM presentation_share_links WHERE presentation_id = ?').run(pres.id);
       db.prepare('INSERT INTO presentation_share_links (presentation_id, slug, passcode_hash) VALUES (?, ?, ?)')
         .run(pres.id, slug, hashPasscode(passcode));
     }

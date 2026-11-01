@@ -48,6 +48,11 @@ const upload = multer({ storage, fileFilter, limits: { fileSize: 10 * 1024 * 102
 const { pitchDomainGuard, isPitchHost, sendPitch404, requestOrigin, logBootStatus } = require('./lib/pitchDomain');
 app.use(pitchDomainGuard);
 
+// The Director Treatment window is written by whoever holds the link, so its
+// JSON is capped far below the panel's own 50mb before any of it is parsed. A
+// body-parser that has already run marks the request parsed, so the wider
+// parser below passes these requests straight through.
+app.use('/api/public/treatment', express.json({ limit: '1mb' }));
 app.use(express.json({ limit: '50mb' }));
 
 // Public: agency branding (no auth needed for public expense page)
@@ -310,11 +315,16 @@ app.use((req, res, next) => {
   res.json = (body) => {
     try {
       if (res.statusCode < 400) {
+        // A public window writes without a panel session, so its rows must never
+        // be attributed to andi: it names itself through req.publicActor, and
+        // when even that is missing the row says crew, not an owner.
+        const isPublicWrite = AUDIT_INCLUDE.some(re => re.test(normPath));
         const actor = req.publicActor
           ? `ad:${req.publicActor}`
-          : (req.serviceToken ? 'hermes' : (req.role === 'finance' ? 'finance' : 'andi'));
+          : (isPublicWrite ? 'crew:unnamed'
+            : (req.serviceToken ? 'hermes' : (req.role === 'finance' ? 'finance' : 'andi')));
         const hdr = String(req.get('x-cos-source') || '').trim().toLowerCase();
-        const source = req.publicActor
+        const source = (req.publicActor || isPublicWrite)
           ? 'crew'
           : (AUDIT_SOURCES.has(hdr) ? hdr : (req.serviceToken ? 'api' : 'panel'));
         // Handlers may set res.locals.cosAudit to make the row exact (e.g. payment delete/update).
@@ -341,7 +351,21 @@ app.use((req, res, next) => {
 
 // Public routes (no auth) — multer on POST only. Deliberately below the audit
 // spine so a moodboard write from the First AD window lands in audit_log.
+const PUBLIC_UPLOADS_PER_MIN = 12;
+const publicUploadAttempts = new Map();
 app.use('/api/public', (req, res, next) => {
+  // multer buffers the whole file in memory before any passcode check can run,
+  // so upload attempts are capped per IP here, ahead of it.
+  if (req.method === 'POST' && /^\/treatment\/[^/]+\/upload\/?$/.test(req.path)
+    && String(req.headers['content-type'] || '').startsWith('multipart/form-data')) {
+    const now = Date.now();
+    const rec = publicUploadAttempts.get(req.ip);
+    if (!rec || now - rec.start > 60000) publicUploadAttempts.set(req.ip, { start: now, count: 1 });
+    else if (++rec.count > PUBLIC_UPLOADS_PER_MIN) {
+      return res.status(429).json({ error: 'too_many_attempts' });
+    }
+    return singleImageUpload('image')(req, res, next);
+  }
   if (req.method === 'POST' && req.path.startsWith('/expense/')) {
     return upload.single('invoice_image')(req, res, next);
   }
@@ -351,12 +375,6 @@ app.use('/api/public', (req, res, next) => {
   if (req.method === 'POST' && /^\/collab\/[^/]+\/cards\/?$/.test(req.path)
     && String(req.headers['content-type'] || '').startsWith('multipart/form-data')) {
     return multiImageUpload('image', 20)(req, res, next);
-  }
-  // The Director Treatment window's image upload: one file per request through
-  // the same memory-store multer the moodboard cards use.
-  if (req.method === 'POST' && /^\/treatment\/[^/]+\/upload\/?$/.test(req.path)
-    && String(req.headers['content-type'] || '').startsWith('multipart/form-data')) {
-    return singleImageUpload('image')(req, res, next);
   }
   next();
 }, publicRouter);
@@ -688,7 +706,7 @@ app.get('/t/:slug', (req, res, next) => {
     if (!link || !link.passcode_hash) return miss();
 
     const presentation = db.prepare(
-      'SELECT * FROM presentations WHERE id = ? AND is_template = 0'
+      "SELECT * FROM presentations WHERE id = ? AND is_template = 0 AND kind = 'treatment'"
     ).get(link.presentation_id);
     if (!presentation) return miss();
 

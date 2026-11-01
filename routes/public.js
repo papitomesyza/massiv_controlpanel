@@ -717,7 +717,7 @@ function resolveTreatment(slug) {
   if (!link || !link.passcode_hash) return { valid: false, reason: 'invalid' };
 
   const pres = db.prepare(
-    'SELECT id, title, accent_color FROM presentations WHERE id = ? AND is_template = 0'
+    "SELECT id, title, accent_color FROM presentations WHERE id = ? AND is_template = 0 AND kind = 'treatment'"
   ).get(link.presentation_id);
   if (!pres) return { valid: false, reason: 'invalid' };
   return { valid: true, link, pres };
@@ -757,7 +757,7 @@ router.post('/treatment/:slug/unlock', (req, res) => {
 
     const ipRec = checkWindowLimit(unlockIpAttempts, ip, 60000);
     if (ipRec.count >= UNLOCK_IP_PER_MIN) return res.status(429).json({ error: 'too_many_attempts' });
-    const slugRec = checkWindowLimit(unlockSlugAttempts, slug, 60000);
+    const slugRec = checkWindowLimit(unlockSlugAttempts, `treatment:${slug}`, 60000);
     if (slugRec.count >= UNLOCK_SLUG_PER_MIN) return res.status(429).json({ error: 'too_many_attempts' });
     // Failures are keyed apart from the moodboard's and the shot list's, so one
     // treatment's wrong passcodes can never lock out another document.
@@ -806,7 +806,11 @@ router.post('/treatment/:slug/save', (req, res) => {
     // A public write, so both bounds are enforced here and nowhere else: a
     // document stays a document, not an upload of the panel's storage.
     if (incoming.length > 40) return res.status(400).json({ error: 'too_many_sections' });
+    // An empty set is never a real edit, and accepting it would let one stale
+    // window wipe every section in the document.
+    if (!incoming.length) return res.status(400).json({ error: 'sections_required' });
 
+    const seen = new Set();
     const clean = [];
     for (const s of incoming) {
       // Refuse the whole save rather than dropping the odd section: a client
@@ -815,7 +819,13 @@ router.post('/treatment/:slug/save', (req, res) => {
       if (!s || !SECTION_TYPES.includes(s.type)) return res.status(400).json({ error: 'bad_section_type' });
       const content = s.content && typeof s.content === 'object' ? s.content : {};
       if (JSON.stringify(content).length > 20000) return res.status(400).json({ error: 'section_too_large' });
-      clean.push({ id: Number(s.id) || null, type: s.type, content });
+      const id = Number(s.id) || null;
+      // The same id twice means one of the two contents is about to be lost.
+      if (id !== null) {
+        if (seen.has(id)) return res.status(400).json({ error: 'duplicate_section' });
+        seen.add(id);
+      }
+      clean.push({ id: id, type: s.type, content });
     }
 
     const owned = new Set(

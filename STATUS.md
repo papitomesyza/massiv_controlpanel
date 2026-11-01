@@ -21,7 +21,7 @@ Next: Andi decides what to build/fix.
 - Commits pushed to GitHub main: 83cf07c, 1e6b85c. Zeabur auto-builds + redeploys from the repo.
 - Service token works: clients/projects/budgets/invoices/calendar/settings/crew all 200; real data returns.
 - Blocked 403: /api/vault*, change-password, backup/download. No/bad token 401.
-- Access recipe for Hermes: `curl -H "Authorization: Bearer $(cat ~/.massiv_token)" https://mssv.zeabur.app/api/<route>`.
+- Access recipe for Hermes: `curl -H "Authorization: Bearer $(cat ~/.massiv_token)" https://panel.madebymassiv.com/api/<route>`.
 - Revoke: change or unset HERMES_API_TOKEN on Zeabur (env var), redeploy.
 
 ## CoS spine + export (2026-10-08, LIVE)
