@@ -1021,7 +1021,7 @@ export default function CollectionDetail() {
         )}
         <span className="spacer" />
         <button type="button" className="db-iconbtn lg" onClick={() => imageInputRef.current.click()} title="Upload images" aria-label="Upload images"><Images size={17} /></button>
-        <input ref={imageInputRef} type="file" accept="image/*" multiple hidden onChange={handleUploadImages} />
+        <input ref={imageInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden onChange={handleUploadImages} />
         <button type="button" className="db-iconbtn lg" onClick={() => setAddKind('link')} title="Add link" aria-label="Add link"><Link2 size={17} /></button>
         <button type="button" className="db-iconbtn lg" onClick={() => setAddKind('note')} title="Add note" aria-label="Add note"><FileText size={17} /></button>
       </div>
