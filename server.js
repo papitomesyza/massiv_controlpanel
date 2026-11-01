@@ -202,7 +202,7 @@ const AUDIT_SKIP = [
 // with no session, and those writes are exactly the ones the spine exists to
 // catch: who put what into the collection. The handler sets req.publicActor so
 // the row carries the crew member's name rather than a blank 'andi'.
-const AUDIT_INCLUDE = [/^\/api\/public\/collab(\/|$)/i];
+const AUDIT_INCLUDE = [/^\/api\/public\/collab(\/|$)/i, /^\/api\/public\/treatment(\/|$)/i];
 
 const AUDIT_SOURCES = new Set(['panel', 'api', 'telegram', 'desktop', 'voice', 'crew']);
 // Request-body keys that may be stored in audit meta (whitelist only).
@@ -351,6 +351,12 @@ app.use('/api/public', (req, res, next) => {
   if (req.method === 'POST' && /^\/collab\/[^/]+\/cards\/?$/.test(req.path)
     && String(req.headers['content-type'] || '').startsWith('multipart/form-data')) {
     return multiImageUpload('image', 20)(req, res, next);
+  }
+  // The Director Treatment window's image upload: one file per request through
+  // the same memory-store multer the moodboard cards use.
+  if (req.method === 'POST' && /^\/treatment\/[^/]+\/upload\/?$/.test(req.path)
+    && String(req.headers['content-type'] || '').startsWith('multipart/form-data')) {
+    return singleImageUpload('image')(req, res, next);
   }
   next();
 }, publicRouter);
@@ -661,6 +667,45 @@ app.get('/c/:slug', (req, res, next) => {
     // No global error handler here — a failure must behave like a miss rather
     // than render Express's default stack page.
     console.error('Public casting render failed:', err && err.message ? err.message : err);
+    if (onPitchHost) return sendPitch404(req, res);
+    return next();
+  }
+});
+
+// Public Director Treatment window. This is the First AD's shared working
+// surface: the file itself, written straight from the browser by whoever has
+// the link and the passcode (routes/public.js). Same miss behaviour as every
+// other public page, an unknown slug, a disabled link or a rotated passcode
+// reveals nothing.
+app.get('/t/:slug', (req, res, next) => {
+  const onPitchHost = isPitchHost(req);
+  const miss = () => (onPitchHost ? sendPitch404(req, res) : next());
+
+  try {
+    const link = db.prepare(
+      'SELECT * FROM presentation_share_links WHERE slug = ? AND enabled = 1'
+    ).get(String(req.params.slug || ''));
+    if (!link || !link.passcode_hash) return miss();
+
+    const presentation = db.prepare(
+      'SELECT * FROM presentations WHERE id = ? AND is_template = 0'
+    ).get(link.presentation_id);
+    if (!presentation) return miss();
+
+    const { renderTreatmentWindow } = require('./lib/renderTreatmentWindow');
+    const agencyRows = db.prepare("SELECT key, value FROM settings WHERE key IN ('agency_name', 'agency_logo')").all();
+    const agencyMap = {};
+    agencyRows.forEach(r => { agencyMap[r.key] = r.value; });
+
+    const html = renderTreatmentWindow(
+      { title: presentation.title, accent_color: presentation.accent_color, slug: link.slug },
+      { agency: { name: agencyMap.agency_name || null, logo: agencyMap.agency_logo || null }, origin: requestOrigin(req) }
+    );
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.send(html);
+  } catch (err) {
+    console.error('Public treatment render failed:', err && err.message ? err.message : err);
     if (onPitchHost) return sendPitch404(req, res);
     return next();
   }

@@ -874,6 +874,7 @@ function initDb() {
       status TEXT DEFAULT 'draft',
       accent_color TEXT DEFAULT '#723CEB',
       is_template INTEGER DEFAULT 0,
+      kind TEXT DEFAULT 'photography',
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now')),
       published_at TEXT
@@ -888,6 +889,30 @@ function initDb() {
       created_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (presentation_id) REFERENCES presentations(id) ON DELETE CASCADE
     );
+  `);
+
+  // Alters. A pitch carries a kind: 'photography' (the original builder) or
+  // 'treatment' (Director Treatments). Existing rows default to photography, so
+  // nothing already built changes face. SQLite backfills ADD COLUMN defaults.
+  ['ALTER TABLE presentations ADD COLUMN kind TEXT DEFAULT \'photography\'']
+    .forEach(sql => { try { db.exec(sql); } catch (_) {} });
+
+  // A Director Treatment gets its own First AD window: one row per treatment,
+  // the public /t/<slug> path, and a passcode hashed like the panel password so
+  // the link can be handed to crew without a panel account. Mirrors
+  // collection_share_links, kept separate so the collection FK stays honest.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS presentation_share_links (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      presentation_id INTEGER NOT NULL,
+      slug TEXT NOT NULL UNIQUE,
+      passcode_hash TEXT,
+      enabled INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now')),
+      last_used_at TEXT,
+      FOREIGN KEY (presentation_id) REFERENCES presentations(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_pres_share_links_presentation ON presentation_share_links(presentation_id);
   `);
 
   // Indexes
@@ -919,6 +944,31 @@ function initDb() {
     }
   } catch (err) {
     console.error('Pitch template seeding failed:', err.message);
+  }
+
+  // Director Treatment templates seed under their own key, so a database seeded
+  // before treatments existed still gets the treatment template on next boot.
+  try {
+    const seeded = db.prepare("SELECT value FROM settings WHERE key = 'pitches_treatment_templates_seeded'").get();
+    if (!seeded) {
+      const templates = require('./treatment-templates');
+      const insertPres = db.prepare(
+        "INSERT INTO presentations (title, category, accent_color, kind, is_template, status) VALUES (?, ?, ?, ?, 1, 'draft')"
+      );
+      const insertSection = db.prepare(
+        'INSERT INTO presentation_sections (presentation_id, type, sort_order, content) VALUES (?, ?, ?, ?)'
+      );
+      const seedAll = db.transaction(() => {
+        templates.forEach(tpl => {
+          const r = insertPres.run(tpl.title, tpl.category, tpl.accent_color, tpl.kind || 'treatment');
+          tpl.sections.forEach((s, i) => insertSection.run(r.lastInsertRowid, s.type, i, JSON.stringify(s.content)));
+        });
+        db.prepare("INSERT INTO settings (key, value) VALUES ('pitches_treatment_templates_seeded', '1')").run();
+      });
+      seedAll();
+    }
+  } catch (err) {
+    console.error('Treatment template seeding failed:', err.message);
   }
 
   // ── Shot lists (Tools → Production) ──

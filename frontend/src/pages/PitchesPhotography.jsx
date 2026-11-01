@@ -204,7 +204,7 @@ function PitchCard({ pitch, pitchBase, onOpen, onDuplicate, onDelete, onCopy }) 
   );
 }
 
-export default function PitchesPhotography() {
+export default function PitchesPhotography({ kind = 'photography', title = 'Photography' }) {
   const navigate = useNavigate();
   const [templates, setTemplates] = useState([]);
   const [pitches, setPitches] = useState([]);
@@ -228,7 +228,7 @@ export default function PitchesPhotography() {
 
   async function loadData() {
     try {
-      const data = await api.get('/pitches');
+      const data = await api.get(`/pitches?kind=${kind}`);
       setTemplates(data.templates);
       setPitches(data.pitches);
       setLoadErr('');
@@ -239,7 +239,7 @@ export default function PitchesPhotography() {
 
   useEffect(() => {
     loadData().finally(() => setLoading(false));
-  }, []);
+  }, [kind]);
 
   async function handleDuplicate(pitch) {
     try {
@@ -275,7 +275,7 @@ export default function PitchesPhotography() {
         <button className="db-iconbtn lg" onClick={() => navigate('/pitches')} title="Pitches" aria-label="Pitches">
           <ArrowLeft size={16} />
         </button>
-        <h1 className="page-title">Photography</h1>
+        <h1 className="page-title">{title}</h1>
       </div>
 
       {loadErr && <div className="error-msg" style={{ marginBottom: '12px' }}>{loadErr}</div>}

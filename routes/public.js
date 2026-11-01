@@ -6,6 +6,7 @@ const { pristinaToday } = require('../lib/pristinaDate');
 const { verifyCrewToken, issueCrewToken, checkPasscode, PASSCODE_MIN } = require('../lib/shotlistAuth');
 const { getPublishedBySlug, logActivity, touch } = require('../lib/shotlistStore');
 const path = require('path');
+const { SECTION_TYPES } = require('../lib/renderPresentation');
 const { storeImage } = require('../lib/mediaStore');
 const { attachMedia } = require('../lib/cardMedia');
 // Reuse the panel's link preview (defined in routes/collections.js) so a link
@@ -696,6 +697,181 @@ router.delete('/collab/:slug/cards/:cardId', (req, res) => {
   } catch (err) {
     console.error('Moodboard delete failed:', err && err.name ? err.name : 'error');
     res.status(500).json({ error: 'delete_failed' });
+  }
+});
+
+// ── The Director Treatment window ────────────────────────────────────────────
+// Same shape and the same guarantees as the moodboard window above: the link
+// gets you the document, the passcode lets you write it, the token is signed
+// against the passcode version so rotating it closes every open window. What
+// differs is the unit of work. A treatment is written a SECTION at a time by
+// however many people are in the document, so the window saves the whole
+// section set in ONE call: adding, editing, reordering and deleting are all the
+// same request, and the server diffs it against what it has.
+const TREATMENT_MEDIA_DIR = path.join(process.env.DATA_DIR || path.join(__dirname, '..', 'data'), 'presentation-media');
+
+function resolveTreatment(slug) {
+  const link = db.prepare(
+    'SELECT * FROM presentation_share_links WHERE slug = ? AND enabled = 1'
+  ).get(String(slug || ''));
+  if (!link || !link.passcode_hash) return { valid: false, reason: 'invalid' };
+
+  const pres = db.prepare(
+    'SELECT id, title, accent_color FROM presentations WHERE id = ? AND is_template = 0'
+  ).get(link.presentation_id);
+  if (!pres) return { valid: false, reason: 'invalid' };
+  return { valid: true, link, pres };
+}
+
+// What the token is signed against: this treatment's id and passcode version.
+function treatmentAuthTarget(link) {
+  return { id: link.presentation_id, passcode_hash: link.passcode_hash };
+}
+
+function treatmentSections(presentationId) {
+  return db.prepare(
+    'SELECT id, type, content FROM presentation_sections WHERE presentation_id = ? ORDER BY sort_order ASC, id ASC'
+  ).all(presentationId).map(s => {
+    let content = s.content;
+    if (typeof content === 'string') { try { content = JSON.parse(content); } catch (_) { content = {}; } }
+    return { id: s.id, type: s.type, content: content || {} };
+  });
+}
+
+router.get('/treatment/:slug', (req, res) => {
+  try {
+    const r = resolveTreatment(req.params.slug);
+    if (!r.valid) return res.json({ valid: false, reason: r.reason });
+    res.json({ valid: true, title: r.pres.title, accent_color: r.pres.accent_color, sections: treatmentSections(r.pres.id) });
+  } catch (err) {
+    console.error('Treatment load failed:', err && err.name ? err.name : 'error');
+    res.status(500).json({ error: 'load_failed' });
+  }
+});
+
+// POST /api/public/treatment/:slug/unlock  body: { name, passcode }
+router.post('/treatment/:slug/unlock', (req, res) => {
+  try {
+    const ip = req.ip || (req.connection && req.connection.remoteAddress) || 'unknown';
+    const slug = String(req.params.slug || '');
+
+    const ipRec = checkWindowLimit(unlockIpAttempts, ip, 60000);
+    if (ipRec.count >= UNLOCK_IP_PER_MIN) return res.status(429).json({ error: 'too_many_attempts' });
+    const slugRec = checkWindowLimit(unlockSlugAttempts, slug, 60000);
+    if (slugRec.count >= UNLOCK_SLUG_PER_MIN) return res.status(429).json({ error: 'too_many_attempts' });
+    // Failures are keyed apart from the moodboard's and the shot list's, so one
+    // treatment's wrong passcodes can never lock out another document.
+    const failRec = checkWindowLimit(unlockSlugFailures, `treatment:${slug}`, DAY_MS);
+    if (failRec.count >= UNLOCK_SLUG_FAILS_PER_DAY) return res.status(429).json({ error: 'too_many_attempts' });
+
+    ipRec.count++; unlockIpAttempts.set(ip, ipRec);
+    slugRec.count++; unlockSlugAttempts.set(slug, slugRec);
+
+    const name = String((req.body && req.body.name) || '').trim().slice(0, 60);
+    const passcode = (req.body && req.body.passcode) || '';
+    if (!name) return res.status(400).json({ error: 'name_required' });
+
+    const failed = () => {
+      failRec.count++; unlockSlugFailures.set(`treatment:${slug}`, failRec);
+      return unlockDenied(res);
+    };
+
+    const r = resolveTreatment(slug);
+    if (!r.valid) return failed();
+    if (!checkPasscode(passcode, r.link.passcode_hash)) return failed();
+
+    db.prepare("UPDATE presentation_share_links SET last_used_at = datetime('now') WHERE id = ?").run(r.link.id);
+    req.publicActor = name;
+    res.locals.cosAudit = { entity_type: 'treatment_access', entity_id: r.pres.id };
+    res.json({ token: issueCrewToken(treatmentAuthTarget(r.link), name), name });
+  } catch (err) {
+    console.error('Treatment unlock failed:', err && err.name ? err.name : 'error');
+    res.status(500).json({ error: 'unlock_failed' });
+  }
+});
+
+// POST /api/public/treatment/:slug/save  body: { token, sections: [{ id?, type, content }] }
+router.post('/treatment/:slug/save', (req, res) => {
+  try {
+    const token = spendEdit(req, res);
+    if (token === null) return;
+
+    const r = resolveTreatment(req.params.slug);
+    if (!r.valid) return unlockDenied(res);
+    const auth = verifyCrewToken(token, treatmentAuthTarget(r.link));
+    if (!auth.valid) return unlockDenied(res);
+
+    const incoming = Array.isArray(req.body && req.body.sections) ? req.body.sections : null;
+    if (!incoming) return res.status(400).json({ error: 'sections_required' });
+    // A public write, so both bounds are enforced here and nowhere else: a
+    // document stays a document, not an upload of the panel's storage.
+    if (incoming.length > 40) return res.status(400).json({ error: 'too_many_sections' });
+
+    const clean = [];
+    for (const s of incoming) {
+      // Refuse the whole save rather than dropping the odd section: a client
+      // sending an unknown type is out of step, and silently writing the rest
+      // would delete the sections it failed to describe.
+      if (!s || !SECTION_TYPES.includes(s.type)) return res.status(400).json({ error: 'bad_section_type' });
+      const content = s.content && typeof s.content === 'object' ? s.content : {};
+      if (JSON.stringify(content).length > 20000) return res.status(400).json({ error: 'section_too_large' });
+      clean.push({ id: Number(s.id) || null, type: s.type, content });
+    }
+
+    const owned = new Set(
+      db.prepare('SELECT id FROM presentation_sections WHERE presentation_id = ?').all(r.pres.id).map(x => x.id)
+    );
+
+    const write = db.transaction(() => {
+      const update = db.prepare('UPDATE presentation_sections SET type = ?, sort_order = ?, content = ? WHERE id = ? AND presentation_id = ?');
+      const insert = db.prepare('INSERT INTO presentation_sections (presentation_id, type, sort_order, content) VALUES (?, ?, ?, ?)');
+      clean.forEach((s, i) => {
+        const json = JSON.stringify(s.content);
+        // Only a section that already belongs to THIS treatment is updated in
+        // place; anything else is an insert, so a token for one document can
+        // never reach into another's sections by guessing an id.
+        if (s.id && owned.has(s.id)) update.run(s.type, i, json, s.id, r.pres.id);
+        else insert.run(r.pres.id, s.type, i, json);
+      });
+      const keep = clean.filter(s => s.id && owned.has(s.id)).map(s => s.id);
+      const gone = [...owned].filter(id => !keep.includes(id));
+      const del = db.prepare('DELETE FROM presentation_sections WHERE id = ? AND presentation_id = ?');
+      gone.forEach(id => del.run(id, r.pres.id));
+      db.prepare("UPDATE presentations SET updated_at = datetime('now') WHERE id = ?").run(r.pres.id);
+    });
+    write();
+
+    req.publicActor = auth.name || 'crew';
+    res.locals.cosAudit = { entity_type: 'treatment', entity_id: r.pres.id };
+    res.json({ ok: true, sections: treatmentSections(r.pres.id) });
+  } catch (err) {
+    console.error('Treatment save failed:', err && err.name ? err.name : 'error');
+    res.status(500).json({ error: 'save_failed' });
+  }
+});
+
+// POST /api/public/treatment/:slug/upload  multipart: token + image field.
+// The picture lands in the same store the panel-side upload writes to, so the
+// section content the window sends back is just the filename, and the published
+// page and the PDF pick it up with no special case.
+router.post('/treatment/:slug/upload', async (req, res) => {
+  try {
+    const token = spendEdit(req, res);
+    if (token === null) return;
+
+    const r = resolveTreatment(req.params.slug);
+    if (!r.valid) return unlockDenied(res);
+    const auth = verifyCrewToken(token, treatmentAuthTarget(r.link));
+    if (!auth.valid) return unlockDenied(res);
+    if (!req.file || !req.file.buffer) return res.status(400).json({ error: 'image_required' });
+
+    const out = await storeImage(req.file.buffer, TREATMENT_MEDIA_DIR);
+    req.publicActor = auth.name || 'crew';
+    res.locals.cosAudit = { entity_type: 'treatment', entity_id: r.pres.id };
+    res.json({ filename: out.filename, thumb: out.thumb });
+  } catch (err) {
+    console.error('Treatment upload failed:', err && err.name ? err.name : 'error');
+    res.status(400).json({ error: 'upload_failed' });
   }
 });
 

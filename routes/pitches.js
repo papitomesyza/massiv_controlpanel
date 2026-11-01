@@ -1,14 +1,27 @@
 const express = require('express');
 const router = express.Router();
 const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
 const { db } = require('../db/database');
-const { singleImageUpload, storeImage } = require('../lib/mediaStore');
+const { singleImageUpload, storeImage, isSafeMediaName } = require('../lib/mediaStore');
 const { renderPresentation, SECTION_TYPES } = require('../lib/renderPresentation');
 const { publicPitchBase } = require('../lib/pitchDomain');
+const { renderPresentationPdf } = require('../lib/renderPresentationPdf');
+const { hashPasscode, PASSCODE_MIN } = require('../lib/shotlistAuth');
 
 function getMediaDir() {
   return path.join(process.env.DATA_DIR || path.join(__dirname, '..', 'data'), 'presentation-media');
 }
+
+// Where the Collections (the Mind) store their uploaded images. A treatment
+// pulls a COPY from here, so deleting the collection later cannot break a
+// treatment that already used the picture.
+function getCollectionMediaDir() {
+  return path.join(process.env.DATA_DIR || path.join(__dirname, '..', 'data'), 'collection-media');
+}
+
+const KINDS = ['photography', 'treatment'];
 
 function touch(id) {
   db.prepare("UPDATE presentations SET updated_at = datetime('now') WHERE id = ?").run(id);
@@ -62,13 +75,78 @@ router.get('/public-base', (req, res) => {
   }
 });
 
+// ── Pulling pictures in from the Collections (the Mind) ───────────────────────
+// Declared before the /:id routes: these are single-segment paths and would
+// otherwise be read as an id. A treatment copies the picture it picks, so a
+// later edit or delete in the collection cannot change a sent treatment.
+
+function collectionMediaName(url) {
+  const m = String(url || '').match(/^\/collection-media\/([^/]+)$/);
+  if (!m) return null;
+  return isSafeMediaName(m[1]) ? m[1] : null;
+}
+
+router.get('/collection-images', (req, res) => {
+  try {
+    const rows = db.prepare(`
+      SELECT c.id AS collection_id, c.name AS collection_name, cc.id AS card_id, cc.title,
+             cc.url, cc.thumbnail_url
+      FROM collection_cards cc JOIN collections c ON c.id = cc.collection_id
+      WHERE cc.type = 'image' AND cc.url IS NOT NULL
+      UNION ALL
+      SELECT c.id AS collection_id, c.name AS collection_name, cc.id AS card_id, cc.title,
+             m.url, m.thumbnail_url
+      FROM collection_card_media m
+      JOIN collection_cards cc ON cc.id = m.card_id
+      JOIN collections c ON c.id = cc.collection_id
+    `).all();
+
+    const byCollection = new Map();
+    for (const row of rows) {
+      const filename = collectionMediaName(row.url);
+      if (!filename) continue;
+      if (!byCollection.has(row.collection_id)) {
+        byCollection.set(row.collection_id, { id: row.collection_id, name: row.collection_name, images: [] });
+      }
+      byCollection.get(row.collection_id).images.push({
+        filename,
+        thumb: collectionMediaName(row.thumbnail_url) || filename,
+        title: row.title || '',
+      });
+    }
+    res.json({ collections: [...byCollection.values()] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /import-collection-image  body: { filename }
+// The filename is the collection copy; it is re-stored into the pitch media
+// store so the treatment owns its own web + thumbnail pair.
+router.post('/import-collection-image', async (req, res) => {
+  try {
+    const filename = String((req.body && req.body.filename) || '');
+    if (!isSafeMediaName(filename)) return res.status(400).json({ error: 'bad_filename' });
+    const src = path.join(getCollectionMediaDir(), filename);
+    if (!fs.existsSync(src)) return res.status(404).json({ error: 'not_found' });
+    const out = await storeImage(fs.readFileSync(src), getMediaDir());
+    res.json({ filename: out.filename, thumb: out.thumb });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Presentations CRUD ────────────────────────────────────────────────────────
 
 router.get('/', (req, res) => {
+  // Optional kind filter: the Photography list asks for 'photography', the
+  // Director Treatments list for 'treatment'. No kind returns both, so an older
+  // caller keeps working.
+  const kind = KINDS.includes(req.query.kind) ? req.query.kind : null;
   const rows = db.prepare(`
     SELECT p.*, (SELECT COUNT(*) FROM presentation_sections s WHERE s.presentation_id = p.id) AS section_count
-    FROM presentations p ORDER BY p.updated_at DESC
-  `).all();
+    FROM presentations p ${kind ? 'WHERE p.kind = ?' : ''} ORDER BY p.updated_at DESC
+  `).all(...(kind ? [kind] : []));
   // The first image in a pitch's running order is its cover on the list.
   const coverStmt = db.prepare(
     'SELECT content FROM presentation_sections WHERE presentation_id = ? ORDER BY sort_order ASC, id ASC'
@@ -90,10 +168,11 @@ router.get('/', (req, res) => {
 
 router.post('/', (req, res) => {
   const { title, category, accent_color } = req.body;
+  const kind = KINDS.includes(req.body.kind) ? req.body.kind : 'photography';
   if (!title || !title.trim()) return res.status(400).json({ error: 'Title required' });
   const result = db.prepare(
-    "INSERT INTO presentations (title, category, accent_color, status) VALUES (?, ?, ?, 'draft')"
-  ).run(title.trim(), category || null, accent_color || '#723CEB');
+    "INSERT INTO presentations (title, category, accent_color, kind, status) VALUES (?, ?, ?, ?, 'draft')"
+  ).run(title.trim(), category || null, accent_color || '#723CEB', kind);
   res.json({ id: result.lastInsertRowid });
 });
 
@@ -142,6 +221,7 @@ router.put('/:id', (req, res) => {
 
 router.delete('/:id', (req, res) => {
   // DB rows only; media file cleanup is out of scope for phase 1
+  db.prepare('DELETE FROM presentation_share_links WHERE presentation_id = ?').run(req.params.id);
   db.prepare('DELETE FROM presentations WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
@@ -166,8 +246,8 @@ router.post('/:id/duplicate', (req, res) => {
 
   const duplicate = db.transaction(() => {
     const r = db.prepare(
-      "INSERT INTO presentations (title, category, accent_color, status, slug, is_template) VALUES (?, ?, ?, 'draft', NULL, 0)"
-    ).run(newTitle, original.category, original.accent_color);
+      "INSERT INTO presentations (title, category, accent_color, kind, status, slug, is_template) VALUES (?, ?, ?, ?, 'draft', NULL, 0)"
+    ).run(newTitle, original.category, original.accent_color, original.kind || 'photography');
     const newId = r.lastInsertRowid;
     const insert = db.prepare(
       'INSERT INTO presentation_sections (presentation_id, type, sort_order, content) VALUES (?, ?, ?, ?)'
@@ -279,6 +359,80 @@ router.get('/:id/preview', (req, res) => {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.send(html);
+});
+
+// ── Director Treatment: the PDF, and the First AD window ─────────────────────
+// The PDF is the same document as the published page, laid out by PDFKit (the
+// same library the shot lists and invoices already use), so the treatment
+// leaves the panel as a file without a browser in the loop.
+router.get('/:id/pdf', (req, res) => {
+  const pres = db.prepare('SELECT * FROM presentations WHERE id = ?').get(req.params.id);
+  if (!pres) return res.status(404).json({ error: 'Presentation not found' });
+  const origin = `${req.protocol}://${req.get('host')}`;
+  const name = String(pres.slug || pres.title || 'treatment').replace(/[^a-z0-9-]+/gi, '-').replace(/^-+|-+$/g, '');
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${name || 'treatment'}.pdf"`);
+  renderPresentationPdf(res, pres, getSections(pres.id), { origin, agency: getAgency() });
+});
+
+// One window per treatment, opened with a passcode, that lets the First AD
+// write straight into the treatment's sections. Same shape as the project
+// collection's collab link, so crew learn one flow for both.
+function treatmentSlug(title) {
+  const base = String(title || 'treatment').toLowerCase()
+    .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+  return base || 'treatment';
+}
+
+function uniqueTreatmentSlug(title) {
+  for (let i = 0; i < 20; i++) {
+    const slug = `${treatmentSlug(title)}-${crypto.randomBytes(3).toString('hex')}`;
+    const taken = db.prepare('SELECT 1 FROM presentation_share_links WHERE slug = ?').get(slug);
+    if (!taken) return slug;
+  }
+  return `${treatmentSlug(title)}-${Date.now().toString(36)}`;
+}
+
+router.get('/:id/collab-link', (req, res) => {
+  try {
+    const link = db.prepare('SELECT * FROM presentation_share_links WHERE presentation_id = ?').get(req.params.id);
+    if (!link || !link.slug || !link.passcode_hash) return res.json({ has_link: false });
+    res.json({
+      has_link: true,
+      enabled: link.enabled ? 1 : 0,
+      slug: link.slug,
+      url: `${publicPitchBase(req).base}/t/${link.slug}`,
+      last_used_at: link.last_used_at || null,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/:id/collab-link', (req, res) => {
+  try {
+    const pres = db.prepare('SELECT id, title FROM presentations WHERE id = ?').get(req.params.id);
+    if (!pres) return res.status(404).json({ error: 'Presentation not found' });
+
+    const passcode = String((req.body && req.body.passcode) || '');
+    if (passcode.length < PASSCODE_MIN) {
+      return res.status(400).json({ error: `Passcode must be at least ${PASSCODE_MIN} characters` });
+    }
+
+    const existing = db.prepare('SELECT * FROM presentation_share_links WHERE presentation_id = ?').get(pres.id);
+    const slug = existing ? existing.slug : uniqueTreatmentSlug(pres.title);
+    if (existing) {
+      db.prepare('UPDATE presentation_share_links SET passcode_hash = ?, enabled = 1 WHERE id = ?')
+        .run(hashPasscode(passcode), existing.id);
+    } else {
+      db.prepare('INSERT INTO presentation_share_links (presentation_id, slug, passcode_hash) VALUES (?, ?, ?)')
+        .run(pres.id, slug, hashPasscode(passcode));
+    }
+    res.json({ ok: true, url: `${publicPitchBase(req).base}/t/${slug}` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;

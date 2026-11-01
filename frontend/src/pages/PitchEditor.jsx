@@ -6,6 +6,8 @@ import {
   Smartphone, Monitor, Type, Quote, LayoutGrid, Columns2, Grid3x3,
   ListChecks, Users, Megaphone, ImagePlus, Loader2, Sparkles, Smartphone as PhoneIcon,
   ExternalLink,
+  Download,
+  FolderOpen,
 } from 'lucide-react';
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors,
@@ -176,10 +178,73 @@ async function uploadImage(file) {
   return api.postForm('/pitches/upload', fd);
 }
 
+// The collections, inside the editor. A picture that already exists in a shoot's
+// collection can be picked instead of uploaded a second time. The pick copies
+// the file into the pitch store, so a later edit or delete of the collection
+// card cannot change a treatment that already uses the picture.
+function CollectionPicker({ onPick, onClose }) {
+  const [collections, setCollections] = useState(null);
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    api.get('/pitches/collection-images')
+      .then(d => setCollections(d.collections || []))
+      .catch(err => { setError(err.message || 'Could not load the collections'); setCollections([]); });
+  }, []);
+
+  async function pick(filename) {
+    setBusy(filename);
+    setError('');
+    try {
+      const res = await api.post('/pitches/import-collection-image', { filename });
+      onPick(res.filename);
+    } catch (err) {
+      setError(err.message || 'Could not copy that picture');
+      setBusy('');
+    }
+  }
+
+  return (
+    <Overlay title="From collections" size="card" width={620} onClose={onClose} trackInput={false}>
+      {error && <p className="prod-error">{error}</p>}
+      {collections === null && <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Loading...</p>}
+      {collections && collections.length === 0 && (
+        <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No picture cards in any collection yet.</p>
+      )}
+      {(collections || []).map(col => (
+        <div key={col.id} style={{ marginBottom: '16px' }}>
+          <p style={{ fontSize: '12px', fontWeight: 600, marginBottom: '8px' }}>{col.name}</p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(84px, 1fr))', gap: '8px' }}>
+            {col.images.map(img => (
+              <button
+                key={img.filename}
+                type="button"
+                onClick={() => pick(img.filename)}
+                disabled={!!busy}
+                title={img.title || img.filename}
+                style={{ position: 'relative', padding: 0, border: '1px solid var(--border-default)', borderRadius: 6, overflow: 'hidden', background: 'none', cursor: 'pointer' }}
+              >
+                <img src={`/collection-media/${encodeURIComponent(img.thumb)}`} alt="" style={{ width: '100%', height: 64, objectFit: 'cover', display: 'block' }} />
+                {busy === img.filename && (
+                  <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,.55)' }}>
+                    <Loader2 size={15} className="pitch-spin" />
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+    </Overlay>
+  );
+}
+
 function ImageField({ label, value, onChange }) {
   const inputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
+  const [picking, setPicking] = useState(false);
 
   async function handleFile(e) {
     const file = e.target.files[0];
@@ -208,6 +273,10 @@ function ImageField({ label, value, onChange }) {
           title={value ? 'Replace' : 'Upload'} aria-label={value ? 'Replace' : 'Upload'}>
           {uploading ? <Loader2 size={15} className="pitch-spin" /> : <Upload size={15} />}
         </button>
+        <button type="button" className="db-iconbtn" onClick={() => setPicking(true)}
+          title="From collections" aria-label="From collections">
+          <FolderOpen size={15} />
+        </button>
         {value && (
           <button type="button" className="btn-ghost" style={{ padding: '4px 6px', color: 'var(--danger)' }} title="Remove image" onClick={() => onChange('')}>
             <X size={13} />
@@ -216,6 +285,7 @@ function ImageField({ label, value, onChange }) {
         <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" style={{ display: 'none' }} onChange={handleFile} />
       </div>
       {error && <p className="prod-error">{error}</p>}
+      {picking && <CollectionPicker onClose={() => setPicking(false)} onPick={f => { onChange(f); setPicking(false); }} />}
     </Field>
   );
 }
@@ -224,6 +294,7 @@ function ImageListField({ label, values, onChange, max }) {
   const inputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
+  const [picking, setPicking] = useState(false);
   const images = Array.isArray(values) ? values : [];
 
   async function handleFiles(e) {
@@ -282,9 +353,29 @@ function ImageListField({ label, values, onChange, max }) {
             {uploading ? <Loader2 size={15} className="pitch-spin" /> : <Plus size={15} />}
           </button>
         )}
+        {images.length < max && (
+          <button
+            type="button"
+            onClick={() => setPicking(true)}
+            title="From collections"
+            style={{
+              width: 56, height: 56, borderRadius: 6, border: '1px dashed var(--border-default)',
+              background: 'none', color: 'var(--text-muted)', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            <FolderOpen size={15} />
+          </button>
+        )}
         <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" multiple style={{ display: 'none' }} onChange={handleFiles} />
       </div>
       {error && <p className="prod-error">{error}</p>}
+      {picking && (
+        <CollectionPicker
+          onClose={() => setPicking(false)}
+          onPick={f => { if (images.length < max) onChange([...images, f]); setPicking(false); }}
+        />
+      )}
     </Field>
   );
 }
@@ -561,6 +652,91 @@ function SaveDot({ state }) {
   );
 }
 
+function ShareLinkPanel({ pitchId, onClose }) {
+  const [link, setLink] = useState(null);
+  const [passcode, setPasscode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [copiedLink, setCopiedLink] = useState(false);
+
+  useEffect(() => {
+    api.get(`/pitches/${pitchId}/collab-link`).then(setLink).catch(() => setLink({ has_link: false }));
+  }, [pitchId]);
+
+  async function save(e) {
+    e.preventDefault();
+    setBusy(true); setError('');
+    try {
+      await api.post(`/pitches/${pitchId}/collab-link`, { passcode });
+      setLink(await api.get(`/pitches/${pitchId}/collab-link`));
+      setPasscode('');
+    } catch (err) {
+      setError(err.message || 'Could not save the passcode');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function copy(url) {
+    try { await navigator.clipboard.writeText(url); } catch (_) {}
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2000);
+  }
+
+  const hasLink = !!(link && link.has_link);
+
+  return (
+    <Overlay
+      title="First AD link"
+      onClose={onClose}
+      trackInput={false}
+      footer={<button className="btn btn-ghost" onClick={onClose}>Done</button>}
+    >
+      <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '14px' }}>
+        Send this link and the passcode to whoever you are treating with. They open the treatment in their browser, edit the words and the pictures, and save. A treatment is one document: their save and yours land in the same sections.
+      </p>
+
+      {hasLink ? (
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '16px' }}>
+          <input className="input" readOnly value={link.url} style={{ flex: 1, fontSize: '12px' }} onFocus={e => e.target.select()} />
+          <button className="db-iconbtn lg" onClick={() => copy(link.url)} title="Copy link" aria-label="Copy link">
+            {copiedLink ? <Check size={16} /> : <Copy size={16} />}
+          </button>
+          <a className="db-iconbtn lg" href={link.url} target="_blank" rel="noreferrer" title="Open" aria-label="Open">
+            <ExternalLink size={16} />
+          </a>
+        </div>
+      ) : (
+        <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '16px' }}>
+          No link yet. Set a passcode to open the window.
+        </p>
+      )}
+
+      <form onSubmit={save}>
+        <Field label={hasLink ? 'Set a new passcode' : 'Passcode'}>
+          <input
+            className="input"
+            value={passcode}
+            onChange={e => setPasscode(e.target.value)}
+            placeholder="At least 4 characters"
+            autoComplete="off"
+          />
+        </Field>
+        {error && <p className="prod-error">{error}</p>}
+        <button type="submit" className="btn btn-primary" disabled={busy}>
+          {busy ? 'Saving...' : (hasLink ? 'Replace passcode' : 'Create link')}
+        </button>
+        {hasLink && (
+          <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '10px' }}>
+            Replacing the passcode closes every window that is open on the old one.
+            {link.last_used_at ? ` Last opened ${link.last_used_at} UTC.` : ''}
+          </p>
+        )}
+      </form>
+    </Overlay>
+  );
+}
+
 function PitchEditorPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -574,6 +750,7 @@ function PitchEditorPage() {
   const [expandedId, setExpandedId] = useState(null);
   const [showAddPicker, setShowAddPicker] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showShare, setShowShare] = useState(false);
   const [publishedSlug, setPublishedSlug] = useState(null); // set after a publish to show the link modal
   const [copied, setCopied] = useState(false);
   const [working, setWorking] = useState(false);
@@ -756,6 +933,19 @@ function PitchEditorPage() {
     }
   }
 
+  async function handlePdf() {
+    setWorking(true);
+    try {
+      await flush();
+      const filename = `${(pres.slug || pres.title || 'pitch').replace(/[^a-z0-9-]+/gi, '-')}.pdf`;
+      await api.download(`/pitches/${id}/pdf`, filename);
+    } catch (err) {
+      notify('PDF not created', err.message || 'The PDF could not be generated.');
+    } finally {
+      setWorking(false);
+    }
+  }
+
   async function handlePublish() {
     setWorking(true);
     try {
@@ -821,7 +1011,7 @@ function PitchEditorPage() {
       {toast && <div className="pitch-toast">{toast}</div>}
       {/* Header */}
       <div className="pitch-editor-header">
-        <button className="db-iconbtn lg" style={{ flexShrink: 0 }} onClick={() => navigate('/pitches/photography')} title="Pitches" aria-label="Pitches">
+        <button className="db-iconbtn lg" style={{ flexShrink: 0 }} onClick={() => navigate(pres.kind === 'treatment' ? '/pitches/treatments' : '/pitches/photography')} title="Pitches" aria-label="Pitches">
           <ArrowLeft size={16} />
         </button>
         <input
@@ -840,6 +1030,14 @@ function PitchEditorPage() {
             <EyeOff size={16} />
           </button>
         )}
+        {pres.kind === 'treatment' && (
+          <button className="db-iconbtn lg" onClick={() => setShowShare(true)} title="First AD link" aria-label="First AD link">
+            <Users size={16} />
+          </button>
+        )}
+        <button className="db-iconbtn lg" onClick={handlePdf} disabled={working} title="Download PDF" aria-label="Download PDF">
+          <Download size={16} />
+        </button>
         <button className="btn btn-primary" style={{ flexShrink: 0 }} onClick={handlePublish} disabled={working}
           title={isPublished ? 'Republish' : 'Publish'} aria-label={isPublished ? 'Republish' : 'Publish'}>
           <Globe size={16} />
@@ -973,6 +1171,9 @@ function PitchEditorPage() {
           </div>
         </Overlay>
       )}
+
+      {/* First AD window: the treatment's passcode link */}
+      {showShare && <ShareLinkPanel pitchId={id} onClose={() => setShowShare(false)} />}
 
       {/* Published */}
       {publishedSlug && (

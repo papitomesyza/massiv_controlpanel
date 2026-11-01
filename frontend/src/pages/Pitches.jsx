@@ -2,9 +2,10 @@ import React from 'react';
 import { Camera, Clapperboard } from 'lucide-react';
 import { ToolCard, ToolCardGrid } from '../components/ToolCards';
 
-// Tools, Pitches. A card grid of pitch builders; Photography opens the pitch
-// list at /pitches/photography. Director Treatments is not built yet, so its
-// card stays visible but disabled.
+// Tools, Pitches. A card grid of pitch builders: Photography and the Director
+// Treatments built beside it. Both open the same kind of list and the same
+// editor; a treatment adds the PDF export and a passcode window the First AD
+// can write in.
 export default function Pitches() {
   return (
     <div>
@@ -14,7 +15,7 @@ export default function Pitches() {
 
       <ToolCardGrid>
         <ToolCard icon={Camera} title="Photography" to="/pitches/photography" />
-        <ToolCard icon={Clapperboard} title="Director Treatments" disabled />
+        <ToolCard icon={Clapperboard} title="Director Treatments" to="/pitches/treatments" />
       </ToolCardGrid>
     </div>
   );

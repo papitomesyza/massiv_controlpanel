@@ -120,6 +120,9 @@ export default function App() {
               is untouched. */}
           <Route path="pitches" element={<Pitches />} />
           <Route path="pitches/photography" element={<PitchesPhotography />} />
+          {/* Director Treatments: the same list and editor as photography,
+              asking the server for kind=treatment instead. */}
+          <Route path="pitches/treatments" element={<PitchesPhotography kind="treatment" title="Director Treatments" />} />
           {/* The pitch list used to live at /pitches — anything bookmarked or
               already open on the old path lands on its new home. */}
           <Route path="pitches/list" element={<Navigate to="/pitches/photography" replace />} />
